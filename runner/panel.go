@@ -15,30 +15,39 @@ import (
 
 const defaultCacheControl = "public, max-age=1800"
 
-// MangaPanelRunner は、台本を元に並列画像生成を管理します。
-type MangaPanelRunner struct {
+// CutKeyframeRunner は、動画台本を元に並列キーフレーム生成を管理します。
+type CutKeyframeRunner struct {
 	generator ports.PanelsImageGenerator
 	writer    remoteio.Writer
 }
 
-// NewMangaPanelRunner は、依存関係を注入して初期化します。
-func NewMangaPanelRunner(
+// NewCutKeyframeRunner は、依存関係を注入して初期化します。
+func NewCutKeyframeRunner(
 	generator ports.PanelsImageGenerator,
 	writer remoteio.Writer,
-) *MangaPanelRunner {
-	return &MangaPanelRunner{
+) *CutKeyframeRunner {
+	return &CutKeyframeRunner{
 		generator: generator,
 		writer:    writer,
 	}
 }
 
-// Run は、台本(MangaResponse)を受け取り、パネルの画像を生成します。
-func (r *MangaPanelRunner) Run(ctx context.Context, manga *ports.MangaResponse) ([]*imagePorts.ImageResponse, error) {
-	if manga == nil {
-		return nil, fmt.Errorf("MangaResponse がありません")
-	}
+// NewMangaPanelRunner は旧 API 互換のコンストラクタです。
+func NewMangaPanelRunner(
+	generator ports.PanelsImageGenerator,
+	writer remoteio.Writer,
+) *CutKeyframeRunner {
+	return NewCutKeyframeRunner(generator, writer)
+}
 
-	slog.Info("Starting parallel image generation")
+// Run は、台本(VideoRecipe)を受け取り、カットのキーフレーム画像を生成します。
+func (r *CutKeyframeRunner) Run(ctx context.Context, manga *ports.MangaResponse) ([]*imagePorts.ImageResponse, error) {
+	if manga == nil {
+		return nil, fmt.Errorf("VideoRecipe がありません")
+	}
+	manga.Normalize()
+
+	slog.Info("Starting parallel cut keyframe generation")
 
 	images, err := r.generator.Execute(ctx, manga.Panels)
 	if err != nil {
@@ -46,15 +55,16 @@ func (r *MangaPanelRunner) Run(ctx context.Context, manga *ports.MangaResponse) 
 		return nil, err
 	}
 
-	slog.Info("Successfully generated panels", "count", len(images))
+	slog.Info("Successfully generated cut keyframes", "count", len(images))
 	return images, nil
 }
 
-// RunAndSave は画像パネルを生成し、インデックスを付けて指定のパスに保存します。
-func (r *MangaPanelRunner) RunAndSave(ctx context.Context, manga *ports.MangaResponse, outputPath string) (*ports.MangaResponse, error) {
+// RunAndSave はカットキーフレームを生成し、インデックスを付けて指定のパスに保存します。
+func (r *CutKeyframeRunner) RunAndSave(ctx context.Context, manga *ports.MangaResponse, outputPath string) (*ports.MangaResponse, error) {
 	if manga == nil {
-		return nil, fmt.Errorf("MangaResponse がありません")
+		return nil, fmt.Errorf("VideoRecipe がありません")
 	}
+	manga.Normalize()
 
 	// 保存先ディレクトリの決定
 	targetDir := asset.ResolveBaseURL(outputPath)
@@ -96,7 +106,7 @@ func (r *MangaPanelRunner) RunAndSave(ctx context.Context, manga *ports.MangaRes
 		manga.Panels[i].ReferenceURL = panelPath
 	}
 
-	plotPath, err := asset.ResolveOutputPath(targetDir, asset.DefaultMangaPlotJson)
+	plotPath, err := asset.ResolveOutputPath(targetDir, asset.DefaultVideoRecipeJSON)
 	if err != nil {
 		return nil, fmt.Errorf("プロットファイル出力パスの解決に失敗しました: %w", err)
 	}
@@ -117,3 +127,6 @@ func (r *MangaPanelRunner) RunAndSave(ctx context.Context, manga *ports.MangaRes
 
 	return manga, nil
 }
+
+// MangaPanelRunner は旧 API 互換のエイリアスです。
+type MangaPanelRunner = CutKeyframeRunner

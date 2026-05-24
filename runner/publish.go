@@ -1,36 +1,95 @@
 package runner
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"fmt"
+	"path"
 
+	"github.com/shouni/go-remote-io/remoteio"
+	"github.com/shouni/go-veo-orchestrator/asset"
 	"github.com/shouni/go-veo-orchestrator/ports"
-	"github.com/shouni/go-veo-orchestrator/publisher"
 )
 
-// MangaPublisherRunner は pkg/publisher を利用して漫画成果物の公開と構築を担います。
-type MangaPublisherRunner struct {
-	publisher *publisher.MangaPublisher
+// VideoPublisherRunner は Music Recipe とカット情報を動画向けメタデータとして出力します。
+type VideoPublisherRunner struct {
+	writer remoteio.Writer
 }
 
-// NewMangaPublisherRunner は、指定された構成と MangaPublisher を持つ新しい MangaPublisherRunner インスタンスを作成します。
-func NewMangaPublisherRunner(pub *publisher.MangaPublisher) *MangaPublisherRunner {
-	return &MangaPublisherRunner{
-		publisher: pub,
+// NewVideoPublisherRunner は VideoPublisherRunner を初期化します。
+func NewVideoPublisherRunner(writer remoteio.Writer) *VideoPublisherRunner {
+	return &VideoPublisherRunner{writer: writer}
+}
+
+// Run は HTML/Markdown ではなく、結合・検証に使う JSON メタデータだけを保存します。
+func (pr *VideoPublisherRunner) Run(ctx context.Context, recipe *ports.VideoRecipe, outputDir string) (*ports.PublishResult, error) {
+	if recipe == nil {
+		return nil, fmt.Errorf("VideoRecipe が nil です")
 	}
-}
-
-// Run は漫画データの公開処理を実行し、Markdown や HTML などの成果物を指定された出力ディレクトリに保存します。
-func (pr *MangaPublisherRunner) Run(ctx context.Context, manga *ports.MangaResponse, outputDir string) (*ports.PublishResult, error) {
-	opts := ports.PublishOptions{
-		OutputDir: outputDir,
+	if pr.writer == nil {
+		return nil, fmt.Errorf("writer is required")
 	}
 
-	return pr.publisher.Publish(ctx, manga, opts)
+	recipe.Normalize()
+	metadata, err := pr.BuildMetadata(recipe)
+	if err != nil {
+		return nil, err
+	}
+
+	metadataPath, err := asset.ResolveOutputPath(outputDir, asset.DefaultVideoRecipeJSON)
+	if err != nil {
+		return nil, fmt.Errorf("メタデータ出力パスの解決に失敗しました: %w", err)
+	}
+
+	if err := pr.writer.Write(ctx, metadataPath, bytes.NewReader(metadata),
+		remoteio.WithContentType("application/json"),
+		remoteio.WithCacheControl(defaultCacheControl),
+	); err != nil {
+		return nil, fmt.Errorf("動画メタデータの保存に失敗しました: %w", err)
+	}
+
+	imagePaths := make([]string, 0, len(recipe.Cuts))
+	for _, cut := range recipe.Cuts {
+		if cut.ReferenceURL == "" {
+			continue
+		}
+		imagePaths = append(imagePaths, path.Join(asset.DefaultImageDir, path.Base(cut.ReferenceURL)))
+	}
+
+	return &ports.PublishResult{
+		MetadataPath: metadataPath,
+		ImagePaths:   imagePaths,
+	}, nil
 }
 
-// BuildMarkdown は保存処理を行わず、構造体から Markdown 文字列のみを生成して返却します。
-func (pr *MangaPublisherRunner) BuildMarkdown(manga *ports.MangaResponse) string {
-	// publisher.Options を空で渡すことで、外部パス指定を行わず、
-	// domain.MangaResponse 内の ReferenceURL をそのまま使用するデフォルト挙動を選択します。
-	return pr.publisher.BuildMarkdown(manga, ports.PublishOptions{})
+// BuildMetadata は VideoRecipe を整形済み JSON に変換します。
+func (pr *VideoPublisherRunner) BuildMetadata(recipe *ports.VideoRecipe) ([]byte, error) {
+	if recipe == nil {
+		return nil, fmt.Errorf("VideoRecipe が nil です")
+	}
+	recipe.Normalize()
+	data, err := json.MarshalIndent(recipe, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("動画メタデータのJSON変換に失敗しました: %w", err)
+	}
+	return data, nil
 }
+
+// BuildMarkdown は旧 API 互換の簡易表現です。新規コードでは BuildMetadata を使用してください。
+func (pr *VideoPublisherRunner) BuildMarkdown(recipe *ports.MangaResponse) string {
+	if recipe == nil {
+		return ""
+	}
+	recipe.Normalize()
+	return fmt.Sprintf("# %s\n\ncuts: %d\n", recipe.ProjectTitle, len(recipe.Cuts))
+}
+
+// NewMangaPublisherRunner は旧 API 互換のコンストラクタです。
+// publisher パッケージは動画用途では使わないため、引数は無視します。
+func NewMangaPublisherRunner(_ any) *VideoPublisherRunner {
+	return NewVideoPublisherRunner(nil)
+}
+
+// MangaPublisherRunner は旧 API 互換のエイリアスです。
+type MangaPublisherRunner = VideoPublisherRunner

@@ -24,21 +24,21 @@ const (
 // jsonBlockRegex は、Markdown 形式の JSON ブロックを抽出するための正規表現です。
 var jsonBlockRegex = regexp.MustCompile("(?s)```(?:json)?\\s*(.*\\S)\\s*```")
 
-type MangaScriptRunner struct {
+type VideoScriptRunner struct {
 	promptBuilder ports.ScriptPrompt
 	aiClient      gemini.ContentGenerator
 	reader        ports.ContentReader
 	aiModel       string
 }
 
-// NewMangaScriptRunner は依存関係を注入して初期化します。
-func NewMangaScriptRunner(
+// NewVideoScriptRunner は依存関係を注入して初期化します。
+func NewVideoScriptRunner(
 	pb ports.ScriptPrompt,
 	ai gemini.ContentGenerator,
 	r ports.ContentReader,
 	aiModel string,
-) *MangaScriptRunner {
-	return &MangaScriptRunner{
+) *VideoScriptRunner {
+	return &VideoScriptRunner{
 		promptBuilder: pb,
 		aiClient:      ai,
 		reader:        r,
@@ -46,8 +46,18 @@ func NewMangaScriptRunner(
 	}
 }
 
-// Run は Web ページまたは GCS から内容を抽出し、Gemini を用いて漫画の台本 JSON を生成します。
-func (r *MangaScriptRunner) Run(ctx context.Context, sourceURL string, mode string) (*ports.MangaResponse, error) {
+// NewMangaScriptRunner は旧 API 互換のコンストラクタです。
+func NewMangaScriptRunner(
+	pb ports.ScriptPrompt,
+	ai gemini.ContentGenerator,
+	r ports.ContentReader,
+	aiModel string,
+) *VideoScriptRunner {
+	return NewVideoScriptRunner(pb, ai, r, aiModel)
+}
+
+// Run は Web ページまたは GCS から内容を抽出し、Gemini を用いて動画台本 JSON を生成します。
+func (r *VideoScriptRunner) Run(ctx context.Context, sourceURL string, mode string) (*ports.MangaResponse, error) {
 	slog.Info("ScriptRunner: 処理を開始", "url", sourceURL)
 
 	// 1. ソースからテキストを取得
@@ -80,7 +90,7 @@ func (r *MangaScriptRunner) Run(ctx context.Context, sourceURL string, mode stri
 }
 
 // readContent は、指定されたソースURLからコンテンツを取得します。
-func (r *MangaScriptRunner) readContent(ctx context.Context, url string) (string, error) {
+func (r *VideoScriptRunner) readContent(ctx context.Context, url string) (string, error) {
 	rc, err := r.reader.Open(ctx, url)
 	if err != nil {
 		return "", fmt.Errorf("failed to read source: %w", err)
@@ -124,7 +134,7 @@ func (r *MangaScriptRunner) readContent(ctx context.Context, url string) (string
 }
 
 // parseResponse は AI の応答から JSON を抽出し、構造体に変換します。
-func (r *MangaScriptRunner) parseResponse(raw string) (*ports.MangaResponse, error) {
+func (r *VideoScriptRunner) parseResponse(raw string) (*ports.MangaResponse, error) {
 	jsonStr := extractJSONString(raw)
 	if jsonStr == "" {
 		slog.Warn("AIの応答からJSONを抽出できませんでした。応答全体を対象にパースを試みます。",
@@ -137,9 +147,13 @@ func (r *MangaScriptRunner) parseResponse(raw string) (*ports.MangaResponse, err
 		return nil, fmt.Errorf("AI応答JSONの解析に失敗しました (抜粋: %q): %w",
 			truncateString(raw, maxErrorResponseLength), err)
 	}
+	manga.Normalize()
 
 	return &manga, nil
 }
+
+// MangaScriptRunner は旧 API 互換のエイリアスです。
+type MangaScriptRunner = VideoScriptRunner
 
 // extractJSONString は文字列から JSON 部分を抽出します。
 func extractJSONString(raw string) string {

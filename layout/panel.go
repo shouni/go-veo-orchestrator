@@ -13,10 +13,10 @@ import (
 	"github.com/shouni/go-veo-orchestrator/ports"
 )
 
-// negativePanelPrompt は単体パネルで「文字」や「フキダシ」を徹底排除するための指定です。
+// negativePanelPrompt は単体カットのキーフレームで「文字」や「フキダシ」を排除するための指定です。
 const negativePanelPrompt = "speech bubble, dialogue balloon, text, alphabet, letters, words, signatures, watermark, username, low quality, distorted, bad anatomy, monochrome, black and white, greyscale"
 
-// PanelGenerator は、キャラクターの一貫性を保ちながら並列で複数パネルを生成します。
+// PanelGenerator は、キャラクターの一貫性を保ちながら並列で複数カットのキーフレームを生成します。
 type PanelGenerator struct {
 	composer       *MangaComposer
 	generator      PanelImageGenerator
@@ -59,7 +59,7 @@ func NewPanelGenerator(
 	return g
 }
 
-// Execute は、errgroupの制限機能を使用して同時実行数を制限しながらパネルを並列生成します。
+// Execute は、errgroupの制限機能を使用して同時実行数を制限しながらカットを並列生成します。
 func (g *PanelGenerator) Execute(ctx context.Context, panels []ports.Panel) ([]*imagePorts.ImageResponse, error) {
 	if len(panels) == 0 {
 		return nil, nil
@@ -81,9 +81,13 @@ func (g *PanelGenerator) Execute(ctx context.Context, panels []ports.Panel) ([]*
 				return err
 			}
 
-			char := cm.GetCharacterWithDefault(panel.SpeakerID)
+			charID := panel.CharacterID
+			if charID == "" {
+				charID = panel.SpeakerID
+			}
+			char := cm.GetCharacterWithDefault(charID)
 			if char == nil {
-				return fmt.Errorf("character not found for speaker ID '%s'", panel.SpeakerID)
+				return fmt.Errorf("character not found for character ID '%s'", charID)
 			}
 			seed := char.Seed
 			userPrompt, systemPrompt := g.pb.BuildPanel(panel, char)
@@ -115,7 +119,7 @@ func (g *PanelGenerator) Execute(ctx context.Context, panels []ports.Panel) ([]*
 				},
 			})
 			if err != nil {
-				return fmt.Errorf("panel %d (character_id: %s) generation failed: %w", i+1, char.ID, err)
+				return fmt.Errorf("cut %d (character_id: %s) keyframe generation failed: %w", i+1, char.ID, err)
 			}
 
 			logger.Info("Panel generation completed",

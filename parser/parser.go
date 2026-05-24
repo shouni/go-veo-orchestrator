@@ -38,6 +38,7 @@ func (p *MangaResponseParser) ParseFromPath(ctx context.Context, plotFile string
 	if err := json.NewDecoder(rc).Decode(manga); err != nil {
 		return nil, fmt.Errorf("プロットJSONのパースに失敗しました: %w", err)
 	}
+	manga.Normalize()
 
 	return manga, nil
 }

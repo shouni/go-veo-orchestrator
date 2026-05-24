@@ -13,7 +13,7 @@ import (
 	"github.com/shouni/go-veo-orchestrator/ports"
 )
 
-// negativePagePrompt は生成から除外したい要素を定義します。
+// negativePagePrompt はシーン統合キーフレーム生成から除外したい要素を定義します。
 const negativePagePrompt = "monochrome, black and white, greyscale, screentone, hatching, dot shades, ink sketch, line art only, realistic photos, 3d render, watermark, signature, deformed faces, bad anatomy, disfigured, poorly drawn hands, extra panels, unexpected panels, more than specified panels, split panels"
 
 type PageGenerator struct {
@@ -60,11 +60,12 @@ func NewPageGenerator(
 	return g
 }
 
-// Execute は、errgroupの制限機能を使用して並列数を制御しながらページ画像を生成します。
+// Execute は、errgroupの制限機能を使用して並列数を制御しながらシーン画像を生成します。
 func (g *PageGenerator) Execute(ctx context.Context, manga *ports.MangaResponse) ([]*imagePorts.ImageResponse, error) {
 	if manga == nil || len(manga.Panels) == 0 {
 		return nil, nil
 	}
+	manga.Normalize()
 
 	if err := g.composer.PrepareCharacterResources(ctx, manga.Panels); err != nil {
 		return nil, fmt.Errorf("failed to prepare character resources: %w", err)
@@ -90,10 +91,12 @@ func (g *PageGenerator) Execute(ctx context.Context, manga *ports.MangaResponse)
 				return err
 			}
 
-			subManga := ports.MangaResponse{
-				Title:       fmt.Sprintf("%s (Page %d/%d)", manga.Title, currentPageNum, totalPages),
-				Description: manga.Description,
-				Panels:      group,
+			subManga := ports.VideoRecipe{
+				ProjectTitle: fmt.Sprintf("%s (Scene %d/%d)", manga.ProjectTitle, currentPageNum, totalPages),
+				Title:        fmt.Sprintf("%s (Scene %d/%d)", manga.Title, currentPageNum, totalPages),
+				Description:  manga.Description,
+				Cuts:         group,
+				Panels:       group,
 			}
 
 			logger := slog.With(
@@ -102,7 +105,7 @@ func (g *PageGenerator) Execute(ctx context.Context, manga *ports.MangaResponse)
 				"panels", len(group),
 				"seed", seed,
 			)
-			logger.Info("Starting manga page generation")
+			logger.Info("Starting scene keyframe generation")
 
 			startTime := time.Now()
 			res, err := g.generateMangaPage(egCtx, subManga, seed)
@@ -110,7 +113,7 @@ func (g *PageGenerator) Execute(ctx context.Context, manga *ports.MangaResponse)
 				return fmt.Errorf("failed to generate page %d: %w", currentPageNum, err)
 			}
 
-			logger.Info("Manga page generation completed", "duration", time.Since(startTime).Round(time.Second))
+			logger.Info("Scene keyframe generation completed", "duration", time.Since(startTime).Round(time.Second))
 			allResponses[i] = res
 			return nil
 		})
@@ -122,7 +125,7 @@ func (g *PageGenerator) Execute(ctx context.Context, manga *ports.MangaResponse)
 	return allResponses, nil
 }
 
-// generateMangaPage は、提供されたマンガレスポンスとAIベースの画像生成用のシードを使用して、マンガページの画像を生成します。
+// generateMangaPage は、提供された動画レシピとAIベースの画像生成用のシードを使用して、シーン画像を生成します。
 func (g *PageGenerator) generateMangaPage(ctx context.Context, manga ports.MangaResponse, seed int64) (*imagePorts.ImageResponse, error) {
 	// 1. リソース収集とインデックスマッピングの作成
 	resMap := g.collectResources(manga.Panels)
@@ -173,7 +176,11 @@ func (g *PageGenerator) determineDefaultSeed(panels []ports.Panel) int64 {
 	cm := g.composer.CharactersMap
 
 	// 最初のパネルの話者 Seed を優先します。
-	if char := cm.GetCharacter(panels[0].SpeakerID); char != nil && char.Seed > 0 {
+	charID := panels[0].CharacterID
+	if charID == "" {
+		charID = panels[0].SpeakerID
+	}
+	if char := cm.GetCharacter(charID); char != nil && char.Seed > 0 {
 		return char.Seed
 	}
 
