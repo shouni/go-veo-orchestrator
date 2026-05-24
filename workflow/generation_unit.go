@@ -3,7 +3,6 @@ package workflow
 import (
 	"fmt"
 
-	"github.com/patrickmn/go-cache"
 	"github.com/shouni/gemini-image-kit/generator"
 	"github.com/shouni/go-gemini-client/gemini"
 
@@ -41,7 +40,7 @@ func (m *manager) buildCore(aiClient gemini.GenerativeModel) (*generator.GeminiI
 		aiClient,
 		m.reader,
 		m.httpClient,
-		cache.New(defaultCacheExpiration, cacheCleanupInterval),
+		newImageCache(),
 		defaultTTL,
 		false,
 	)
