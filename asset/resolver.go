@@ -17,6 +17,8 @@ const (
 	DefaultImageDir = "images"
 	// DefaultMangaPlotJson は生成された漫画プロットのデフォルト JSON ファイル名です。
 	DefaultMangaPlotJson = "manga_plot.json"
+	// DefaultVideoRecipeJSON は生成された動画・音楽レシピのデフォルト JSON ファイル名です。
+	DefaultVideoRecipeJSON = "video_music_meta.json"
 	// DefaultMangaPlotName は生成された漫画プロットのデフォルト Markdown ファイル名です。
 	DefaultMangaPlotName = "manga_plot.md"
 	// DefaultPanelFileName はパネル画像の共通のベースファイル名です。

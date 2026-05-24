@@ -64,7 +64,7 @@ func (mc *MangaComposer) GetPanelResourceURI(referenceURL string) string {
 	return mc.resourceMap.panel[referenceURL]
 }
 
-// PrepareCharacterResources はパネルに使用される全キャラクターの画像を File API に事前アップロードします。
+// PrepareCharacterResources はカットに使用される全キャラクターの画像を File API に事前アップロードします。
 func (mc *MangaComposer) PrepareCharacterResources(ctx context.Context, panels []ports.Panel) error {
 	targets := make(map[string]string)
 
@@ -73,8 +73,8 @@ func (mc *MangaComposer) PrepareCharacterResources(ctx context.Context, panels [
 		targets[def.ID] = def.ReferenceURL
 	}
 
-	// パネルで使用されているキャラクターをアップロード対象に追加
-	for _, id := range ports.Panels(panels).UniqueSpeakerIDs() {
+	// カットで使用されているキャラクターをアップロード対象に追加
+	for _, id := range ports.Cuts(panels).UniqueCharacterIDs() {
 		char := mc.CharactersMap.GetCharacterWithDefault(id)
 		if char == nil || char.ReferenceURL == "" {
 			continue

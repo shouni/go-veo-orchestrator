@@ -19,20 +19,32 @@ type ScriptPrompt interface {
 }
 
 // ImagePrompt は、画像生成AI向けのプロンプトを構築する契約です。
+// 旧実装互換のためメソッド名は BuildPanel / BuildPage を維持しています。
 type ImagePrompt interface {
-	// BuildPanel は、単一の漫画パネル用のユーザープロンプトとシステムプロンプトを決定します。
+	// BuildPanel は、単一カットのキーフレーム用ユーザープロンプトとシステムプロンプトを決定します。
 	BuildPanel(panel Panel, char *Character) (userPrompt string, systemPrompt string)
-	// BuildPage は、統合された漫画ページ画像用のユーザープロンプトと システムプロンプトを生成します。
+	// BuildPage は、複数カットを統合したシーン画像用のユーザープロンプトとシステムプロンプトを生成します。
 	BuildPage(panels []Panel, rm *ResourceMap) (userPrompt string, systemPrompt string)
 }
 
-// PanelsImageGenerator は、指定されたコンテキスト内で一連のパネルの画像レスポンスを生成するためのインターフェースを定義します。
-type PanelsImageGenerator interface {
-	Execute(ctx context.Context, panels []Panel) ([]*imagePorts.ImageResponse, error)
+// VideoImagePrompt は動画用語で定義した新しいプロンプト契約です。
+type VideoImagePrompt interface {
+	BuildCut(cut Cut, char *Character) (userPrompt string, systemPrompt string)
+	BuildScene(cuts []Cut, rm *ResourceMap) (userPrompt string, systemPrompt string)
 }
 
-// PagesImageGenerator は、与えられた漫画レスポンスに基づいて漫画ページの画像データを生成します。
-// パネルを処理し、画像レスポンスのスライスまたは失敗時にエラーを出力します。
-type PagesImageGenerator interface {
-	Execute(ctx context.Context, manga *MangaResponse) ([]*imagePorts.ImageResponse, error)
+// CutImageGenerator は、指定されたコンテキスト内で一連のカットの画像レスポンスを生成するためのインターフェースを定義します。
+type CutImageGenerator interface {
+	Execute(ctx context.Context, cuts []Cut) ([]*imagePorts.ImageResponse, error)
 }
+
+// SceneImageGenerator は、与えられた動画レシピに基づいてシーン画像データを生成します。
+type SceneImageGenerator interface {
+	Execute(ctx context.Context, recipe *VideoRecipe) ([]*imagePorts.ImageResponse, error)
+}
+
+// PanelsImageGenerator は旧 API 互換のエイリアスです。
+type PanelsImageGenerator = CutImageGenerator
+
+// PagesImageGenerator は旧 API 互換のエイリアスです。
+type PagesImageGenerator = SceneImageGenerator

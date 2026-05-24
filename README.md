@@ -38,6 +38,79 @@
 
 ---
 
+## 🧾 Music Recipe JSON
+
+`ScriptRunner` はドキュメントから、映像指示だけでなく BGM の拍子・感情・盛り上がりを含む動画台本 JSON を生成します。各 `cut` は `duration_sec` と `audio_cue` を持つため、Veo へのプロンプトには `(synchronized with the heavy bass drop at 0:10)` のような同期指示を自動注入できます。
+
+```json
+{
+  "project_title": "AIマルチモーダル解説動画",
+  "music_recipe": {
+    "tempo_bpm": 120,
+    "total_duration_sec": 15,
+    "style": "90s retro mech synthwave"
+  },
+  "cuts": [
+    {
+      "cut_index": 1,
+      "duration_sec": 5,
+      "audio_cue": "イントロ：静かなシンセのパッド音、秒針の音 (mp3_segment_1)",
+      "visual_anchor": "暗闇の中にキャラクターの瞳が光る。カメラがゆっくりと引いていく",
+      "character_id": "zundamon"
+    },
+    {
+      "cut_index": 2,
+      "duration_sec": 5,
+      "audio_cue": "Aメロ：ドラムのビートが刻まれ始める。テンポアップ (mp3_segment_2)",
+      "visual_anchor": "ずんだもんが自信満々に人差し指を立てて、カメラに向かって喋る",
+      "character_id": "zundamon"
+    },
+    {
+      "cut_index": 3,
+      "duration_sec": 5,
+      "audio_cue": "サビ：激しいシンセのメロディ、エフェクト音 (mp3_segment_3)",
+      "visual_anchor": "カメラが高速で旋回し、背景がサイバー空間へと切り替わる",
+      "character_id": "zundamon_metan"
+    }
+  ]
+}
+```
+
+この JSON は保存時に `video_music_meta.json` として出力され、`start_sec` / `end_sec` が補完されたカット列を後段の ffmpeg 結合や検証に渡せる構造になります。
+
+楽曲生成側の JSON が `sections` ベースで届く場合も、そのまま受け付けます。`sections` の要素数は固定せず、各 section の `duration_seconds` から `cuts` を自動生成し、`tempo` / `mood` は `music_recipe.tempo_bpm` / `music_recipe.style` に同期されます。
+
+```json
+{
+  "title": "碧き残影、一瞬の奇跡 〜黒き疾風の叙事詩〜",
+  "theme": "闇を裂き、最速の奇跡を刻む青き瞳の誓い",
+  "mood": "Epic Symphonic Fantasy Rock Ballad, Emotional and Melancholic",
+  "tempo": 72,
+  "instruments": [
+    "Acoustic Grand Piano",
+    "Soaring Full Strings Section",
+    "Progressive Rock Electric Guitar"
+  ],
+  "sections": [
+    {
+      "name": "Verse",
+      "duration_seconds": 40,
+      "prompt": "[Silent Awakening] Focus strictly on the first lyrics block marked [Verse]."
+    },
+    {
+      "name": "Chorus",
+      "duration_seconds": 45,
+      "prompt": "[Emotional Outburst & High-Voltage Peak] Focus on the lyrics marked [Chorus]."
+    }
+  ],
+  "audio_model": "lyria-3-pro-preview",
+  "compose_mode": "game_fantasy",
+  "seed": 10
+}
+```
+
+---
+
 ## 📂 プロジェクト構造 (Project Structure)
 
 本アーキテクチャは **ports による抽象化（Hexagonal Architecture）** を境界線としており、Veo API のエンドポイント変更や動画合成エンジンの差し替えを容易に行える設計を採用しています。
@@ -46,7 +119,7 @@
 go-veo-orchestrator/
 ├── workflow/    # 【統合管理】各工程を組み合わせ、Workflows インターフェースを実装。
 ├── runner/      # 【実行実体】Design/Script/CutGen/VideoGen/Publish の具体的なプロセス実装。
-├── timeline/    # 【生成戦略】Music Recipeに基づく秒数・拍子計算、カット連携、Video-to-Videoの数珠繋ぎコンテキスト計算。
+├── layout/      # 【Timeline生成戦略】Music Recipeに基づく秒数・拍子計算、カット連携、Video-to-Videoの数珠繋ぎコンテキスト計算。
 ├── parser/      # 【解析】入力プロットやMusic Recipeのマルチモーダルレスポンスを構造化データへ変換。
 ├── ports/       # 【契約・定義】Interface（VideoRunner等）、共通モデル、動作設定(Config)。全ての起点。
 └── asset/       # 【アセット管理】大容量動画(mp4)・音声(mp3)・画像アセットのパス解決およびURIマッピング。

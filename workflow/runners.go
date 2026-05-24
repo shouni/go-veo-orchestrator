@@ -3,10 +3,8 @@ package workflow
 import (
 	"fmt"
 
-	"github.com/shouni/go-prompt-kit/md/builder"
 	"github.com/shouni/go-veo-orchestrator/layout"
 	"github.com/shouni/go-veo-orchestrator/ports"
-	"github.com/shouni/go-veo-orchestrator/publisher"
 	"github.com/shouni/go-veo-orchestrator/runner"
 )
 
@@ -34,17 +32,19 @@ func (m *manager) buildAllRunners() (*ports.Workflows, error) {
 	}
 
 	return &ports.Workflows{
-		Design:     dr,
-		Script:     sr,
-		PanelImage: panR,
-		PageImage:  pagR,
-		Publish:    pubR,
+		Design:      dr,
+		Script:      sr,
+		CutKeyframe: panR,
+		SceneImage:  pagR,
+		Publish:     pubR,
+		PanelImage:  panR,
+		PageImage:   pagR,
 	}, nil
 }
 
 // buildScriptRunner は、台本生成を担当する Runner を作成します。
-func (m *manager) buildScriptRunner() (*runner.MangaScriptRunner, error) {
-	return runner.NewMangaScriptRunner(m.promptDeps.ScriptPrompt, m.aiClient, m.reader, m.cfg.GeminiModel), nil
+func (m *manager) buildScriptRunner() (*runner.VideoScriptRunner, error) {
+	return runner.NewVideoScriptRunner(m.promptDeps.ScriptPrompt, m.aiClient, m.reader, m.cfg.GeminiModel), nil
 }
 
 // buildDesignRunner は、キャラクターデザインを担当する Runner を作成します。
@@ -89,19 +89,7 @@ func (m *manager) buildPageImageRunner() (*runner.MangaPageRunner, error) {
 	return runner.NewMangaPageRunner(pagesGen, m.writer), nil
 }
 
-// buildPublishRunner は、成果物のパブリッシュを担当する Runner を作成します。
-func (m *manager) buildPublishRunner() (*runner.MangaPublisherRunner, error) {
-	b, err := builder.New()
-	if err != nil {
-		return nil, fmt.Errorf("MarkdownBuilderの初期化に失敗: %w", err)
-	}
-
-	md2htmlRunner, err := b.BuildRunner()
-	if err != nil {
-		return nil, fmt.Errorf("MarkdownToHtmlRunnerの構築に失敗: %w", err)
-	}
-
-	pub := publisher.NewMangaPublisher(m.writer, md2htmlRunner)
-
-	return runner.NewMangaPublisherRunner(pub), nil
+// buildPublishRunner は、動画メタデータのパブリッシュを担当する Runner を作成します。
+func (m *manager) buildPublishRunner() (*runner.VideoPublisherRunner, error) {
+	return runner.NewVideoPublisherRunner(m.writer), nil
 }
