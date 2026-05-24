@@ -11,8 +11,4 @@ type PublishResult struct {
 	MetadataPath string   // 生成された video_music_meta.json のパス
 	VideoPath    string   // 最終結合動画のパス（未生成の場合は空）
 	ImagePaths   []string // 保存された全キーフレーム画像のパスリスト
-
-	// 旧 API 互換フィールド。
-	MarkdownPath string
-	HTMLPath     string
 }

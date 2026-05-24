@@ -9,7 +9,6 @@ import (
 
 	imagePorts "github.com/shouni/gemini-image-kit/ports"
 	"github.com/shouni/go-remote-io/remoteio"
-	"github.com/shouni/go-veo-orchestrator/asset"
 	"github.com/shouni/go-veo-orchestrator/ports"
 )
 
@@ -67,10 +66,10 @@ func (r *CutKeyframeRunner) RunAndSave(ctx context.Context, manga *ports.MangaRe
 	manga.Normalize()
 
 	// 保存先ディレクトリの決定
-	targetDir := asset.ResolveBaseURL(outputPath)
+	targetDir := resolveBaseURL(outputPath)
 
 	// ベースとなる出力パスを解決します（GCS/ローカルを判別し、ベースファイル名を結合）
-	basePath, err := asset.ResolveOutputPath(targetDir, asset.DefaultPanelImagePath())
+	basePath, err := resolveOutputPath(targetDir, defaultKeyframePath())
 	if err != nil {
 		return nil, fmt.Errorf("出力パスの解決に失敗しました: %w", err)
 	}
@@ -86,7 +85,7 @@ func (r *CutKeyframeRunner) RunAndSave(ctx context.Context, manga *ports.MangaRe
 	}
 	for i, image := range images {
 		// 連番を付けて保存
-		panelPath, err := asset.GenerateIndexedPath(basePath, i+1)
+		panelPath, err := generateIndexedPath(basePath, i+1)
 		if err != nil {
 			return nil, fmt.Errorf("パネル %d の出力パス生成に失敗しました: %w", i+1, err)
 		}
@@ -106,9 +105,9 @@ func (r *CutKeyframeRunner) RunAndSave(ctx context.Context, manga *ports.MangaRe
 		manga.Panels[i].ReferenceURL = panelPath
 	}
 
-	plotPath, err := asset.ResolveOutputPath(targetDir, asset.DefaultVideoRecipeJSON)
+	plotPath, err := resolveOutputPath(targetDir, defaultVideoMetaJSON)
 	if err != nil {
-		return nil, fmt.Errorf("プロットファイル出力パスの解決に失敗しました: %w", err)
+		return nil, fmt.Errorf("動画メタデータ出力パスの解決に失敗しました: %w", err)
 	}
 
 	// JSONにシリアライズして保存
@@ -122,7 +121,7 @@ func (r *CutKeyframeRunner) RunAndSave(ctx context.Context, manga *ports.MangaRe
 		remoteio.WithContentType("application/json"),
 		remoteio.WithCacheControl(defaultCacheControl),
 	); err != nil {
-		return nil, fmt.Errorf("プロットファイルの保存に失敗しました: %w", err)
+		return nil, fmt.Errorf("動画メタデータの保存に失敗しました: %w", err)
 	}
 
 	return manga, nil

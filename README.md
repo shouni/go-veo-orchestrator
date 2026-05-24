@@ -33,7 +33,7 @@
 | **1. Designing** | `DesignRunner` | キャラクターのDNA（Seed/ビジュアル特徴）を固定し、一貫性の基盤となるデザインシートを定義。 |
 | **2. Scripting** | `ScriptRunner` | 非構造化ドキュメントから、キャラ設定・音楽展開（BGM拍子/Audio Cue）・カット割り・カメラワーク・推定秒数を含む**JSON形式のMusic & Video Recipe**を生成。 |
 | **3. Cut Keyframe Gen** | `CutImageRunner` | 各カットのベースとなる高精度な「静止画（キーフレーム）」を、キャラ固有Seedを用いて個別に作画。 |
-| **4. Video Orchestrate** | `VideoTimelineRunner` | キーフレーム画像、動きのプロンプト、分割された音源(mp3)、前カットの動画IDをVeoへパイプラインし、音楽に同期した連続するシーンを生成。 |
+| **4. Video Gen** | `VideoTimelineRunner` + `VideoRunner` | Cut Keyframe Gen でできた画像、Scripting の動きプロンプト、前カットの `last_generated_video`、必要に応じた音源mp3を Veo API へ順次流し込み、Video-to-Video の文脈を維持した動画カットを生成。 |
 | **5. Transcoding & Plot** | `VideoPublishRunner` | 生成された複数のカット動画（mp4）を統合・構造化し、最終動画アセットおよび音楽・映像同期用のメタデータJSONとしてパブリッシュ。 |
 
 ---
@@ -118,11 +118,9 @@
 ```text
 go-veo-orchestrator/
 ├── workflow/    # 【統合管理】各工程を組み合わせ、Workflows インターフェースを実装。
-├── runner/      # 【実行実体】Design/Script/CutGen/VideoGen/Publish の具体的なプロセス実装。
-├── layout/      # 【Timeline生成戦略】Music Recipeに基づく秒数・拍子計算、カット連携、Video-to-Videoの数珠繋ぎコンテキスト計算。
-├── parser/      # 【解析】入力プロットやMusic Recipeのマルチモーダルレスポンスを構造化データへ変換。
-├── ports/       # 【契約・定義】Interface（VideoRunner等）、共通モデル、動作設定(Config)。全ての起点。
-└── asset/       # 【アセット管理】大容量動画(mp4)・音声(mp3)・画像アセットのパス解決およびURIマッピング。
+├── runner/      # 【実行実体】Design/Script/CutKeyframe/VideoTimeline/Publish の具体的なプロセス実装。
+├── layout/      # 【キーフレーム生成戦略】Music Recipe のカット列に基づくキャラクター一貫性つき静止画生成。
+└── ports/       # 【契約・定義】Interface（VideoRunner等）、共通モデル、動作設定(Config)。全ての起点。
 
 ```
 

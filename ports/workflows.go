@@ -11,12 +11,11 @@ type Workflows struct {
 	Design      DesignRunner
 	Script      ScriptRunner
 	CutKeyframe CutKeyframeRunner
-	SceneImage  SceneImageRunnerContract
+	Video       VideoTimelineRunner
 	Publish     VideoPublishRunner
 
 	// 旧 API 互換フィールド。
 	PanelImage PanelImageRunner
-	PageImage  PageImageRunner
 }
 
 // DesignRunner は、キャラクターIDに基づいてデザインシートを生成し、Seed値を特定する責務を持ちます。
@@ -35,12 +34,6 @@ type CutKeyframeRunner interface {
 	RunAndSave(ctx context.Context, manga *MangaResponse, outputPath string) (*MangaResponse, error)
 }
 
-// SceneImageRunnerContract は、解析済みの動画データから統合シーン画像を生成する責務を持ちます。
-type SceneImageRunnerContract interface {
-	Run(ctx context.Context, manga *MangaResponse) ([]*imagePorts.ImageResponse, error)
-	RunAndSave(ctx context.Context, manga *MangaResponse, outputPath string) ([]string, error)
-}
-
 // VideoPublishRunner は、動画レシピと生成済みカットのメタデータを JSON として出力する責務を持ちます。
 type VideoPublishRunner interface {
 	Run(ctx context.Context, recipe *VideoRecipe, outputDir string) (*PublishResult, error)
@@ -49,9 +42,6 @@ type VideoPublishRunner interface {
 
 // PanelImageRunner は旧 API 互換のエイリアスです。
 type PanelImageRunner = CutKeyframeRunner
-
-// PageImageRunner は旧 API 互換のエイリアスです。
-type PageImageRunner = SceneImageRunnerContract
 
 // PublishRunner は旧 API 互換のエイリアスです。
 type PublishRunner = VideoPublishRunner

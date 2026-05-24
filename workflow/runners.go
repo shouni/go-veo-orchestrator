@@ -22,23 +22,19 @@ func (m *manager) buildAllRunners() (*ports.Workflows, error) {
 	if err != nil {
 		return nil, fmt.Errorf("PanelImageRunner のビルドに失敗しました: %w", err)
 	}
-	pagR, err := m.buildPageImageRunner()
-	if err != nil {
-		return nil, fmt.Errorf("PageImageRunner のビルドに失敗しました: %w", err)
-	}
 	pubR, err := m.buildPublishRunner()
 	if err != nil {
 		return nil, fmt.Errorf("PublishRunner のビルドに失敗しました: %w", err)
 	}
+	videoR := m.buildVideoTimelineRunner(panR, pubR)
 
 	return &ports.Workflows{
 		Design:      dr,
 		Script:      sr,
 		CutKeyframe: panR,
-		SceneImage:  pagR,
+		Video:       videoR,
 		Publish:     pubR,
 		PanelImage:  panR,
-		PageImage:   pagR,
 	}, nil
 }
 
@@ -74,22 +70,18 @@ func (m *manager) buildPanelImageRunner() (*runner.MangaPanelRunner, error) {
 	return runner.NewMangaPanelRunner(panelsGen, m.writer), nil
 }
 
-// buildPageImageRunner は、Markdown からのページ画像一括生成を担当する Runner を作成します。
-func (m *manager) buildPageImageRunner() (*runner.MangaPageRunner, error) {
-	quality := m.layoutManager.Quality
-	pagesGen := layout.NewPageGenerator(
-		quality.mangaComposer,
-		quality.imageGenerator,
-		m.promptDeps.ImagePrompt,
-		quality.model,
-		layout.WithPageRateInterval(m.cfg.RateInterval),
-		layout.WithMaxPanelsPerPage(m.cfg.MaxPanelsPerPage),
-	)
-
-	return runner.NewMangaPageRunner(pagesGen, m.writer), nil
-}
-
 // buildPublishRunner は、動画メタデータのパブリッシュを担当する Runner を作成します。
 func (m *manager) buildPublishRunner() (*runner.VideoPublisherRunner, error) {
 	return runner.NewVideoPublisherRunner(m.writer), nil
+}
+
+// buildVideoTimelineRunner は、キーフレーム生成から Veo 生成までをつなぐ Runner を作成します。
+func (m *manager) buildVideoTimelineRunner(
+	keyframeRunner ports.CutKeyframeRunner,
+	publisher ports.VideoPublishRunner,
+) ports.VideoTimelineRunner {
+	if m.videoRunner == nil {
+		return nil
+	}
+	return runner.NewVideoTimelineRunner(keyframeRunner, m.videoRunner, publisher)
 }
