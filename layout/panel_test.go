@@ -28,6 +28,12 @@ func (m *mockPanelImageGenerator) GenerateSingleImage(ctx context.Context, req i
 	return &imagePorts.ImageResponse{Data: []byte("fake-panel-image"), UsedSeed: s}, nil
 }
 
+type mockImagePrompt struct{}
+
+func (m *mockImagePrompt) BuildPanel(panel ports.Panel, char *ports.Character) (string, string) {
+	return panel.VisualAnchor, "system"
+}
+
 // --- Tests ---
 
 func TestPanelGenerator_Execute(t *testing.T) {
@@ -56,7 +62,7 @@ func TestPanelGenerator_Execute(t *testing.T) {
 	composer, _ := NewMangaComposer(assetMgr, backend, cm)
 
 	genMock := &mockPanelImageGenerator{}
-	pbMock := &mockImagePrompt{} // page_test.go で定義したものを使用
+	pbMock := &mockImagePrompt{}
 
 	// 2. Generator の作成 (高速化設定)
 	generator := NewPanelGenerator(

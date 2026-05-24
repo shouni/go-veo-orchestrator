@@ -26,6 +26,7 @@ type ManagerArgs struct {
 	Writer          remoteio.Writer
 	AIClient        gemini.GenerativeModel
 	AIClientQuality gemini.GenerativeModel
+	VideoRunner     ports.VideoRunner
 	PromptDeps      *PromptDeps
 }
 
@@ -50,6 +51,7 @@ type manager struct {
 	writer          remoteio.Writer
 	aiClient        gemini.GenerativeModel
 	aiClientQuality gemini.GenerativeModel
+	videoRunner     ports.VideoRunner
 	layoutManager   layoutManager
 	promptDeps      *PromptDeps
 }
@@ -75,6 +77,7 @@ func New(args ManagerArgs) (*ports.Workflows, error) {
 		writer:          args.Writer,
 		aiClient:        args.AIClient,
 		aiClientQuality: aiClientQuality,
+		videoRunner:     args.VideoRunner,
 		promptDeps:      args.PromptDeps,
 	}
 

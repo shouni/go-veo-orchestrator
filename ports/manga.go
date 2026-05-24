@@ -52,16 +52,18 @@ type Lyrics struct {
 // Cut は動画内の1カットを表します。
 // audio_cue は BGM 上の展開、visual_anchor は映像上の固定指示です。
 type Cut struct {
-	CutIndex     int     `json:"cut_index"`
-	DurationSec  float64 `json:"duration_sec"`
-	AudioCue     string  `json:"audio_cue"`
-	VisualAnchor string  `json:"visual_anchor"`
-	CharacterID  string  `json:"character_id"`
-	Dialogue     string  `json:"dialogue,omitempty"`
-	ReferenceURL string  `json:"reference_url,omitempty"` // キーフレーム画像などの参照。
-	VideoURL     string  `json:"video_url,omitempty"`
-	StartSec     float64 `json:"start_sec,omitempty"`
-	EndSec       float64 `json:"end_sec,omitempty"`
+	CutIndex       int     `json:"cut_index"`
+	DurationSec    float64 `json:"duration_sec"`
+	AudioCue       string  `json:"audio_cue"`
+	AudioReference string  `json:"audio_reference,omitempty"`
+	VisualAnchor   string  `json:"visual_anchor"`
+	CharacterID    string  `json:"character_id"`
+	Dialogue       string  `json:"dialogue,omitempty"`
+	ReferenceURL   string  `json:"reference_url,omitempty"` // キーフレーム画像などの参照。
+	VideoURL       string  `json:"video_url,omitempty"`
+	VideoID        string  `json:"video_id,omitempty"`
+	StartSec       float64 `json:"start_sec,omitempty"`
+	EndSec         float64 `json:"end_sec,omitempty"`
 
 	// 旧 manga JSON 互換フィールド。
 	Page      int    `json:"page,omitempty"`

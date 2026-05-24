@@ -8,7 +8,6 @@ import (
 	"path"
 
 	"github.com/shouni/go-remote-io/remoteio"
-	"github.com/shouni/go-veo-orchestrator/asset"
 	"github.com/shouni/go-veo-orchestrator/ports"
 )
 
@@ -37,7 +36,7 @@ func (pr *VideoPublisherRunner) Run(ctx context.Context, recipe *ports.VideoReci
 		return nil, err
 	}
 
-	metadataPath, err := asset.ResolveOutputPath(outputDir, asset.DefaultVideoRecipeJSON)
+	metadataPath, err := resolveOutputPath(outputDir, defaultVideoMetaJSON)
 	if err != nil {
 		return nil, fmt.Errorf("メタデータ出力パスの解決に失敗しました: %w", err)
 	}
@@ -54,7 +53,7 @@ func (pr *VideoPublisherRunner) Run(ctx context.Context, recipe *ports.VideoReci
 		if cut.ReferenceURL == "" {
 			continue
 		}
-		imagePaths = append(imagePaths, path.Join(asset.DefaultImageDir, path.Base(cut.ReferenceURL)))
+		imagePaths = append(imagePaths, path.Join(defaultImageDir, path.Base(cut.ReferenceURL)))
 	}
 
 	return &ports.PublishResult{
@@ -75,21 +74,3 @@ func (pr *VideoPublisherRunner) BuildMetadata(recipe *ports.VideoRecipe) ([]byte
 	}
 	return data, nil
 }
-
-// BuildMarkdown は旧 API 互換の簡易表現です。新規コードでは BuildMetadata を使用してください。
-func (pr *VideoPublisherRunner) BuildMarkdown(recipe *ports.MangaResponse) string {
-	if recipe == nil {
-		return ""
-	}
-	recipe.Normalize()
-	return fmt.Sprintf("# %s\n\ncuts: %d\n", recipe.ProjectTitle, len(recipe.Cuts))
-}
-
-// NewMangaPublisherRunner は旧 API 互換のコンストラクタです。
-// publisher パッケージは動画用途では使わないため、引数は無視します。
-func NewMangaPublisherRunner(_ any) *VideoPublisherRunner {
-	return NewVideoPublisherRunner(nil)
-}
-
-// MangaPublisherRunner は旧 API 互換のエイリアスです。
-type MangaPublisherRunner = VideoPublisherRunner

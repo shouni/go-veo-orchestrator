@@ -10,7 +10,6 @@ import (
 
 	imagePorts "github.com/shouni/gemini-image-kit/ports"
 	"github.com/shouni/go-remote-io/remoteio"
-	"github.com/shouni/go-veo-orchestrator/asset"
 	"github.com/shouni/go-veo-orchestrator/layout"
 )
 
@@ -112,8 +111,8 @@ func (dr *MangaDesignRunner) saveResponseImage(ctx context.Context, resp imagePo
 	sanitizedCharTags := fileNameSanitizer.Replace(charTags)
 
 	extension := getPreferredExtension(resp.MimeType)
-	relativePath := path.Join(asset.CharacterDesignDir, fmt.Sprintf("design_%s%s", sanitizedCharTags, extension))
-	finalPath, err := asset.ResolveOutputPath(outputDir, relativePath)
+	relativePath := path.Join(characterDesignDir, fmt.Sprintf("design_%s%s", sanitizedCharTags, extension))
+	finalPath, err := resolveOutputPath(outputDir, relativePath)
 	if err != nil {
 		return "", fmt.Errorf("画像保存パスの生成に失敗しました (baseDir: %s, relativePath: %s): %w", outputDir, relativePath, err)
 	}
