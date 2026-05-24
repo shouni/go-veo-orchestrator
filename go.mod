@@ -3,7 +3,7 @@ module github.com/shouni/go-veo-orchestrator
 go 1.26
 
 require (
-	github.com/patrickmn/go-cache v2.1.0+incompatible
+	github.com/jellydator/ttlcache/v3 v3.4.0
 	github.com/shouni/gemini-image-kit v1.7.2
 	github.com/shouni/go-gemini-client v1.3.1
 	github.com/shouni/go-http-kit v1.4.2
