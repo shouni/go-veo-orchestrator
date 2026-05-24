@@ -7,7 +7,6 @@ require (
 	github.com/shouni/gemini-image-kit v1.7.2
 	github.com/shouni/go-gemini-client v1.3.1
 	github.com/shouni/go-http-kit v1.4.2
-	github.com/shouni/go-prompt-kit v1.0.4
 	github.com/shouni/go-remote-io v1.5.2
 	github.com/shouni/go-utils v1.0.20
 	golang.org/x/sync v0.20.0
@@ -55,7 +54,6 @@ require (
 	github.com/planetscale/vtprotobuf v0.6.1-0.20240319094008-0393e58bdf10 // indirect
 	github.com/shouni/netarmor v1.0.3 // indirect
 	github.com/spiffe/go-spiffe/v2 v2.6.0 // indirect
-	github.com/yuin/goldmark v1.8.2 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/contrib/detectors/gcp v1.42.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.63.0 // indirect
