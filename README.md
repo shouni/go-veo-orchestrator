@@ -40,9 +40,76 @@
 
 ## 🔌 Adapter Boundary
 
-このリポジトリは Veo に渡すための **ドメインモデル、キーフレーム生成、リクエスト構築、Video-to-Video 連鎖、メタデータ保存** を担当します。
+このリポジトリは Veo API クライアントではなく、Veo に渡すための **ドメインモデル、キーフレーム生成、リクエスト構築、Video-to-Video 連鎖、メタデータ保存** を担当する orchestration ライブラリです。
 
-Veo API への実通信は `ports.VideoRunner` の実装として外から差し込みます。adapter 実装では `VideoGenerationRequest.ImageReference` を優先し、空の場合だけ `InputImage` をアップロードして参照 URI を作る想定です。
+Veo API への実通信は `ports.VideoRunner` の実装として、利用側アプリケーションまたは別パッケージから差し込みます。このリポジトリ内には本番用 Veo adapter は含めず、実行環境ごとの差分を adapter 側に閉じ込めます。
+
+`VideoRunner` 実装が担う責務は以下です。
+
+* Google Cloud / Vertex AI / Gemini API などの認証
+* `ImageReference` / `AudioReference` の解決
+* `InputImage` / `InputAudio` を使う場合のアップロードと参照 URI 化
+* Veo API への動画生成リクエスト送信
+* 長時間 operation のポーリング、タイムアウト、リトライ
+* 生成動画の保存先管理
+* 次カットへ引き継ぐための `VideoResponse.VideoID` 返却
+* 参照可能な `VideoResponse.CloudURL` 返却
+
+adapter 実装では `VideoGenerationRequest.ImageReference` を優先し、空の場合だけ `InputImage` をアップロードして参照 URI を作る想定です。`AudioReference` も同様に、参照 URI がある場合はそれを優先し、必要に応じて `InputAudio` をアップロードします。
+
+`VideoRunner` を指定しない場合、`workflow.New` が返す `Workflows.Video` は `nil` になります。Design / Script / CutKeyframe / Publish だけを使う構成ではそのまま利用できますが、動画生成まで実行する場合は `ManagerArgs.VideoRunner` に実装を渡してください。
+
+```go
+type VeoRunner struct {
+	// client, bucket, model, location など、実行環境に必要な依存を保持します。
+}
+
+func (r *VeoRunner) Run(ctx context.Context, req ports.VideoGenerationRequest) (*ports.VideoResponse, error) {
+	// 1. req.ImageReference / req.AudioReference を優先して参照を解決
+	// 2. 必要なら req.InputImage / req.InputAudio をアップロード
+	// 3. req.Prompt, req.PreviousVideoID, req.Seed, req.DurationSec を Veo API に渡す
+	// 4. operation を poll して完了を待つ
+	// 5. CloudURL と VideoID を返す
+	return &ports.VideoResponse{
+		CloudURL:    "gs://example-bucket/videos/cut_001.mp4",
+		VideoID:     "veo-video-id",
+		CutIndex:    req.CutIndex,
+		DurationSec: req.DurationSec,
+		MimeType:    "video/mp4",
+	}, nil
+}
+
+workflows, err := workflow.New(workflow.ManagerArgs{
+	Config:      cfg,
+	HTTPClient:  httpClient,
+	Reader:      reader,
+	Writer:      writer,
+	AIClient:    geminiModel,
+	VideoRunner: &VeoRunner{},
+	PromptDeps:  promptDeps,
+})
+if err != nil {
+	return err
+}
+
+result, err := workflows.Video.RunAndSave(ctx, recipe, "video_music_meta.json")
+```
+
+`VideoGenerationRequest` の主なフィールドは以下の契約で使われます。
+
+| フィールド | adapter 側の扱い |
+| --- | --- |
+| `Prompt` | Veo に渡す最終プロンプト。カット内容、カメラワーク、音楽同期指示を含みます。 |
+| `ImageReference` | 既に参照可能なキーフレーム画像 URI。存在する場合は `InputImage` より優先します。 |
+| `InputImage` | `ImageReference` が空の場合に adapter 側でアップロードして使う画像バイト列です。 |
+| `AudioReference` | 既に参照可能な音声セグメント URI。 |
+| `InputAudio` | `AudioReference` が空の場合に adapter 側でアップロードして使う音声バイト列です。 |
+| `PreviousVideoID` | 前カットの文脈を引き継ぐための ID。空の場合はチェーンなしで生成します。 |
+| `Seed` | キャラクター・カットの一貫性を保つための seed です。 |
+| `CutIndex` | レスポンスやエラー表示で使うカット番号です。 |
+| `DurationSec` | カットの目標秒数です。 |
+
+`VideoResponse.VideoID` が空の場合、そのカットの生成結果は保存できますが、次カットへの `PreviousVideoID` 連鎖は更新されません。連続カットの一貫性を重視する adapter では、可能な限り Veo 側の動画 ID を返してください。
 
 ---
 
