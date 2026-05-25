@@ -10,7 +10,7 @@ import (
 
 	imagePorts "github.com/shouni/gemini-image-kit/ports"
 	"github.com/shouni/go-remote-io/remoteio"
-	"github.com/shouni/go-veo-orchestrator/layout"
+	"github.com/shouni/go-veo-orchestrator/keyframe"
 )
 
 const (
@@ -37,18 +37,18 @@ type DesignImageGenerator interface {
 	GenerateFusedImage(ctx context.Context, req imagePorts.ImageFusionRequest) (*imagePorts.ImageResponse, error)
 }
 
-// MangaDesignRunner はキャラクターデザインシート生成を実行するランナーです。
-type MangaDesignRunner struct {
-	composer    *layout.MangaComposer
+// DesignRunner はキャラクターデザインシート生成を実行するランナーです。
+type DesignRunner struct {
+	composer    *keyframe.VideoComposer
 	generator   DesignImageGenerator
 	writer      remoteio.Writer
 	model       string
 	styleSuffix string
 }
 
-// NewMangaDesignRunner は依存関係を注入して初期化します。
-func NewMangaDesignRunner(composer *layout.MangaComposer, generator DesignImageGenerator, writer remoteio.Writer, model, styleSuffix string) *MangaDesignRunner {
-	return &MangaDesignRunner{
+// NewDesignRunner は依存関係を注入して初期化します。
+func NewDesignRunner(composer *keyframe.VideoComposer, generator DesignImageGenerator, writer remoteio.Writer, model, styleSuffix string) *DesignRunner {
+	return &DesignRunner{
 		composer:    composer,
 		generator:   generator,
 		writer:      writer,
@@ -58,7 +58,7 @@ func NewMangaDesignRunner(composer *layout.MangaComposer, generator DesignImageG
 }
 
 // Run は、指定されたキャラクターIDのデザインシートを生成し、指定されたディレクトリに保存します。
-func (dr *MangaDesignRunner) Run(ctx context.Context, charIDs []string, seed int64, outputDir string) (string, int64, error) {
+func (dr *DesignRunner) Run(ctx context.Context, charIDs []string, seed int64, outputDir string) (string, int64, error) {
 	// 1. 複数キャラの情報を集約
 	imageURIs, descriptions, err := dr.collectCharacterURIs(charIDs)
 	if err != nil {
@@ -77,19 +77,19 @@ func (dr *MangaDesignRunner) Run(ctx context.Context, charIDs []string, seed int
 	}
 
 	// 3. 生成リクエスト
-	pageReq := imagePorts.ImageFusionRequest{
+	fusionReq := imagePorts.ImageFusionRequest{
 		GenerationOptions: imagePorts.GenerationOptions{
 			Model:       dr.model,
 			Prompt:      designPrompt,
-			AspectRatio: layout.DesignAspectRatio,
-			ImageSize:   layout.ImageSize2K,
+			AspectRatio: keyframe.DesignAspectRatio,
+			ImageSize:   keyframe.ImageSize2K,
 			Seed:        ptrInt64(seed),
 		},
 		Images: imageURIs,
 	}
 
 	// 4. 生成実行
-	resp, err := dr.generator.GenerateFusedImage(ctx, pageReq)
+	resp, err := dr.generator.GenerateFusedImage(ctx, fusionReq)
 	if err != nil {
 		slog.Error("Design generation failed", "error", err)
 		return "", 0, fmt.Errorf("画像の生成に失敗しました: %w", err)
@@ -106,7 +106,7 @@ func (dr *MangaDesignRunner) Run(ctx context.Context, charIDs []string, seed int
 }
 
 // saveResponseImage は、生成された画像データを指定されたディレクトリに保存します。
-func (dr *MangaDesignRunner) saveResponseImage(ctx context.Context, resp imagePorts.ImageResponse, charIDs []string, outputDir string) (string, error) {
+func (dr *DesignRunner) saveResponseImage(ctx context.Context, resp imagePorts.ImageResponse, charIDs []string, outputDir string) (string, error) {
 	charTags := strings.Join(charIDs, "_")
 	sanitizedCharTags := fileNameSanitizer.Replace(charTags)
 
@@ -128,7 +128,7 @@ func (dr *MangaDesignRunner) saveResponseImage(ctx context.Context, resp imagePo
 }
 
 // buildDesignPrompt はキャラクターデザインシート生成用の詳細なプロンプト文字列を構築します。
-func (dr *MangaDesignRunner) buildDesignPrompt(descriptions []string) string {
+func (dr *DesignRunner) buildDesignPrompt(descriptions []string) string {
 	numChars := len(descriptions)
 	if numChars == 0 {
 		slog.Warn("buildDesignPrompt called with empty descriptions")
@@ -159,7 +159,7 @@ func (dr *MangaDesignRunner) buildDesignPrompt(descriptions []string) string {
 }
 
 // collectCharacterURIs はキャラクター情報を収集し、ImageURIスライスと説明文を返します。
-func (dr *MangaDesignRunner) collectCharacterURIs(ids []string) ([]imagePorts.ImageURI, []string, error) {
+func (dr *DesignRunner) collectCharacterURIs(ids []string) ([]imagePorts.ImageURI, []string, error) {
 	var uris []imagePorts.ImageURI
 	var descriptions []string
 	var missingIDs []string

@@ -3,9 +3,7 @@ package runner
 import (
 	"context"
 	"fmt"
-	"strings"
 
-	imagePorts "github.com/shouni/gemini-image-kit/ports"
 	"github.com/shouni/go-veo-orchestrator/ports"
 )
 
@@ -14,6 +12,7 @@ type VideoTimelineRunner struct {
 	keyframeRunner ports.CutKeyframeRunner
 	videoRunner    ports.VideoRunner
 	publisher      ports.VideoPublishRunner
+	requestBuilder VideoRequestBuilder
 }
 
 // NewVideoTimelineRunner は動画生成オーケストレーターを初期化します。
@@ -26,6 +25,7 @@ func NewVideoTimelineRunner(
 		keyframeRunner: keyframeRunner,
 		videoRunner:    videoRunner,
 		publisher:      publisher,
+		requestBuilder: NewVideoRequestBuilder(),
 	}
 }
 
@@ -51,14 +51,26 @@ func (r *VideoTimelineRunner) Run(ctx context.Context, recipe *ports.VideoRecipe
 	}
 
 	responses := make([]*ports.VideoResponse, 0, len(recipe.Cuts))
-	lastVideoID := previousVideoIDFromRecipe(recipe)
+	lastVideoID := ""
 
 	for i := range recipe.Cuts {
 		cut := &recipe.Cuts[i]
-		req := buildVideoGenerationRequest(recipe, *cut, keyframes[i], lastVideoID)
+		if cut.IsGenerated() {
+			responses = append(responses, &ports.VideoResponse{
+				CloudURL:    cut.VideoURL,
+				VideoID:     cut.VideoID,
+				CutIndex:    cut.CutIndex,
+				DurationSec: cut.DurationSec,
+			})
+			lastVideoID = cut.VideoID
+			continue
+		}
+
+		req := r.requestBuilder.Build(recipe, *cut, keyframes[i], lastVideoID)
 
 		res, err := r.videoRunner.Run(ctx, req)
 		if err != nil {
+			cut.Status = ports.CutStatusFailed
 			return nil, fmt.Errorf("cut %d の動画生成に失敗しました: %w", cut.CutIndex, err)
 		}
 		if res == nil {
@@ -70,13 +82,13 @@ func (r *VideoTimelineRunner) Run(ctx context.Context, recipe *ports.VideoRecipe
 
 		cut.VideoURL = res.CloudURL
 		cut.VideoID = res.VideoID
+		cut.Status = ports.CutStatusGenerated
 		responses = append(responses, res)
 		if res.VideoID != "" {
 			lastVideoID = res.VideoID
 		}
 	}
 
-	recipe.Panels = recipe.Cuts
 	return responses, nil
 }
 
@@ -100,62 +112,4 @@ func (r *VideoTimelineRunner) RunAndSave(ctx context.Context, recipe *ports.Vide
 		Videos:   videos,
 		Metadata: metadata,
 	}, nil
-}
-
-func buildVideoGenerationRequest(recipe *ports.VideoRecipe, cut ports.Cut, keyframe *imagePorts.ImageResponse, lastVideoID string) ports.VideoGenerationRequest {
-	var imageData []byte
-	var seed int64
-	if keyframe != nil {
-		imageData = keyframe.Data
-		seed = keyframe.UsedSeed
-	}
-	if seed == 0 {
-		seed = recipe.Seed
-	}
-
-	return ports.VideoGenerationRequest{
-		Prompt:          buildVideoPrompt(recipe, cut),
-		ImageReference:  cut.ReferenceURL,
-		AudioReference:  cut.AudioReference,
-		InputImage:      imageData,
-		PreviousVideoID: lastVideoID,
-		Seed:            seed,
-		CutIndex:        cut.CutIndex,
-		DurationSec:     cut.DurationSec,
-	}
-}
-
-func buildVideoPrompt(recipe *ports.VideoRecipe, cut ports.Cut) string {
-	parts := []string{
-		strings.TrimSpace(cut.VisualAnchor),
-	}
-	if cut.AudioCue != "" {
-		parts = append(parts, fmt.Sprintf("Synchronize motion and camera timing with audio cue: %s", cut.AudioCue))
-	}
-	if recipe.MusicRecipe.Style != "" {
-		parts = append(parts, "Music style: "+recipe.MusicRecipe.Style)
-	}
-	if cut.StartSec != 0 || cut.EndSec != 0 {
-		parts = append(parts, fmt.Sprintf("Timeline: %.2fs to %.2fs.", cut.StartSec, cut.EndSec))
-	}
-
-	nonEmpty := parts[:0]
-	for _, part := range parts {
-		if strings.TrimSpace(part) != "" {
-			nonEmpty = append(nonEmpty, part)
-		}
-	}
-	return strings.Join(nonEmpty, "\n")
-}
-
-func previousVideoIDFromRecipe(recipe *ports.VideoRecipe) string {
-	if recipe == nil {
-		return ""
-	}
-	for i := len(recipe.Cuts) - 1; i >= 0; i-- {
-		if recipe.Cuts[i].VideoID != "" {
-			return recipe.Cuts[i].VideoID
-		}
-	}
-	return ""
 }

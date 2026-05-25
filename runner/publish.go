@@ -50,10 +50,10 @@ func (pr *VideoPublisherRunner) Run(ctx context.Context, recipe *ports.VideoReci
 
 	imagePaths := make([]string, 0, len(recipe.Cuts))
 	for _, cut := range recipe.Cuts {
-		if cut.ReferenceURL == "" {
+		if cut.KeyframeReference == "" {
 			continue
 		}
-		imagePaths = append(imagePaths, path.Join(defaultImageDir, path.Base(cut.ReferenceURL)))
+		imagePaths = append(imagePaths, path.Join(defaultImageDir, path.Base(cut.KeyframeReference)))
 	}
 
 	return &ports.PublishResult{

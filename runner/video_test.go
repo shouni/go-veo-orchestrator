@@ -14,11 +14,11 @@ type mockCutKeyframeRunner struct {
 	images []*imagePorts.ImageResponse
 }
 
-func (m *mockCutKeyframeRunner) Run(ctx context.Context, recipe *ports.MangaResponse) ([]*imagePorts.ImageResponse, error) {
+func (m *mockCutKeyframeRunner) Run(ctx context.Context, recipe *ports.VideoRecipe) ([]*imagePorts.ImageResponse, error) {
 	return m.images, nil
 }
 
-func (m *mockCutKeyframeRunner) RunAndSave(ctx context.Context, recipe *ports.MangaResponse, outputPath string) (*ports.MangaResponse, error) {
+func (m *mockCutKeyframeRunner) RunAndSave(ctx context.Context, recipe *ports.VideoRecipe, outputPath string) (*ports.VideoRecipe, error) {
 	return recipe, nil
 }
 
@@ -42,19 +42,19 @@ func TestVideoTimelineRunner_RunChainsPreviousVideoID(t *testing.T) {
 		MusicRecipe:  ports.MusicRecipe{Style: "symphonic rock"},
 		Cuts: []ports.Cut{
 			{
-				CutIndex:       1,
-				DurationSec:    5,
-				AudioCue:       "intro pad",
-				VisualAnchor:   "slow dolly in",
-				ReferenceURL:   "gs://images/cut_1.png",
-				AudioReference: "gs://audio/seg_1.mp3",
+				CutIndex:          1,
+				DurationSec:       5,
+				AudioCue:          "intro pad",
+				VisualAnchor:      "slow dolly in",
+				KeyframeReference: "gs://images/cut_1.png",
+				AudioReference:    "gs://audio/seg_1.mp3",
 			},
 			{
-				CutIndex:     2,
-				DurationSec:  5,
-				AudioCue:     "heavy chorus",
-				VisualAnchor: "fast orbit camera",
-				ReferenceURL: "gs://images/cut_2.png",
+				CutIndex:          2,
+				DurationSec:       5,
+				AudioCue:          "heavy chorus",
+				VisualAnchor:      "fast orbit camera",
+				KeyframeReference: "gs://images/cut_2.png",
 			},
 		},
 	}
@@ -106,7 +106,7 @@ func TestVideoTimelineRunner_RunChainsPreviousVideoID(t *testing.T) {
 	}
 }
 
-func TestVideoTimelineRunner_RunUsesExistingRecipeVideoIDAsPreviousContext(t *testing.T) {
+func TestVideoTimelineRunner_RunSkipsGeneratedCutAndChainsItsVideoID(t *testing.T) {
 	ctx := context.Background()
 	recipe := &ports.VideoRecipe{
 		ProjectTitle: "resume",
@@ -116,12 +116,20 @@ func TestVideoTimelineRunner_RunUsesExistingRecipeVideoIDAsPreviousContext(t *te
 				DurationSec:  5,
 				VisualAnchor: "resume from existing context",
 				VideoID:      "existing-video-1",
+				VideoURL:     "gs://videos/cut_1.mp4",
+				Status:       ports.CutStatusGenerated,
+			},
+			{
+				CutIndex:     2,
+				DurationSec:  5,
+				VisualAnchor: "continue from existing context",
 			},
 		},
 	}
 	keyframes := &mockCutKeyframeRunner{
 		images: []*imagePorts.ImageResponse{
 			{Data: []byte("image-1"), MimeType: "image/png", UsedSeed: 101},
+			{Data: []byte("image-2"), MimeType: "image/png", UsedSeed: 102},
 		},
 	}
 	video := &mockVideoRunner{}
@@ -132,9 +140,9 @@ func TestVideoTimelineRunner_RunUsesExistingRecipeVideoIDAsPreviousContext(t *te
 		t.Fatalf("Run failed: %v", err)
 	}
 	if len(video.requests) != 1 {
-		t.Fatalf("Expected 1 video request, got %d", len(video.requests))
+		t.Fatalf("Expected only pending cut to be requested, got %d", len(video.requests))
 	}
 	if video.requests[0].PreviousVideoID != "existing-video-1" {
-		t.Errorf("Expected existing recipe video ID as previous context, got %q", video.requests[0].PreviousVideoID)
+		t.Errorf("Expected generated cut video ID as previous context, got %q", video.requests[0].PreviousVideoID)
 	}
 }

@@ -1,28 +1,28 @@
 # 🎬 Go Veo Orchestrator
 
-## 🚀 概要 (About) - キャラクターDNA維持・マルチモーダル動画生成Orchestrator
+## 🚀 概要 (About) - Music Recipe Driven Veo Orchestrator
 
-**Go Veo Orchestrator** は、**Music Recipe（音楽レシピ / 楽曲構成書）** を解析し、Googleの次世代動画生成AIである **Veo (Vertex AI / Gemini API)** を用いて、**キャラクターのDNA（一貫性）を完全に維持した楽曲同期型動画作品**を自動生成するための高度なバックエンドパイプラインです。
+**Go Veo Orchestrator** は、**Music Recipe（音楽レシピ / 楽曲構成書）** から動画カット列を構造化し、Google の動画生成 AI **Veo (Vertex AI / Gemini API)** へ渡すためのバックエンドオーケストレーターです。
 
-[Gemini Image Kit](https://github.com/shouni/gemini-image-kit) から派生した静止画生成コア技術を応用し、「プロンプト（テキスト）」「高精度静止画（キーフレーム）」「音源(mp3/wav)」「直前の動画（コンテキスト）」の4大要素（**マルチモーダル・クアッド・インプット**）を、BGMの拍子や時間軸（Timeline）に沿って統合管理します。
+[Gemini Image Kit](https://github.com/shouni/gemini-image-kit) を使ってカットごとのキーフレームを生成し、`VideoRunner` adapter を通じて Veo に **Prompt / Keyframe / Audio / PreviousVideoID / Seed** を渡します。Veo API の具体実装は `ports.VideoRunner` として差し替える設計です。
 
-独自の **Video-to-Video 連鎖（数珠繋ぎ）生成アルゴリズム** により、シーンや楽曲の展開を跨いでもキャラクターの服装や容姿が崩れない、音ハメ精度の高い商業クオリティのアニメーション・動画パイプラインの構築を実現します。
+`video_id` を次カットの `PreviousVideoID` として引き継ぐことで、Video-to-Video の文脈を保った連続カット生成を行います。生成済みカットは `status=generated` と `video_id` / `video_url` を使ってスキップできるため、途中失敗後の再開にも対応しやすい構造です。
 
 ---
 
 ## ✨ コア・コンセプト (Core Concepts)
 
-* **🧬 Quad-Factor Consistency Control (4要素協調制御)**:
-  * 動画AI（Veo）における最大の課題である「カットごとの容姿の破綻」を防ぐため、**キャラクター固有Seed**、**PanelGen由来の画像（キーフレーム）**、**動きの言語指示**、そして**前カットの動画コンテキスト**を同期させて1つのリクエストを構築します。
+* **🧬 Consistency Control**:
+  * **キャラクター固有 Seed**、**キーフレーム画像**、**動きのプロンプト**、**前カットの VideoID** を 1 つの `VideoGenerationRequest` にまとめ、カット間の見た目と文脈を維持します。
 
 * **⏳ Audio-Driven Timeline Logic (音楽主導のタイムライン管理)**:
-  * 従来の「コマ割り・レイアウト計算」を、Music Recipeに基づく「タイムライン・カット割り・音ハメ計算（テンポ/秒数制御）」へと再定義。楽曲の小節やオーディオキュー（Audio Cue）と映像の展開をプログラム側で決定論的にシンクロさせます。
+  * Music Recipe の `sections` / `cuts` から `duration_sec`、`start_sec`、`end_sec` を補完し、`audio_cue` を Veo 用プロンプトへ注入します。
 
-* **🛡 Production-Ready Concurrency & Rate Control**:
-  * セマフォ（Semaphore）を用いた細やかな並列実行制御に加え、大容量動画・音声アセットの通信を保護するため `singleflight` を活用。`RESOURCE_EXHAUSTED` (429) エラーや重複アップロードのオーバーヘッドを徹底的に排除します。
+* **🔁 Resumable Video Chain**:
+  * 各 `cut` は `status`、`video_id`、`video_url` を保持します。生成済みカットは再生成せず、保持済み `video_id` を次カットの `PreviousVideoID` として使用します。
 
-* **💾 Lean Data Architecture**:
-  * HTMLなどのUI出力をバッサリと削ぎ落とし、純粋な動画データ（mp4）の結合処理と、楽曲展開・タイムスタンプおよびメタデータ（JSON記述の動画・音楽プロット）の出力・保存に完全特化しています。
+* **🧩 Adapter-Oriented Architecture**:
+  * Veo への実通信は `ports.VideoRunner` に閉じ込め、オーケストレーション、キーフレーム生成、メタデータ保存を分離しています。
 
 ---
 
@@ -32,9 +32,17 @@
 | --- | --- | --- |
 | **1. Designing** | `DesignRunner` | キャラクターのDNA（Seed/ビジュアル特徴）を固定し、一貫性の基盤となるデザインシートを定義。 |
 | **2. Scripting** | `ScriptRunner` | 非構造化ドキュメントから、キャラ設定・音楽展開（BGM拍子/Audio Cue）・カット割り・カメラワーク・推定秒数を含む**JSON形式のMusic & Video Recipe**を生成。 |
-| **3. Cut Keyframe Gen** | `CutImageRunner` | 各カットのベースとなる高精度な「静止画（キーフレーム）」を、キャラ固有Seedを用いて個別に作画。 |
-| **4. Video Gen** | `VideoTimelineRunner` + `VideoRunner` | Cut Keyframe Gen でできた画像、Scripting の動きプロンプト、前カットの `last_generated_video`、必要に応じた音源mp3を Veo API へ順次流し込み、Video-to-Video の文脈を維持した動画カットを生成。 |
-| **5. Transcoding & Plot** | `VideoPublishRunner` | 生成された複数のカット動画（mp4）を統合・構造化し、最終動画アセットおよび音楽・映像同期用のメタデータJSONとしてパブリッシュ。 |
+| **3. Cut Keyframe Gen** | `CutKeyframeRunner` | 各カットのベースとなるキーフレーム画像を、キャラクター Seed と参照画像を使って生成。 |
+| **4. Video Gen** | `VideoTimelineRunner` + `VideoRunner` | `VideoRequestBuilder` が `VideoGenerationRequest` を組み立て、Veo adapter に順次投入。 |
+| **5. Metadata Publish** | `VideoPublishRunner` | `video_id` / `video_url` / `status` 更新済みの `video_music_meta.json` を保存。 |
+
+---
+
+## 🔌 Adapter Boundary
+
+このリポジトリは Veo に渡すための **ドメインモデル、キーフレーム生成、リクエスト構築、Video-to-Video 連鎖、メタデータ保存** を担当します。
+
+Veo API への実通信は `ports.VideoRunner` の実装として外から差し込みます。adapter 実装では `VideoGenerationRequest.ImageReference` を優先し、空の場合だけ `InputImage` をアップロードして参照 URI を作る想定です。
 
 ---
 
@@ -76,7 +84,7 @@
 }
 ```
 
-この JSON は保存時に `video_music_meta.json` として出力され、`start_sec` / `end_sec` が補完されたカット列を後段の ffmpeg 結合や検証に渡せる構造になります。
+この JSON は `Normalize()` により `start_sec` / `end_sec` / `status` が補完されます。生成後は `keyframe_reference`、`video_id`、`video_url` が追記された `video_music_meta.json` として保存されます。
 
 楽曲生成側の JSON が `sections` ベースで届く場合も、そのまま受け付けます。`sections` の要素数は固定せず、各 section の `duration_seconds` から `cuts` を自動生成し、`tempo` / `mood` は `music_recipe.tempo_bpm` / `music_recipe.style` に同期されます。
 
@@ -119,7 +127,7 @@
 go-veo-orchestrator/
 ├── workflow/    # 【統合管理】各工程を組み合わせ、Workflows インターフェースを実装。
 ├── runner/      # 【実行実体】Design/Script/CutKeyframe/VideoTimeline/Publish の具体的なプロセス実装。
-├── layout/      # 【キーフレーム生成戦略】Music Recipe のカット列に基づくキャラクター一貫性つき静止画生成。
+├── keyframe/    # 【キーフレーム生成戦略】Music Recipe のカット列に基づくキャラクター一貫性つき静止画生成。
 └── ports/       # 【契約・定義】Interface（VideoRunner等）、共通モデル、動作設定(Config)。全ての起点。
 
 ```
@@ -133,44 +141,41 @@ go-veo-orchestrator/
 ```mermaid
 sequenceDiagram
   participant WF as workflow.manager
-  participant VFactory as runner.NewVideoTimelineRunner
-  participant LTime as timeline.NewTimelineGenerator
-  participant Composer as timeline.VideoComposer
-  participant VideoRunner as runner.VideoTimelineRunner
-  participant CutGen as timeline.TimelineGenerator
+  participant Composer as keyframe.VideoComposer
+  participant KeyframeGen as keyframe.KeyframeGenerator
+  participant Timeline as runner.VideoTimelineRunner
+  participant Builder as runner.VideoRequestBuilder
   participant VeoAPI as Vertex AI (Veo API)
   participant Writer as remoteio.Writer
 
-  Note over WF,LTime: 1) GenerationUnit / Video Runner 初期化
-  WF->>Composer: NewVideoComposer(core, charactersMap)
-  Composer-->>WF: *timeline.VideoComposer
-  WF->>LTime: NewTimelineGenerator(composer, videoGenerator, videoPrompt, model, opts...)
-  LTime-->>WF: *timeline.TimelineGenerator
-  WF->>VFactory: NewVideoTimelineRunner(generator, writer)
-  VFactory-->>WF: *VideoTimelineRunner
+  Note over WF,KeyframeGen: 1) GenerationUnit / Keyframe Runner 初期化
+  WF->>Composer: keyframe.NewVideoComposer(core, charactersMap)
+  Composer-->>WF: *keyframe.VideoComposer
+  WF->>KeyframeGen: keyframe.NewKeyframeGenerator(composer, imageGenerator, keyframePrompt, model, opts...)
+  KeyframeGen-->>WF: *keyframe.KeyframeGenerator
+  WF->>Timeline: runner.NewVideoTimelineRunner(keyframeRunner, videoRunner, publisher)
+  Timeline-->>WF: *runner.VideoTimelineRunner
 
-  Note over WF,VideoRunner: 2) Music Recipeに基づく数珠繋ぎ動画生成
-  WF->>VideoRunner: Run(ctx, recipe) / RunAndSave(ctx, recipe, outputPath)
-  VideoRunner->>CutGen: Execute(ctx, recipe.Cuts)
-  CutGen->>Composer: PrepareCharacterResources(ctx, cuts)
-  Composer-->>CutGen: Character Base URI (GCS / File API)
+  Note over WF,Timeline: 2) Music Recipeに基づく数珠繋ぎ動画生成
+  WF->>Timeline: Run(ctx, recipe) / RunAndSave(ctx, recipe, outputPath)
+  Timeline->>KeyframeGen: Execute(ctx, recipe.Cuts)
+  KeyframeGen->>Composer: PrepareCharacterResources(ctx, cuts)
+  Composer-->>KeyframeGen: Character Base URI (GCS / File API)
 
-  Note over CutGen,VeoAPI: Loop内の Video-to-Video で前カットのコンテキスト(lastVideoID)を連鎖
-  Note over CutGen: lastVideoID = "" (初期化)
+  Note over Timeline,VeoAPI: Loop内の Video-to-Video で前カットのコンテキスト(lastVideoID)を連鎖
+  Note over Timeline: generated cut は video_id を使ってスキップ可能
 
-  loop cuts / errgroup + rate limiter (Semaphore)
-    CutGen->>CutGen: BuildVideoRequest(cut, character, lastVideoID)
-    CutGen->>VeoAPI: GenerateVideo(Prompt + KeyframeImage + InputAudio(mp3) + lastVideoID + Seed)
-    VeoAPI-->>CutGen: カット動画レスポンス (mp4 Data + Generated VideoID)
-    CutGen->>CutGen: lastVideoID = currentResponse.VideoID (状態更新)
+  loop cuts / sequential Video-to-Video chain
+    Timeline->>Builder: Build(recipe, cut, keyframe, lastVideoID)
+    Builder-->>Timeline: VideoGenerationRequest
+    Timeline->>VeoAPI: GenerateVideo(Prompt + KeyframeReference/InputImage + AudioReference + PreviousVideoID + Seed)
+    VeoAPI-->>Timeline: VideoResponse (CloudURL + VideoID)
+    Timeline->>Timeline: cut.video_id / cut.video_url / cut.status 更新
   end
 
-  CutGen-->>VideoRunner: []*videoPorts.VideoResponse
-
   opt RunAndSave
-    VideoRunner->>Writer: Write(ctx, indexedCutPath, videoData, remoteio.WithContentType("video/mp4"), ...)
-    VideoRunner->>Writer: Write(ctx, video_music_meta.json, updatedVideoRecipeJSON, remoteio.WithContentType("application/json"), ...)
-    VideoRunner-->>WF: *ports.VideoPlotResponse
+    Timeline->>Writer: Write(ctx, video_music_meta.json, updatedVideoRecipeJSON, remoteio.WithContentType("application/json"), ...)
+    Timeline-->>WF: *ports.VideoPlotResponse
   end
 
 ```

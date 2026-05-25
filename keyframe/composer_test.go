@@ -1,4 +1,4 @@
-package layout
+package keyframe
 
 import (
 	"context"
@@ -37,7 +37,7 @@ func (m *mockBackend) IsVertexAI() bool { return m.isVertex }
 
 // --- Tests ---
 
-func TestMangaComposer_PrepareCharacterResources(t *testing.T) {
+func TestVideoComposer_PrepareCharacterResources(t *testing.T) {
 	ctx := context.Background()
 	assetMgr := &mockAssetManager{}
 	backend := &mockBackend{isVertex: false}
@@ -56,14 +56,14 @@ func TestMangaComposer_PrepareCharacterResources(t *testing.T) {
 		},
 	}
 
-	mc, _ := NewMangaComposer(assetMgr, backend, cm)
+	mc, _ := NewVideoComposer(assetMgr, backend, cm)
 
-	panels := []ports.Panel{
-		{SpeakerID: "zundamon"},
-		{SpeakerID: "unknown"}, // default (metan) が使用される
+	keyframes := []ports.Cut{
+		{CharacterID: "zundamon"},
+		{CharacterID: "unknown"}, // default (metan) が使用される
 	}
 
-	err := mc.PrepareCharacterResources(ctx, panels)
+	err := mc.PrepareCharacterResources(ctx, keyframes)
 	if err != nil {
 		t.Fatalf("PrepareCharacterResources failed: %v", err)
 	}

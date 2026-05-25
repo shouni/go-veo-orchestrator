@@ -10,23 +10,20 @@ const (
 	DefaultImageStandardModel = "gemini-3-pro-image-preview"
 	DefaultImageQualityModel  = "gemini-3-pro-image-preview"
 	DefaultMaxConcurrency     = 1
-	DefaultStyleSuffix        = "Japanese anime style, official art, cel-shaded, clean line art, high-quality manga coloring, expressive eyes, vibrant colors, cinematic lighting, masterpiece, ultra-detailed, flat shading, clear character features, no 3D effect, high resolution"
+	DefaultStyleSuffix        = "Japanese anime style, official art, cel-shaded, clean line art, expressive eyes, cinematic lighting, consistent character design, high resolution"
 )
 
-// Config は Go Manga Kit の各 Runner を動作させるための基本設定です。
+// Config は Go Veo Orchestrator の各 Runner を動作させるための基本設定です。
 type Config struct {
 	// --- AI Model Settings (Common) ---
 	GeminiModel        string
-	ImageStandardModel string // 標準・高速（パネル用）
-	ImageQualityModel  string // 高品質・高知能（ページ用）
+	ImageStandardModel string // 標準・高速（キーフレーム用）
+	ImageQualityModel  string // 高品質（デザイン用）
 
 	// --- Generation Settings ---
 	MaxConcurrency int
 	RateInterval   time.Duration
 	StyleSuffix    string
-
-	// --- Layout Settings ---
-	MaxPanelsPerPage int
 
 	// --- Timeout & Retries ---
 	RequestTimeout time.Duration
