@@ -17,7 +17,7 @@ func (m *manager) buildGenerationUnit(client gemini.GenerativeModel, modelName s
 		return nil, err
 	}
 
-	composer, err := m.buildComposer(core, m.promptDeps.CharactersMap)
+	composer, err := m.buildComposer(core, m.promptDeps.Characters)
 	if err != nil {
 		return nil, err
 	}

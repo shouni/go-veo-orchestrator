@@ -35,6 +35,16 @@ type mockBackend struct {
 
 func (m *mockBackend) IsVertexAI() bool { return m.isVertex }
 
+func mustNewCharacters(t *testing.T, list []ports.Character) *ports.Characters {
+	t.Helper()
+
+	chars, err := ports.NewCharacters(list)
+	if err != nil {
+		t.Fatalf("NewCharacters failed: %v", err)
+	}
+	return chars
+}
+
 // --- Tests ---
 
 func TestVideoComposer_PrepareCharacterResources(t *testing.T) {
@@ -42,25 +52,21 @@ func TestVideoComposer_PrepareCharacterResources(t *testing.T) {
 	assetMgr := &mockAssetManager{}
 	backend := &mockBackend{isVertex: false}
 
-	cm := &ports.Characters{
-		List: []ports.Character{
-			{
-				ID:           "zundamon",
-				Name:         "ずんだもん",
-				ReferenceURL: "gs://bucket/zunda.png",
-			},
-			{
-				ID:           "metan",
-				Name:         "めたん",
-				ReferenceURL: "gs://bucket/metan.png",
-				IsDefault:    true,
-			},
+	cm := mustNewCharacters(t, []ports.Character{
+		{
+			ID:           "zundamon",
+			Name:         "ずんだもん",
+			VisualCues:   []string{"green hair"},
+			ReferenceURL: "gs://bucket/zunda.png",
 		},
-	}
-	cm.ByID = map[string]*ports.Character{
-		"zundamon": &cm.List[0],
-		"metan":    &cm.List[1],
-	}
+		{
+			ID:           "metan",
+			Name:         "めたん",
+			VisualCues:   []string{"purple hair"},
+			ReferenceURL: "gs://bucket/metan.png",
+			IsDefault:    true,
+		},
+	})
 
 	mc, _ := NewVideoComposer(assetMgr, backend, cm)
 
@@ -83,5 +89,12 @@ func TestVideoComposer_PrepareCharacterResources(t *testing.T) {
 
 	if assetMgr.uploadCount != 2 {
 		t.Errorf("Expected 2 uploads, got %d", assetMgr.uploadCount)
+	}
+}
+
+func TestNewVideoComposer_RequiresCharacters(t *testing.T) {
+	_, err := NewVideoComposer(&mockAssetManager{}, &mockBackend{}, nil)
+	if err == nil {
+		t.Fatal("expected error for nil characters")
 	}
 }

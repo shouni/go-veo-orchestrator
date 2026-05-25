@@ -73,7 +73,7 @@ func (g *KeyframeGenerator) Execute(ctx context.Context, keyframes []ports.Cut) 
 	eg, egCtx := errgroup.WithContext(ctx)
 	eg.SetLimit(g.maxConcurrency)
 
-	cm := g.composer.CharactersMap
+	cm := g.composer.Characters
 
 	for i, keyframe := range keyframes {
 		eg.Go(func() error {

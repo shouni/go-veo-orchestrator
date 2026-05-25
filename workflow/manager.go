@@ -13,7 +13,7 @@ import (
 
 // PromptDeps はプロンプト関連の依存関係をまとめた構造体です。
 type PromptDeps struct {
-	CharactersMap  *ports.Characters
+	Characters     *ports.Characters
 	ScriptPrompt   ports.ScriptPrompt
 	KeyframePrompt ports.KeyframePrompt
 }
@@ -113,8 +113,8 @@ func validateArgs(args *ManagerArgs) error {
 	if args.PromptDeps == nil {
 		return fmt.Errorf("PromptDeps is required")
 	}
-	if args.PromptDeps.CharactersMap == nil {
-		return fmt.Errorf("CharactersMap is required")
+	if args.PromptDeps.Characters == nil {
+		return fmt.Errorf("Characters is required")
 	}
 	if args.PromptDeps.ScriptPrompt == nil {
 		return fmt.Errorf("ScriptPrompt is required")
