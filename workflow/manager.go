@@ -13,7 +13,7 @@ import (
 
 // PromptDeps はプロンプト関連の依存関係をまとめた構造体です。
 type PromptDeps struct {
-	CharactersMap  ports.CharactersMap
+	CharactersMap  *ports.Characters
 	ScriptPrompt   ports.ScriptPrompt
 	KeyframePrompt ports.KeyframePrompt
 }

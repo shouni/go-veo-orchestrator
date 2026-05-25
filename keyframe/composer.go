@@ -15,7 +15,7 @@ import (
 type VideoComposer struct {
 	AssetManager    imagePorts.AssetManager
 	BackendProvider imagePorts.Backend
-	CharactersMap   ports.CharactersMap
+	CharactersMap   *ports.Characters
 	resourceMap     resourceMap
 	mu              sync.RWMutex
 	uploadGroup     singleflight.Group
@@ -29,7 +29,7 @@ type resourceMap struct {
 func NewVideoComposer(
 	assetMgr imagePorts.AssetManager,
 	backend imagePorts.Backend,
-	cm ports.CharactersMap,
+	cm *ports.Characters,
 ) (*VideoComposer, error) {
 	if assetMgr == nil {
 		return nil, fmt.Errorf("assetMgr is required")
