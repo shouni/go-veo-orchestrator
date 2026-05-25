@@ -46,18 +46,8 @@ func NewVideoScriptRunner(
 	}
 }
 
-// NewMangaScriptRunner は旧 API 互換のコンストラクタです。
-func NewMangaScriptRunner(
-	pb ports.ScriptPrompt,
-	ai gemini.ContentGenerator,
-	r ports.ContentReader,
-	aiModel string,
-) *VideoScriptRunner {
-	return NewVideoScriptRunner(pb, ai, r, aiModel)
-}
-
 // Run は Web ページまたは GCS から内容を抽出し、Gemini を用いて動画台本 JSON を生成します。
-func (r *VideoScriptRunner) Run(ctx context.Context, sourceURL string, mode string) (*ports.MangaResponse, error) {
+func (r *VideoScriptRunner) Run(ctx context.Context, sourceURL string, mode string) (*ports.VideoRecipe, error) {
 	slog.Info("ScriptRunner: 処理を開始", "url", sourceURL)
 
 	// 1. ソースからテキストを取得
@@ -81,12 +71,12 @@ func (r *VideoScriptRunner) Run(ctx context.Context, sourceURL string, mode stri
 	}
 
 	// 4. AI の応答をパース
-	manga, err := r.parseResponse(resp.Text)
+	recipe, err := r.parseResponse(resp.Text)
 	if err != nil {
 		return nil, err
 	}
 
-	return manga, nil
+	return recipe, nil
 }
 
 // readContent は、指定されたソースURLからコンテンツを取得します。
@@ -134,7 +124,7 @@ func (r *VideoScriptRunner) readContent(ctx context.Context, url string) (string
 }
 
 // parseResponse は AI の応答から JSON を抽出し、構造体に変換します。
-func (r *VideoScriptRunner) parseResponse(raw string) (*ports.MangaResponse, error) {
+func (r *VideoScriptRunner) parseResponse(raw string) (*ports.VideoRecipe, error) {
 	jsonStr := extractJSONString(raw)
 	if jsonStr == "" {
 		slog.Warn("AIの応答からJSONを抽出できませんでした。応答全体を対象にパースを試みます。",
@@ -142,18 +132,15 @@ func (r *VideoScriptRunner) parseResponse(raw string) (*ports.MangaResponse, err
 		jsonStr = raw
 	}
 
-	var manga ports.MangaResponse
-	if err := json.Unmarshal([]byte(jsonStr), &manga); err != nil {
+	var recipe ports.VideoRecipe
+	if err := json.Unmarshal([]byte(jsonStr), &recipe); err != nil {
 		return nil, fmt.Errorf("AI応答JSONの解析に失敗しました (抜粋: %q): %w",
 			truncateString(raw, maxErrorResponseLength), err)
 	}
-	manga.Normalize()
+	recipe.Normalize()
 
-	return &manga, nil
+	return &recipe, nil
 }
-
-// MangaScriptRunner は旧 API 互換のエイリアスです。
-type MangaScriptRunner = VideoScriptRunner
 
 // extractJSONString は文字列から JSON 部分を抽出します。
 func extractJSONString(raw string) string {

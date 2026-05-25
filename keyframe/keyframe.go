@@ -1,4 +1,4 @@
-package layout
+package keyframe
 
 import (
 	"context"
@@ -13,14 +13,14 @@ import (
 	"github.com/shouni/go-veo-orchestrator/ports"
 )
 
-// negativePanelPrompt は単体カットのキーフレームで「文字」や「フキダシ」を排除するための指定です。
-const negativePanelPrompt = "speech bubble, dialogue balloon, text, alphabet, letters, words, signatures, watermark, username, low quality, distorted, bad anatomy, monochrome, black and white, greyscale"
+// negativeKeyframePrompt は単体カットのキーフレームで「文字」や「フキダシ」を排除するための指定です。
+const negativeKeyframePrompt = "speech bubble, dialogue balloon, text, alphabet, letters, words, signatures, watermark, username, low quality, distorted, bad anatomy, monochrome, black and white, greyscale"
 
-// PanelGenerator は、キャラクターの一貫性を保ちながら並列で複数カットのキーフレームを生成します。
-type PanelGenerator struct {
-	composer       *MangaComposer
-	generator      PanelImageGenerator
-	pb             ports.ImagePrompt
+// KeyframeGenerator は、キャラクターの一貫性を保ちながら並列で複数カットのキーフレームを生成します。
+type KeyframeGenerator struct {
+	composer       *VideoComposer
+	generator      KeyframeImageGenerator
+	pb             ports.KeyframePrompt
 	model          string
 	limiter        *rate.Limiter
 	maxConcurrency int
@@ -28,19 +28,19 @@ type PanelGenerator struct {
 	rateBurst      int
 }
 
-type PanelImageGenerator interface {
+type KeyframeImageGenerator interface {
 	GenerateSingleImage(ctx context.Context, req imagePorts.SingleImageRequest) (*imagePorts.ImageResponse, error)
 }
 
-// NewPanelGenerator は PanelGenerator の新しいインスタンスを初期化します。
-func NewPanelGenerator(
-	composer *MangaComposer,
-	generator PanelImageGenerator,
-	pb ports.ImagePrompt,
+// NewKeyframeGenerator は KeyframeGenerator の新しいインスタンスを初期化します。
+func NewKeyframeGenerator(
+	composer *VideoComposer,
+	generator KeyframeImageGenerator,
+	pb ports.KeyframePrompt,
 	model string,
-	opts ...PanelOption,
-) *PanelGenerator {
-	g := &PanelGenerator{
+	opts ...KeyframeOption,
+) *KeyframeGenerator {
+	g := &KeyframeGenerator{
 		composer:       composer,
 		generator:      generator,
 		pb:             pb,
@@ -60,47 +60,43 @@ func NewPanelGenerator(
 }
 
 // Execute は、errgroupの制限機能を使用して同時実行数を制限しながらカットを並列生成します。
-func (g *PanelGenerator) Execute(ctx context.Context, panels []ports.Panel) ([]*imagePorts.ImageResponse, error) {
-	if len(panels) == 0 {
+func (g *KeyframeGenerator) Execute(ctx context.Context, keyframes []ports.Cut) ([]*imagePorts.ImageResponse, error) {
+	if len(keyframes) == 0 {
 		return nil, nil
 	}
 
-	if err := g.composer.PrepareCharacterResources(ctx, panels); err != nil {
+	if err := g.composer.PrepareCharacterResources(ctx, keyframes); err != nil {
 		return nil, err
 	}
 
-	images := make([]*imagePorts.ImageResponse, len(panels))
+	images := make([]*imagePorts.ImageResponse, len(keyframes))
 	eg, egCtx := errgroup.WithContext(ctx)
 	eg.SetLimit(g.maxConcurrency)
 
 	cm := g.composer.CharactersMap
 
-	for i, panel := range panels {
+	for i, keyframe := range keyframes {
 		eg.Go(func() error {
 			if err := g.limiter.Wait(egCtx); err != nil {
 				return err
 			}
 
-			charID := panel.CharacterID
-			if charID == "" {
-				charID = panel.SpeakerID
-			}
-			char := cm.GetCharacterWithDefault(charID)
+			char := cm.GetCharacterWithDefault(keyframe.CharacterID)
 			if char == nil {
-				return fmt.Errorf("character not found for character ID '%s'", charID)
+				return fmt.Errorf("character not found for character ID '%s'", keyframe.CharacterID)
 			}
 			seed := char.Seed
-			userPrompt, systemPrompt := g.pb.BuildPanel(panel, char)
+			userPrompt, systemPrompt := g.pb.BuildCut(keyframe, char)
 			fileURI := g.composer.GetCharacterResourceURI(char.ID)
 
 			logger := slog.With(
-				"panel_index", i+1,
+				"keyframe_index", i+1,
 				"character_id", char.ID,
 				"character_name", char.Name,
 				"seed", seed,
 				"use_file_api", fileURI != "",
 			)
-			logger.Info("Starting panel generation")
+			logger.Info("Starting keyframe generation")
 
 			startTime := time.Now()
 			resp, err := g.generator.GenerateSingleImage(egCtx, imagePorts.SingleImageRequest{
@@ -108,8 +104,8 @@ func (g *PanelGenerator) Execute(ctx context.Context, panels []ports.Panel) ([]*
 					Model:          g.model,
 					Prompt:         userPrompt,
 					SystemPrompt:   systemPrompt,
-					NegativePrompt: negativePanelPrompt,
-					AspectRatio:    PanelAspectRatio,
+					NegativePrompt: negativeKeyframePrompt,
+					AspectRatio:    CutAspectRatio,
 					ImageSize:      ImageSize1K,
 					Seed:           &seed,
 				},
@@ -122,7 +118,7 @@ func (g *PanelGenerator) Execute(ctx context.Context, panels []ports.Panel) ([]*
 				return fmt.Errorf("cut %d (character_id: %s) keyframe generation failed: %w", i+1, char.ID, err)
 			}
 
-			logger.Info("Panel generation completed",
+			logger.Info("Keyframe generation completed",
 				"duration", time.Since(startTime).Round(time.Second),
 			)
 			images[i] = resp

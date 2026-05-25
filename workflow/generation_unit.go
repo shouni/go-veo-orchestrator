@@ -6,7 +6,7 @@ import (
 	"github.com/shouni/gemini-image-kit/generator"
 	"github.com/shouni/go-gemini-client/gemini"
 
-	"github.com/shouni/go-veo-orchestrator/layout"
+	"github.com/shouni/go-veo-orchestrator/keyframe"
 	"github.com/shouni/go-veo-orchestrator/ports"
 )
 
@@ -29,7 +29,7 @@ func (m *manager) buildGenerationUnit(client gemini.GenerativeModel, modelName s
 
 	return &generationUnit{
 		imageGenerator: gen,
-		mangaComposer:  composer,
+		recipeComposer: composer,
 		model:          modelName,
 	}, nil
 }
@@ -51,18 +51,18 @@ func (m *manager) buildCore(aiClient gemini.GenerativeModel) (*generator.GeminiI
 	return core, nil
 }
 
-// buildComposer は提供された構成と依存関係を使用して MangaComposerインスタンスを初期化し、返します。
+// buildComposer は提供された構成と依存関係を使用して VideoComposerインスタンスを初期化し、返します。
 func (m *manager) buildComposer(
 	core *generator.GeminiImageCore,
 	chars ports.CharactersMap,
-) (*layout.MangaComposer, error) {
-	composer, err := layout.NewMangaComposer(
+) (*keyframe.VideoComposer, error) {
+	composer, err := keyframe.NewVideoComposer(
 		core,
 		core,
 		chars,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("MangaComposerの初期化に失敗しました: %w", err)
+		return nil, fmt.Errorf("VideoComposerの初期化に失敗しました: %w", err)
 	}
 
 	return composer, nil

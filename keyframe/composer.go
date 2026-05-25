@@ -1,4 +1,4 @@
-package layout
+package keyframe
 
 import (
 	"context"
@@ -12,7 +12,7 @@ import (
 	"github.com/shouni/go-veo-orchestrator/ports"
 )
 
-type MangaComposer struct {
+type VideoComposer struct {
 	AssetManager    imagePorts.AssetManager
 	BackendProvider imagePorts.Backend
 	CharactersMap   ports.CharactersMap
@@ -23,15 +23,14 @@ type MangaComposer struct {
 
 type resourceMap struct {
 	character map[string]string // CharacterID -> FileAPIURI
-	panel     map[string]string // ReferenceURL -> FileAPIURI
 }
 
-// NewMangaComposer は MangaComposer の新しいインスタンスを初期化済みの状態で生成します。
-func NewMangaComposer(
+// NewVideoComposer は VideoComposer の新しいインスタンスを初期化済みの状態で生成します。
+func NewVideoComposer(
 	assetMgr imagePorts.AssetManager,
 	backend imagePorts.Backend,
 	cm ports.CharactersMap,
-) (*MangaComposer, error) {
+) (*VideoComposer, error) {
 	if assetMgr == nil {
 		return nil, fmt.Errorf("assetMgr is required")
 	}
@@ -39,33 +38,25 @@ func NewMangaComposer(
 		return nil, fmt.Errorf("backend is required")
 	}
 
-	return &MangaComposer{
+	return &VideoComposer{
 		AssetManager:    assetMgr,
 		BackendProvider: backend,
 		CharactersMap:   cm,
 		resourceMap: resourceMap{
 			character: make(map[string]string),
-			panel:     make(map[string]string),
 		},
 	}, nil
 }
 
 // GetCharacterResourceURI はキャラクターの画像URIを取得します。
-func (mc *MangaComposer) GetCharacterResourceURI(charID string) string {
+func (mc *VideoComposer) GetCharacterResourceURI(charID string) string {
 	mc.mu.RLock()
 	defer mc.mu.RUnlock()
 	return mc.resourceMap.character[charID]
 }
 
-// GetPanelResourceURI はパネルの画像URIを取得します。
-func (mc *MangaComposer) GetPanelResourceURI(referenceURL string) string {
-	mc.mu.RLock()
-	defer mc.mu.RUnlock()
-	return mc.resourceMap.panel[referenceURL]
-}
-
 // PrepareCharacterResources はカットに使用される全キャラクターの画像を File API に事前アップロードします。
-func (mc *MangaComposer) PrepareCharacterResources(ctx context.Context, panels []ports.Panel) error {
+func (mc *VideoComposer) PrepareCharacterResources(ctx context.Context, keyframes []ports.Cut) error {
 	targets := make(map[string]string)
 
 	// デフォルトキャラクターをアップロード対象に追加
@@ -74,7 +65,7 @@ func (mc *MangaComposer) PrepareCharacterResources(ctx context.Context, panels [
 	}
 
 	// カットで使用されているキャラクターをアップロード対象に追加
-	for _, id := range ports.Cuts(panels).UniqueCharacterIDs() {
+	for _, id := range ports.Cuts(keyframes).UniqueCharacterIDs() {
 		char := mc.CharactersMap.GetCharacterWithDefault(id)
 		if char == nil || char.ReferenceURL == "" {
 			continue
@@ -85,35 +76,13 @@ func (mc *MangaComposer) PrepareCharacterResources(ctx context.Context, panels [
 	return mc.prepareResources(ctx, targets, mc.getOrUploadAsset, "character")
 }
 
-// PreparePanelResources は各パネル固有の ReferenceURL を事前アップロードします。
-func (mc *MangaComposer) PreparePanelResources(ctx context.Context, panels []ports.Panel) error {
-	targets := make(map[string]string)
-
-	for _, panel := range panels {
-		if panel.ReferenceURL == "" {
-			continue
-		}
-		targets[panel.ReferenceURL] = panel.ReferenceURL
-	}
-
-	return mc.prepareResources(ctx, targets, func(ctx context.Context, key, _ string) (string, error) {
-		return mc.getOrUploadPanelAsset(ctx, key)
-	}, "panel")
-}
-
 // getOrUploadAsset はキャラクター用アセットをキャッシュ制御しつつ取得またはアップロードします。
-func (mc *MangaComposer) getOrUploadAsset(ctx context.Context, charID, referenceURL string) (string, error) {
+func (mc *VideoComposer) getOrUploadAsset(ctx context.Context, charID, referenceURL string) (string, error) {
 	return mc.getOrUploadResource(ctx, charID, referenceURL, mc.resourceMap.character)
 }
 
-// getOrUploadPanelAsset はパネル用参照URLをキャッシュ制御しつつ取得またはアップロードします。
-func (mc *MangaComposer) getOrUploadPanelAsset(ctx context.Context, referenceURL string) (string, error) {
-	// パネルアセットの場合、検索キーとソースURLは同一です。
-	return mc.getOrUploadResource(ctx, referenceURL, referenceURL, mc.resourceMap.panel)
-}
-
 // prepareResources は指定されたリソースを事前アップロードします。
-func (mc *MangaComposer) prepareResources(
+func (mc *VideoComposer) prepareResources(
 	ctx context.Context,
 	targets map[string]string,
 	upload func(context.Context, string, string) (string, error),
@@ -134,7 +103,7 @@ func (mc *MangaComposer) prepareResources(
 }
 
 // getOrUploadResource は二重チェックロッキングと singleflight を用いてアセットアップロードの共通ロジックを提供します。
-func (mc *MangaComposer) getOrUploadResource(ctx context.Context, key, referenceURL string, resourceMap map[string]string) (string, error) {
+func (mc *VideoComposer) getOrUploadResource(ctx context.Context, key, referenceURL string, resourceMap map[string]string) (string, error) {
 	// Vertex AI モード時は Cloud Storage (gs://) を直接参照可能なため、
 	// File API へのアップロード処理をバイパスし、転送コストを削減します。
 	if mc.BackendProvider.IsVertexAI() && IsGCSURI(referenceURL) {

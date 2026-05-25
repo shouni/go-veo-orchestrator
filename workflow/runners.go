@@ -3,7 +3,7 @@ package workflow
 import (
 	"fmt"
 
-	"github.com/shouni/go-veo-orchestrator/layout"
+	"github.com/shouni/go-veo-orchestrator/keyframe"
 	"github.com/shouni/go-veo-orchestrator/ports"
 	"github.com/shouni/go-veo-orchestrator/runner"
 )
@@ -18,23 +18,22 @@ func (m *manager) buildAllRunners() (*ports.Workflows, error) {
 	if err != nil {
 		return nil, fmt.Errorf("ScriptRunner のビルドに失敗しました: %w", err)
 	}
-	panR, err := m.buildPanelImageRunner()
+	keyframeR, err := m.buildKeyframeRunner()
 	if err != nil {
-		return nil, fmt.Errorf("PanelImageRunner のビルドに失敗しました: %w", err)
+		return nil, fmt.Errorf("KeyframeRunner のビルドに失敗しました: %w", err)
 	}
 	pubR, err := m.buildPublishRunner()
 	if err != nil {
 		return nil, fmt.Errorf("PublishRunner のビルドに失敗しました: %w", err)
 	}
-	videoR := m.buildVideoTimelineRunner(panR, pubR)
+	videoR := m.buildVideoTimelineRunner(keyframeR, pubR)
 
 	return &ports.Workflows{
 		Design:      dr,
 		Script:      sr,
-		CutKeyframe: panR,
+		CutKeyframe: keyframeR,
 		Video:       videoR,
 		Publish:     pubR,
-		PanelImage:  panR,
 	}, nil
 }
 
@@ -44,10 +43,10 @@ func (m *manager) buildScriptRunner() (*runner.VideoScriptRunner, error) {
 }
 
 // buildDesignRunner は、キャラクターデザインを担当する Runner を作成します。
-func (m *manager) buildDesignRunner() (*runner.MangaDesignRunner, error) {
-	quality := m.layoutManager.Quality
-	return runner.NewMangaDesignRunner(
-		quality.mangaComposer,
+func (m *manager) buildDesignRunner() (*runner.DesignRunner, error) {
+	quality := m.generationManager.Quality
+	return runner.NewDesignRunner(
+		quality.recipeComposer,
 		quality.imageGenerator,
 		m.writer,
 		quality.model,
@@ -55,19 +54,19 @@ func (m *manager) buildDesignRunner() (*runner.MangaDesignRunner, error) {
 	), nil
 }
 
-// buildPanelImageRunner は、パネル画像生成を担当する Runner を作成します。
-func (m *manager) buildPanelImageRunner() (*runner.MangaPanelRunner, error) {
-	standard := m.layoutManager.Standard
-	panelsGen := layout.NewPanelGenerator(
-		standard.mangaComposer,
+// buildKeyframeRunner は、カットのキーフレーム画像生成を担当する Runner を作成します。
+func (m *manager) buildKeyframeRunner() (*runner.CutKeyframeRunner, error) {
+	standard := m.generationManager.Standard
+	keyframeGen := keyframe.NewKeyframeGenerator(
+		standard.recipeComposer,
 		standard.imageGenerator,
-		m.promptDeps.ImagePrompt,
+		m.promptDeps.KeyframePrompt,
 		standard.model,
-		layout.WithPanelMaxConcurrency(m.cfg.MaxConcurrency),
-		layout.WithPanelRateInterval(m.cfg.RateInterval),
+		keyframe.WithKeyframeMaxConcurrency(m.cfg.MaxConcurrency),
+		keyframe.WithKeyframeRateInterval(m.cfg.RateInterval),
 	)
 
-	return runner.NewMangaPanelRunner(panelsGen, m.writer), nil
+	return runner.NewCutKeyframeRunner(keyframeGen, m.writer), nil
 }
 
 // buildPublishRunner は、動画メタデータのパブリッシュを担当する Runner を作成します。

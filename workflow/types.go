@@ -11,6 +11,6 @@ const (
 	defaultCacheExpiration = 5 * time.Minute
 
 	// defaultTTL は、リモートリソース（GCSや外部URL）の有効期間です。
-	// 短期間に同じ ReferenceURL が要求された際、ソースへの再アクセスを防ぐために使用されます。
+	// 短期間に同じ参照URIが要求された際、ソースへの再アクセスを防ぐために使用されます。
 	defaultTTL = 5 * time.Minute
 )

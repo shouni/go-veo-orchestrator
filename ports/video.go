@@ -33,6 +33,11 @@ type VideoRunner interface {
 	Run(ctx context.Context, req VideoGenerationRequest) (*VideoResponse, error)
 }
 
+// AudioResolver は Music Recipe のカット列に音声セグメント参照を補完します。
+type AudioResolver interface {
+	Resolve(ctx context.Context, recipe *VideoRecipe) (*VideoRecipe, error)
+}
+
 // VideoTimelineRunner は Music Recipe のカット列を順次動画化する契約です。
 type VideoTimelineRunner interface {
 	Run(ctx context.Context, recipe *VideoRecipe) ([]*VideoResponse, error)
