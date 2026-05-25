@@ -42,18 +42,24 @@ func TestVideoComposer_PrepareCharacterResources(t *testing.T) {
 	assetMgr := &mockAssetManager{}
 	backend := &mockBackend{isVertex: false}
 
-	cm := ports.CharactersMap{
-		"zundamon": ports.Character{
-			ID:           "zundamon",
-			Name:         "ずんだもん",
-			ReferenceURL: "gs://bucket/zunda.png",
+	cm := &ports.Characters{
+		List: []ports.Character{
+			{
+				ID:           "zundamon",
+				Name:         "ずんだもん",
+				ReferenceURL: "gs://bucket/zunda.png",
+			},
+			{
+				ID:           "metan",
+				Name:         "めたん",
+				ReferenceURL: "gs://bucket/metan.png",
+				IsDefault:    true,
+			},
 		},
-		"metan": ports.Character{
-			ID:           "metan",
-			Name:         "めたん",
-			ReferenceURL: "gs://bucket/metan.png",
-			IsDefault:    true,
-		},
+	}
+	cm.ByID = map[string]*ports.Character{
+		"zundamon": &cm.List[0],
+		"metan":    &cm.List[1],
 	}
 
 	mc, _ := NewVideoComposer(assetMgr, backend, cm)

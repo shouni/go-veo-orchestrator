@@ -54,7 +54,7 @@ func (m *manager) buildCore(aiClient gemini.GenerativeModel) (*generator.GeminiI
 // buildComposer は提供された構成と依存関係を使用して VideoComposerインスタンスを初期化し、返します。
 func (m *manager) buildComposer(
 	core *generator.GeminiImageCore,
-	chars ports.CharactersMap,
+	chars *ports.Characters,
 ) (*keyframe.VideoComposer, error) {
 	composer, err := keyframe.NewVideoComposer(
 		core,

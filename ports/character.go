@@ -1,7 +1,5 @@
 package ports
 
-import "fmt"
-
 // Character は漫画に登場するキャラクターの定義を保持します。
 type Character struct {
 	ID           string   `json:"id"`
@@ -12,10 +10,8 @@ type Character struct {
 	IsDefault    bool     `json:"is_default"`    // ページ全体の代表Seedとして優先するか
 }
 
-// CharactersMap はIDをキーとしたキャラクターのマップ定義です。
-type CharactersMap map[string]Character
-
-// String はキャラクターの情報を文字列で返します。
-func (c Character) String() string {
-	return fmt.Sprintf("%s (%s)", c.Name, c.ID)
+// Characters は表示順を持つリストとID検索用マップを保持します。
+type Characters struct {
+	List []Character
+	ByID map[string]*Character
 }
