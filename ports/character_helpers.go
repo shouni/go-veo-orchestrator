@@ -56,13 +56,8 @@ func (c *Characters) GetCharacterWithDefault(ID string) *Character {
 	return nil
 }
 
-// ParseCharacters はJSONバイト列からキャラクター定義をパースして返します。
-func ParseCharacters(charactersJSON []byte) (*Characters, error) {
-	var list []Character
-	if err := json.Unmarshal(charactersJSON, &list); err != nil {
-		return nil, fmt.Errorf("キャラクター情報のJSONパースに失敗しました: %w", err)
-	}
-
+// NewCharacters はキャラクター定義を検証し、ID検索用インデックスを構築します。
+func NewCharacters(list []Character) (*Characters, error) {
 	chars := &Characters{
 		List: list,
 		ByID: make(map[string]*Character, len(list)*2),
@@ -75,6 +70,20 @@ func ParseCharacters(charactersJSON []byte) (*Characters, error) {
 		char := &chars.List[i]
 		chars.ByID[char.ID] = char
 		chars.ByID[strings.ToLower(char.ID)] = char
+	}
+	return chars, nil
+}
+
+// ParseCharacters はJSONバイト列からキャラクター定義をパースして返します。
+func ParseCharacters(charactersJSON []byte) (*Characters, error) {
+	var list []Character
+	if err := json.Unmarshal(charactersJSON, &list); err != nil {
+		return nil, fmt.Errorf("キャラクター情報のJSONパースに失敗しました: %w", err)
+	}
+
+	chars, err := NewCharacters(list)
+	if err != nil {
+		return nil, err
 	}
 	return chars, nil
 }

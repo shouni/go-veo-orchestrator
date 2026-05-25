@@ -44,27 +44,23 @@ func TestKeyframeGenerator_Execute(t *testing.T) {
 	backend := &mockBackend{isVertex: false}
 
 	// 異なる Seed 値を持つキャラクターを用意
-	cm := &ports.Characters{
-		List: []ports.Character{
-			{
-				ID:           "zundamon",
-				Name:         "ずんだもん",
-				Seed:         10001,
-				ReferenceURL: "gs://bucket/zunda.png",
-			},
-			{
-				ID:           "metan",
-				Name:         "めたん",
-				Seed:         20002,
-				ReferenceURL: "gs://bucket/metan.png",
-				IsDefault:    true, // 指定なしの場合のデフォルト
-			},
+	cm := mustNewCharacters(t, []ports.Character{
+		{
+			ID:           "zundamon",
+			Name:         "ずんだもん",
+			VisualCues:   []string{"green hair"},
+			Seed:         10001,
+			ReferenceURL: "gs://bucket/zunda.png",
 		},
-	}
-	cm.ByID = map[string]*ports.Character{
-		"zundamon": &cm.List[0],
-		"metan":    &cm.List[1],
-	}
+		{
+			ID:           "metan",
+			Name:         "めたん",
+			VisualCues:   []string{"purple hair"},
+			Seed:         20002,
+			ReferenceURL: "gs://bucket/metan.png",
+			IsDefault:    true, // 指定なしの場合のデフォルト
+		},
+	})
 	composer, _ := NewVideoComposer(assetMgr, backend, cm)
 
 	genMock := &mockKeyframeImageGenerator{}

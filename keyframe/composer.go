@@ -15,7 +15,7 @@ import (
 type VideoComposer struct {
 	AssetManager    imagePorts.AssetManager
 	BackendProvider imagePorts.Backend
-	CharactersMap   *ports.Characters
+	Characters      *ports.Characters
 	resourceMap     resourceMap
 	mu              sync.RWMutex
 	uploadGroup     singleflight.Group
@@ -37,11 +37,14 @@ func NewVideoComposer(
 	if backend == nil {
 		return nil, fmt.Errorf("backend is required")
 	}
+	if cm == nil {
+		return nil, fmt.Errorf("characters is required")
+	}
 
 	return &VideoComposer{
 		AssetManager:    assetMgr,
 		BackendProvider: backend,
-		CharactersMap:   cm,
+		Characters:      cm,
 		resourceMap: resourceMap{
 			character: make(map[string]string),
 		},
@@ -60,13 +63,13 @@ func (mc *VideoComposer) PrepareCharacterResources(ctx context.Context, keyframe
 	targets := make(map[string]string)
 
 	// デフォルトキャラクターをアップロード対象に追加
-	if def := mc.CharactersMap.GetDefault(); def != nil && def.ReferenceURL != "" {
+	if def := mc.Characters.GetDefault(); def != nil && def.ReferenceURL != "" {
 		targets[def.ID] = def.ReferenceURL
 	}
 
 	// カットで使用されているキャラクターをアップロード対象に追加
 	for _, id := range ports.Cuts(keyframes).UniqueCharacterIDs() {
-		char := mc.CharactersMap.GetCharacterWithDefault(id)
+		char := mc.Characters.GetCharacterWithDefault(id)
 		if char == nil || char.ReferenceURL == "" {
 			continue
 		}

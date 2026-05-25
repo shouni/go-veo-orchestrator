@@ -171,7 +171,7 @@ func (dr *DesignRunner) collectCharacterURIs(ids []string) ([]imagePorts.ImageUR
 		}
 		processedIDs[id] = struct{}{}
 
-		char := dr.composer.CharactersMap.GetCharacter(id)
+		char := dr.composer.Characters.GetCharacter(id)
 		if char == nil {
 			missingIDs = append(missingIDs, id)
 			continue
