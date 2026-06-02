@@ -255,4 +255,4 @@ sequenceDiagram
 
 ### 📜 ライセンス (License)
 
-このプロジェクトは [MIT License](https://opensource.org/licenses/MIT) の下で非公開・クローズド開発用として運用、またはポートフォリオ契約に基づいてライセンスされます。
+このプロジェクトは [MIT License](https://opensource.org/licenses/MIT) の下で公開されています。
