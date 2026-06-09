@@ -43,7 +43,7 @@ func (r *VideoTimelineRunner) Run(ctx context.Context, recipe *ports.VideoRecipe
 	}
 
 	recipe.Normalize()
-	keyframes := make([]*imagePorts.ImageResponse, len(recipe.Cuts))
+	var keyframes []*imagePorts.ImageResponse
 	if requiresKeyframeGeneration(recipe) {
 		generated, err := r.keyframeRunner.Run(ctx, recipe)
 		if err != nil {
@@ -53,6 +53,8 @@ func (r *VideoTimelineRunner) Run(ctx context.Context, recipe *ports.VideoRecipe
 			return nil, fmt.Errorf("生成されたキーフレーム数(%d)とカット数(%d)が一致しません", len(generated), len(recipe.Cuts))
 		}
 		keyframes = generated
+	} else {
+		keyframes = make([]*imagePorts.ImageResponse, len(recipe.Cuts))
 	}
 
 	responses := make([]*ports.VideoResponse, 0, len(recipe.Cuts))

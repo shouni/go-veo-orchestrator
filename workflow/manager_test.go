@@ -4,7 +4,6 @@ import (
 	"context"
 	"io"
 	"net/http"
-	"strings"
 	"testing"
 
 	characterkit "github.com/shouni/go-character-kit/character"
@@ -60,20 +59,7 @@ func testManagerArgs() ManagerArgs {
 }
 
 func newTestCharacters(list []characterkit.Character) (*characterkit.Characters, error) {
-	chars := &characterkit.Characters{
-		List: list,
-		ByID: make(map[string]*characterkit.Character, len(list)*2),
-	}
-	if err := chars.Validate(); err != nil {
-		return nil, err
-	}
-
-	for i := range chars.List {
-		char := &chars.List[i]
-		chars.ByID[char.ID] = char
-		chars.ByID[strings.ToLower(char.ID)] = char
-	}
-	return chars, nil
+	return characterkit.NewCharacters(list)
 }
 
 type fakeGenerativeModel struct{}

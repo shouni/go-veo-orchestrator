@@ -2,7 +2,6 @@ package keyframe
 
 import (
 	"context"
-	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -40,19 +39,11 @@ func (m *mockBackend) IsVertexAI() bool { return m.isVertex }
 func mustNewCharacters(t *testing.T, list []characterkit.Character) *characterkit.Characters {
 	t.Helper()
 
-	chars := &characterkit.Characters{
-		List: list,
-		ByID: make(map[string]*characterkit.Character, len(list)*2),
-	}
-	if err := chars.Validate(); err != nil {
-		t.Fatalf("Validate characters failed: %v", err)
+	chars, err := characterkit.NewCharacters(list)
+	if err != nil {
+		t.Fatalf("NewCharacters failed: %v", err)
 	}
 
-	for i := range chars.List {
-		char := &chars.List[i]
-		chars.ByID[char.ID] = char
-		chars.ByID[strings.ToLower(char.ID)] = char
-	}
 	return chars
 }
 
