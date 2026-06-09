@@ -5,6 +5,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	characterkit "github.com/shouni/go-character-kit/character"
 	"github.com/shouni/go-veo-orchestrator/ports"
 )
 
@@ -35,13 +36,14 @@ type mockBackend struct {
 
 func (m *mockBackend) IsVertexAI() bool { return m.isVertex }
 
-func mustNewCharacters(t *testing.T, list []ports.Character) *ports.Characters {
+func mustNewCharacters(t *testing.T, list []characterkit.Character) *characterkit.Characters {
 	t.Helper()
 
-	chars, err := ports.NewCharacters(list)
+	chars, err := characterkit.NewCharacters(list)
 	if err != nil {
 		t.Fatalf("NewCharacters failed: %v", err)
 	}
+
 	return chars
 }
 
@@ -52,7 +54,7 @@ func TestVideoComposer_PrepareCharacterResources(t *testing.T) {
 	assetMgr := &mockAssetManager{}
 	backend := &mockBackend{isVertex: false}
 
-	cm := mustNewCharacters(t, []ports.Character{
+	cm := mustNewCharacters(t, []characterkit.Character{
 		{
 			ID:           "zundamon",
 			Name:         "ずんだもん",
