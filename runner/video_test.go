@@ -41,7 +41,7 @@ func TestVideoTimelineRunner_RunChainsPreviousVideoID(t *testing.T) {
 	ctx := context.Background()
 	recipe := &ports.VideoRecipe{
 		ProjectTitle: "test",
-		MusicRecipe:  ports.MusicRecipe{Style: "symphonic rock"},
+		MusicRecipe:  ports.MusicRecipe{Mood: "symphonic rock"},
 		Cuts: []ports.Cut{
 			{
 				CutIndex:       1,

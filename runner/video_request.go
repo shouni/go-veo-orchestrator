@@ -48,8 +48,8 @@ func (b *DefaultVideoRequestBuilder) buildPrompt(recipe *ports.VideoRecipe, cut 
 	if cut.AudioCue != "" {
 		parts = append(parts, fmt.Sprintf("Synchronize motion and camera timing with audio cue: %s", cut.AudioCue))
 	}
-	if recipe.MusicRecipe.Style != "" {
-		parts = append(parts, "Music style: "+recipe.MusicRecipe.Style)
+	if musicMood := strings.TrimSpace(recipe.MusicRecipe.Mood); musicMood != "" {
+		parts = append(parts, "Music mood: "+musicMood)
 	}
 	if cut.StartSec != 0 || cut.EndSec != 0 {
 		parts = append(parts, fmt.Sprintf("Timeline: %.2fs to %.2fs.", cut.StartSec, cut.EndSec))

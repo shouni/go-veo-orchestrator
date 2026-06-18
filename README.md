@@ -127,9 +127,31 @@ result, err := workflows.Video.RunAndSave(ctx, recipe, "video_music_meta.json")
 {
   "project_title": "AIマルチモーダル解説動画",
   "music_recipe": {
-    "tempo_bpm": 120,
-    "total_duration_sec": 15,
-    "style": "90s retro mech synthwave"
+    "title": "AIマルチモーダル解説動画",
+    "theme": "AIマルチモーダル解説",
+    "mood": "90s retro mech synthwave",
+    "tempo": 120,
+    "instruments": [
+      "analog synth",
+      "electronic drums"
+    ],
+    "sections": [
+      {
+        "name": "Intro",
+        "duration_seconds": 5,
+        "prompt": "quiet synth pad and clock tick"
+      },
+      {
+        "name": "Verse",
+        "duration_seconds": 5,
+        "prompt": "drum beat starts and tempo lifts"
+      },
+      {
+        "name": "Chorus",
+        "duration_seconds": 5,
+        "prompt": "bright synth lead and impact effects"
+      }
+    ]
   },
   "cuts": [
     {
@@ -159,7 +181,7 @@ result, err := workflows.Video.RunAndSave(ctx, recipe, "video_music_meta.json")
 
 この JSON は `Normalize()` により `start_sec` / `end_sec` / `status` が補完されます。生成後は `keyframe_reference`、`video_id`、`video_url` が追記された `video_music_meta.json` として保存されます。
 
-楽曲生成側の JSON が `sections` ベースで届く場合も、そのまま受け付けます。`sections` の要素数は固定せず、各 section の `duration_seconds` から `cuts` を自動生成し、`tempo` / `mood` は `music_recipe.tempo_bpm` / `music_recipe.style` に同期されます。
+楽曲生成側の JSON が `sections` ベースで届く場合も、そのまま受け付けます。`sections` の要素数は固定せず、各 section の `duration_seconds` から `cuts` を自動生成し、トップレベルの `tempo` / `mood` と `music_recipe.tempo` / `music_recipe.mood` は相互に補完されます。
 
 ```json
 {
