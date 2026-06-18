@@ -106,17 +106,15 @@ func (vr *VideoRecipe) syncMusicRecipe() {
 	if vr.Mood == "" {
 		vr.Mood = vr.MusicRecipe.Mood
 	}
-	if len(vr.MusicRecipe.Instruments) == 0 {
-		vr.MusicRecipe.Instruments = vr.Instruments
+	if len(vr.MusicRecipe.Instruments) == 0 && len(vr.Instruments) > 0 {
+		vr.MusicRecipe.Instruments = append([]string(nil), vr.Instruments...)
+	} else if len(vr.Instruments) == 0 && len(vr.MusicRecipe.Instruments) > 0 {
+		vr.Instruments = append([]string(nil), vr.MusicRecipe.Instruments...)
 	}
-	if len(vr.Instruments) == 0 {
-		vr.Instruments = vr.MusicRecipe.Instruments
-	}
-	if len(vr.MusicRecipe.Sections) == 0 {
-		vr.MusicRecipe.Sections = vr.Sections
-	}
-	if len(vr.Sections) == 0 {
-		vr.Sections = vr.MusicRecipe.Sections
+	if len(vr.MusicRecipe.Sections) == 0 && len(vr.Sections) > 0 {
+		vr.MusicRecipe.Sections = append([]Section(nil), vr.Sections...)
+	} else if len(vr.Sections) == 0 && len(vr.MusicRecipe.Sections) > 0 {
+		vr.Sections = append([]Section(nil), vr.MusicRecipe.Sections...)
 	}
 	if vr.MusicRecipe.Lyrics == nil {
 		vr.MusicRecipe.Lyrics = vr.Lyrics

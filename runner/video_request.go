@@ -48,11 +48,7 @@ func (b *DefaultVideoRequestBuilder) buildPrompt(recipe *ports.VideoRecipe, cut 
 	if cut.AudioCue != "" {
 		parts = append(parts, fmt.Sprintf("Synchronize motion and camera timing with audio cue: %s", cut.AudioCue))
 	}
-	musicMood := strings.TrimSpace(recipe.MusicRecipe.Mood)
-	if musicMood == "" {
-		musicMood = strings.TrimSpace(recipe.Mood)
-	}
-	if musicMood != "" {
+	if musicMood := strings.TrimSpace(recipe.MusicRecipe.Mood); musicMood != "" {
 		parts = append(parts, "Music mood: "+musicMood)
 	}
 	if cut.StartSec != 0 || cut.EndSec != 0 {

@@ -50,3 +50,51 @@ func TestVideoRecipeNormalizeBuildsCutsFromVariableSections(t *testing.T) {
 		t.Errorf("first cut VisualAnchor = %q, want Verse", recipe.Cuts[0].VisualAnchor)
 	}
 }
+
+func TestVideoRecipeNormalizeCopiesSliceFields(t *testing.T) {
+	recipe := &VideoRecipe{
+		Instruments: []string{"piano"},
+		Sections: []Section{
+			{
+				Name:     "Verse",
+				Duration: 30,
+			},
+		},
+	}
+
+	recipe.Normalize()
+
+	recipe.Instruments[0] = "guitar"
+	if recipe.MusicRecipe.Instruments[0] != "piano" {
+		t.Fatalf("MusicRecipe.Instruments shares backing array with Instruments")
+	}
+
+	recipe.Sections[0].Name = "Chorus"
+	if recipe.MusicRecipe.Sections[0].Name != "Verse" {
+		t.Fatalf("MusicRecipe.Sections shares backing array with Sections")
+	}
+
+	fromMusicRecipe := &VideoRecipe{
+		MusicRecipe: MusicRecipe{
+			Instruments: []string{"strings"},
+			Sections: []Section{
+				{
+					Name:     "Bridge",
+					Duration: 20,
+				},
+			},
+		},
+	}
+
+	fromMusicRecipe.Normalize()
+
+	fromMusicRecipe.MusicRecipe.Instruments[0] = "brass"
+	if fromMusicRecipe.Instruments[0] != "strings" {
+		t.Fatalf("Instruments shares backing array with MusicRecipe.Instruments")
+	}
+
+	fromMusicRecipe.MusicRecipe.Sections[0].Name = "Outro"
+	if fromMusicRecipe.Sections[0].Name != "Bridge" {
+		t.Fatalf("Sections shares backing array with MusicRecipe.Sections")
+	}
+}
