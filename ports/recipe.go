@@ -1,5 +1,7 @@
 package ports
 
+import "github.com/shouni/go-gemini-client/lyria"
+
 // VideoRecipe は ScriptRunner が生成する動画台本全体の構造です。
 // Music Recipe と各カットの Audio Cue / Visual Anchor を同じ JSON に保持し、
 // Veo への音楽同期プロンプトと後段の決定論的な結合処理の入力にします。
@@ -20,31 +22,11 @@ type VideoRecipe struct {
 	Cuts         []Cut       `json:"cuts"`
 }
 
-// MusicRecipe は BGM 全体のテンポ・尺・スタイルを表す楽曲構成書です。
-type MusicRecipe struct {
-	TempoBPM         int     `json:"tempo_bpm"`
-	TotalDurationSec float64 `json:"total_duration_sec"`
-	Style            string  `json:"style"`
-}
+type MusicRecipe = lyria.MusicRecipe
 
-// Section は楽曲生成JSON内の可変長セクションです。
-// Verse / Chorus などの曲展開を、そのまま動画タイムラインの候補カットとして扱えます。
-type Section struct {
-	Name            string  `json:"name"`
-	DurationSeconds float64 `json:"duration_seconds"`
-	Prompt          string  `json:"prompt"`
-}
+type Section = lyria.MusicSection
 
-// Lyrics は楽曲生成JSON内の歌詞・テーマ情報です。
-type Lyrics struct {
-	Title     string   `json:"title"`
-	Theme     string   `json:"theme"`
-	Hook      string   `json:"hook"`
-	Lyrics    string   `json:"lyrics"`
-	Keywords  []string `json:"keywords"`
-	Mood      string   `json:"mood"`
-	Narrative string   `json:"narrative"`
-}
+type Lyrics = lyria.LyricsDraft
 
 // Cut は動画内の1カットを表します。
 // audio_cue は BGM 上の展開、visual_anchor は映像上の固定指示です。
@@ -87,18 +69,7 @@ func (vr *VideoRecipe) Normalize() {
 	if vr.Title == "" {
 		vr.Title = vr.ProjectTitle
 	}
-	if vr.MusicRecipe.TempoBPM == 0 {
-		vr.MusicRecipe.TempoBPM = vr.Tempo
-	}
-	if vr.Tempo == 0 {
-		vr.Tempo = vr.MusicRecipe.TempoBPM
-	}
-	if vr.MusicRecipe.Style == "" {
-		vr.MusicRecipe.Style = vr.Mood
-	}
-	if vr.Mood == "" {
-		vr.Mood = vr.MusicRecipe.Style
-	}
+	vr.syncMusicRecipe()
 	if len(vr.Cuts) == 0 && len(vr.Sections) > 0 {
 		vr.Cuts = cutsFromSections(vr.Sections)
 	}
@@ -108,17 +79,82 @@ func (vr *VideoRecipe) Normalize() {
 		vr.Cuts[i].Normalize(i+1, current)
 		current = vr.Cuts[i].EndSec
 	}
-	if vr.MusicRecipe.TotalDurationSec == 0 {
-		vr.MusicRecipe.TotalDurationSec = current
+}
+
+func (vr *VideoRecipe) syncMusicRecipe() {
+	if vr.MusicRecipe.Title == "" {
+		vr.MusicRecipe.Title = vr.Title
+	}
+	if vr.Title == "" {
+		vr.Title = vr.MusicRecipe.Title
+	}
+	if vr.MusicRecipe.Theme == "" {
+		vr.MusicRecipe.Theme = vr.Theme
+	}
+	if vr.Theme == "" {
+		vr.Theme = vr.MusicRecipe.Theme
+	}
+	if vr.MusicRecipe.Tempo == 0 {
+		vr.MusicRecipe.Tempo = vr.Tempo
+	}
+	if vr.Tempo == 0 {
+		vr.Tempo = vr.MusicRecipe.Tempo
+	}
+	if vr.MusicRecipe.Mood == "" {
+		vr.MusicRecipe.Mood = vr.Mood
+	}
+	if vr.Mood == "" {
+		vr.Mood = vr.MusicRecipe.Mood
+	}
+	if len(vr.MusicRecipe.Instruments) == 0 {
+		vr.MusicRecipe.Instruments = vr.Instruments
+	}
+	if len(vr.Instruments) == 0 {
+		vr.Instruments = vr.MusicRecipe.Instruments
+	}
+	if len(vr.MusicRecipe.Sections) == 0 {
+		vr.MusicRecipe.Sections = vr.Sections
+	}
+	if len(vr.Sections) == 0 {
+		vr.Sections = vr.MusicRecipe.Sections
+	}
+	if vr.MusicRecipe.Lyrics == nil {
+		vr.MusicRecipe.Lyrics = vr.Lyrics
+	}
+	if vr.Lyrics == nil {
+		vr.Lyrics = vr.MusicRecipe.Lyrics
+	}
+	if vr.MusicRecipe.AudioModel == "" {
+		vr.MusicRecipe.AudioModel = vr.AudioModel
+	}
+	if vr.AudioModel == "" {
+		vr.AudioModel = vr.MusicRecipe.AudioModel
+	}
+	if vr.MusicRecipe.ComposeMode == "" {
+		vr.MusicRecipe.ComposeMode = vr.ComposeMode
+	}
+	if vr.ComposeMode == "" {
+		vr.ComposeMode = vr.MusicRecipe.ComposeMode
+	}
+	if vr.MusicRecipe.Seed == nil && vr.Seed != 0 {
+		seed := vr.Seed
+		vr.MusicRecipe.Seed = &seed
+	}
+	if vr.Seed == 0 && vr.MusicRecipe.Seed != nil {
+		vr.Seed = *vr.MusicRecipe.Seed
 	}
 }
 
 func cutsFromSections(sections []Section) []Cut {
 	cuts := make([]Cut, 0, len(sections))
 	for i, section := range sections {
+		duration := float64(section.Duration)
+		if duration == 0 && section.EndSeconds > section.StartSeconds {
+			duration = float64(section.EndSeconds - section.StartSeconds)
+		}
 		cuts = append(cuts, Cut{
 			CutIndex:     i + 1,
-			DurationSec:  section.DurationSeconds,
+			DurationSec:  duration,
 			AudioCue:     section.Prompt,
 			VisualAnchor: section.Name,
 		})
