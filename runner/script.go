@@ -127,7 +127,7 @@ func parseSourceRecipe(raw string) (*ports.VideoRecipe, error) {
 	}
 
 	var recipe ports.VideoRecipe
-	if err := json.Unmarshal([]byte(jsonStr), &recipe); err == nil && hasVideoRecipeContent(recipe) {
+	if err := json.Unmarshal([]byte(jsonStr), &recipe); err == nil && hasVideoRecipeContent(&recipe) {
 		recipe.Normalize()
 		return &recipe, nil
 	}
@@ -136,25 +136,25 @@ func parseSourceRecipe(raw string) (*ports.VideoRecipe, error) {
 	if err := json.Unmarshal([]byte(jsonStr), &musicRecipe); err != nil {
 		return nil, fmt.Errorf("source JSON の解析に失敗しました: %w", err)
 	}
-	if !hasMusicRecipeContent(musicRecipe) {
+	if !hasMusicRecipeContent(&musicRecipe) {
 		return nil, nil
 	}
 
-	recipe = ports.VideoRecipe{
+	newRecipe := ports.VideoRecipe{
 		MusicRecipe: musicRecipe,
 	}
-	recipe.Normalize()
-	return &recipe, nil
+	newRecipe.Normalize()
+	return &newRecipe, nil
 }
 
-func hasVideoRecipeContent(recipe ports.VideoRecipe) bool {
+func hasVideoRecipeContent(recipe *ports.VideoRecipe) bool {
 	return recipe.ProjectTitle != "" ||
 		recipe.Description != "" ||
 		len(recipe.Cuts) > 0 ||
-		hasMusicRecipeContent(recipe.MusicRecipe)
+		hasMusicRecipeContent(&recipe.MusicRecipe)
 }
 
-func hasMusicRecipeContent(recipe ports.MusicRecipe) bool {
+func hasMusicRecipeContent(recipe *ports.MusicRecipe) bool {
 	return recipe.Title != "" ||
 		recipe.Theme != "" ||
 		recipe.Mood != "" ||
