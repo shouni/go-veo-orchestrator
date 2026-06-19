@@ -3,7 +3,6 @@ package runner
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 
@@ -90,22 +89,9 @@ func (r *CutKeyframeRunner) RunAndSave(ctx context.Context, recipe *ports.VideoR
 		recipe.Cuts[i].KeyframeReference = keyframePath
 	}
 
-	metadataPath, err := resolveOutputPath(targetDir, defaultVideoMetaJSON)
-	if err != nil {
-		return nil, fmt.Errorf("動画メタデータ出力パスの解決に失敗しました: %w", err)
-	}
-
-	plotData, err := json.MarshalIndent(recipe, "", "  ")
-	if err != nil {
-		return nil, fmt.Errorf("動画レシピのJSON変換に失敗しました: %w", err)
-	}
-
-	slog.InfoContext(ctx, "更新された動画メタデータを保存しています", "path", metadataPath)
-	if err := r.writer.Write(ctx, metadataPath, bytes.NewReader(plotData),
-		remoteio.WithContentType("application/json"),
-		remoteio.WithCacheControl(defaultCacheControl),
-	); err != nil {
-		return nil, fmt.Errorf("動画メタデータの保存に失敗しました: %w", err)
+	slog.InfoContext(ctx, "更新された動画メタデータを保存しています", "output_dir", targetDir)
+	if _, err := writeRecipeMetadata(ctx, r.writer, targetDir, recipe); err != nil {
+		return nil, err
 	}
 
 	return recipe, nil

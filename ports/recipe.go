@@ -3,23 +3,13 @@ package ports
 import "github.com/shouni/go-gemini-client/lyria"
 
 // VideoRecipe は ScriptRunner が生成する動画台本全体の構造です。
-// Music Recipe と各カットの Audio Cue / Visual Anchor を同じ JSON に保持し、
+// Lyria の Music Recipe と各カットの Audio Cue / Visual Anchor を同じ JSON に保持し、
 // Veo への音楽同期プロンプトと後段の決定論的な結合処理の入力にします。
 type VideoRecipe struct {
-	ProjectTitle string      `json:"project_title"`
-	Title        string      `json:"title,omitempty"`
-	Theme        string      `json:"theme,omitempty"`
-	Mood         string      `json:"mood,omitempty"`
-	Tempo        int         `json:"tempo,omitempty"`
-	Instruments  []string    `json:"instruments,omitempty"`
-	Sections     []Section   `json:"sections,omitempty"`
-	Lyrics       *Lyrics     `json:"lyrics,omitempty"`
-	AudioModel   string      `json:"audio_model,omitempty"`
-	ComposeMode  string      `json:"compose_mode,omitempty"`
-	Seed         int64       `json:"seed,omitempty"`
-	Description  string      `json:"description,omitempty"`
-	MusicRecipe  MusicRecipe `json:"music_recipe"`
-	Cuts         []Cut       `json:"cuts"`
+	ProjectTitle string            `json:"project_title,omitempty"`
+	Description  string            `json:"description,omitempty"`
+	MusicRecipe  lyria.MusicRecipe `json:"music_recipe"`
+	Cuts         []Cut             `json:"cuts"`
 }
 
 type MusicRecipe = lyria.MusicRecipe
@@ -57,21 +47,19 @@ const (
 	CutStatusFailed    CutStatus = "failed"
 )
 
-// Normalize はトップレベルの楽曲JSONと動画生成用JSONの差を吸収し、
-// section 由来のカット生成とタイムライン補完を行います。
+// Normalize は Music Recipe 由来のカット生成とタイムライン補完を行います。
 func (vr *VideoRecipe) Normalize() {
 	if vr == nil {
 		return
 	}
 	if vr.ProjectTitle == "" {
-		vr.ProjectTitle = vr.Title
+		vr.ProjectTitle = vr.MusicRecipe.Title
 	}
-	if vr.Title == "" {
-		vr.Title = vr.ProjectTitle
+	if vr.MusicRecipe.Title == "" {
+		vr.MusicRecipe.Title = vr.ProjectTitle
 	}
-	vr.syncMusicRecipe()
-	if len(vr.Cuts) == 0 && len(vr.Sections) > 0 {
-		vr.Cuts = cutsFromSections(vr.Sections)
+	if len(vr.Cuts) == 0 && len(vr.MusicRecipe.Sections) > 0 {
+		vr.Cuts = cutsFromSections(vr.MusicRecipe.Sections)
 	}
 
 	var current float64
@@ -81,69 +69,7 @@ func (vr *VideoRecipe) Normalize() {
 	}
 }
 
-func (vr *VideoRecipe) syncMusicRecipe() {
-	if vr.MusicRecipe.Title == "" {
-		vr.MusicRecipe.Title = vr.Title
-	}
-	if vr.Title == "" {
-		vr.Title = vr.MusicRecipe.Title
-	}
-	if vr.MusicRecipe.Theme == "" {
-		vr.MusicRecipe.Theme = vr.Theme
-	}
-	if vr.Theme == "" {
-		vr.Theme = vr.MusicRecipe.Theme
-	}
-	if vr.MusicRecipe.Tempo == 0 {
-		vr.MusicRecipe.Tempo = vr.Tempo
-	}
-	if vr.Tempo == 0 {
-		vr.Tempo = vr.MusicRecipe.Tempo
-	}
-	if vr.MusicRecipe.Mood == "" {
-		vr.MusicRecipe.Mood = vr.Mood
-	}
-	if vr.Mood == "" {
-		vr.Mood = vr.MusicRecipe.Mood
-	}
-	if len(vr.MusicRecipe.Instruments) == 0 && len(vr.Instruments) > 0 {
-		vr.MusicRecipe.Instruments = append([]string(nil), vr.Instruments...)
-	} else if len(vr.Instruments) == 0 && len(vr.MusicRecipe.Instruments) > 0 {
-		vr.Instruments = append([]string(nil), vr.MusicRecipe.Instruments...)
-	}
-	if len(vr.MusicRecipe.Sections) == 0 && len(vr.Sections) > 0 {
-		vr.MusicRecipe.Sections = append([]Section(nil), vr.Sections...)
-	} else if len(vr.Sections) == 0 && len(vr.MusicRecipe.Sections) > 0 {
-		vr.Sections = append([]Section(nil), vr.MusicRecipe.Sections...)
-	}
-	if vr.MusicRecipe.Lyrics == nil {
-		vr.MusicRecipe.Lyrics = vr.Lyrics
-	}
-	if vr.Lyrics == nil {
-		vr.Lyrics = vr.MusicRecipe.Lyrics
-	}
-	if vr.MusicRecipe.AudioModel == "" {
-		vr.MusicRecipe.AudioModel = vr.AudioModel
-	}
-	if vr.AudioModel == "" {
-		vr.AudioModel = vr.MusicRecipe.AudioModel
-	}
-	if vr.MusicRecipe.ComposeMode == "" {
-		vr.MusicRecipe.ComposeMode = vr.ComposeMode
-	}
-	if vr.ComposeMode == "" {
-		vr.ComposeMode = vr.MusicRecipe.ComposeMode
-	}
-	if vr.MusicRecipe.Seed == nil && vr.Seed != 0 {
-		seed := vr.Seed
-		vr.MusicRecipe.Seed = &seed
-	}
-	if vr.Seed == 0 && vr.MusicRecipe.Seed != nil {
-		vr.Seed = *vr.MusicRecipe.Seed
-	}
-}
-
-func cutsFromSections(sections []Section) []Cut {
+func cutsFromSections(sections []lyria.MusicSection) []Cut {
 	cuts := make([]Cut, 0, len(sections))
 	for i, section := range sections {
 		duration := float64(section.Duration)

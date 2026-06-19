@@ -1,9 +1,7 @@
 package runner
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"path"
 
@@ -31,21 +29,9 @@ func (pr *VideoPublisherRunner) Run(ctx context.Context, recipe *ports.VideoReci
 	}
 
 	recipe.Normalize()
-	metadata, err := pr.BuildMetadata(recipe)
+	metadataPath, err := writeRecipeMetadata(ctx, pr.writer, outputDir, recipe)
 	if err != nil {
 		return nil, err
-	}
-
-	metadataPath, err := resolveOutputPath(outputDir, defaultVideoMetaJSON)
-	if err != nil {
-		return nil, fmt.Errorf("メタデータ出力パスの解決に失敗しました: %w", err)
-	}
-
-	if err := pr.writer.Write(ctx, metadataPath, bytes.NewReader(metadata),
-		remoteio.WithContentType("application/json"),
-		remoteio.WithCacheControl(defaultCacheControl),
-	); err != nil {
-		return nil, fmt.Errorf("動画メタデータの保存に失敗しました: %w", err)
 	}
 
 	imagePaths := make([]string, 0, len(recipe.Cuts))
@@ -64,13 +50,5 @@ func (pr *VideoPublisherRunner) Run(ctx context.Context, recipe *ports.VideoReci
 
 // BuildMetadata は VideoRecipe を整形済み JSON に変換します。
 func (pr *VideoPublisherRunner) BuildMetadata(recipe *ports.VideoRecipe) ([]byte, error) {
-	if recipe == nil {
-		return nil, fmt.Errorf("VideoRecipe が nil です")
-	}
-	recipe.Normalize()
-	data, err := json.MarshalIndent(recipe, "", "  ")
-	if err != nil {
-		return nil, fmt.Errorf("動画メタデータのJSON変換に失敗しました: %w", err)
-	}
-	return data, nil
+	return buildRecipeMetadata(recipe)
 }

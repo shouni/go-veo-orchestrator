@@ -23,7 +23,7 @@
   * **キャラクター固有 Seed**、**キーフレーム画像**、**動きのプロンプト**、**前カットの VideoID** を 1 つの `VideoGenerationRequest` にまとめ、カット間の見た目と文脈を維持します。
 
 * **⏳ Audio-Driven Timeline Logic (音楽主導のタイムライン管理)**:
-  * Music Recipe の `sections` / `cuts` から `duration_sec`、`start_sec`、`end_sec` を補完し、`audio_cue` を Veo 用プロンプトへ注入します。
+  * `music_recipe.sections` または `cuts` から `duration_sec`、`start_sec`、`end_sec` を補完し、`audio_cue` を Veo 用プロンプトへ注入します。
 
 * **🔁 Resumable Video Chain**:
   * 各 `cut` は `status`、`video_id`、`video_url` を保持します。生成済みカットは再生成せず、保持済み `video_id` を次カットの `PreviousVideoID` として使用します。
@@ -111,7 +111,7 @@ result, err := workflows.Video.RunAndSave(ctx, recipe, "video_music_meta.json")
 | `AudioReference` | 既に参照可能な音声セグメント URI。 |
 | `InputAudio` | `AudioReference` が空の場合に adapter 側でアップロードして使う音声バイト列です。 |
 | `PreviousVideoID` | 前カットの文脈を引き継ぐための ID。空の場合はチェーンなしで生成します。 |
-| `Seed` | キャラクター・カットの一貫性を保つための seed です。 |
+| `Seed` | キャラクター Seed を優先し、未指定時は `music_recipe.Seed` を使います。 |
 | `CutIndex` | レスポンスやエラー表示で使うカット番号です。 |
 | `DurationSec` | カットの目標秒数です。 |
 
@@ -181,34 +181,38 @@ result, err := workflows.Video.RunAndSave(ctx, recipe, "video_music_meta.json")
 
 この JSON は `Normalize()` により `start_sec` / `end_sec` / `status` が補完されます。生成後は `keyframe_reference`、`video_id`、`video_url` が追記された `video_music_meta.json` として保存されます。
 
-楽曲生成側の JSON が `sections` ベースで届く場合も、そのまま受け付けます。`sections` の要素数は固定せず、各 section の `duration_seconds` から `cuts` を自動生成し、トップレベルの `tempo` / `mood` と `music_recipe.tempo` / `music_recipe.mood` は相互に補完されます。
+`cuts` が空の場合は、`music_recipe.sections` からカット列を自動生成します。`music_recipe` は `github.com/shouni/go-gemini-client/lyria.MusicRecipe` をそのまま保持するため、楽曲生成側の JSON は `music_recipe` 配下へ入れます。
 
 ```json
 {
-  "title": "碧き残影、一瞬の奇跡 〜黒き疾風の叙事詩〜",
-  "theme": "闇を裂き、最速の奇跡を刻む青き瞳の誓い",
-  "mood": "Epic Symphonic Fantasy Rock Ballad, Emotional and Melancholic",
-  "tempo": 72,
-  "instruments": [
-    "Acoustic Grand Piano",
-    "Soaring Full Strings Section",
-    "Progressive Rock Electric Guitar"
-  ],
-  "sections": [
-    {
-      "name": "Verse",
-      "duration_seconds": 40,
-      "prompt": "[Silent Awakening] Focus strictly on the first lyrics block marked [Verse]."
-    },
-    {
-      "name": "Chorus",
-      "duration_seconds": 45,
-      "prompt": "[Emotional Outburst & High-Voltage Peak] Focus on the lyrics marked [Chorus]."
-    }
-  ],
-  "audio_model": "lyria-3-pro-preview",
-  "compose_mode": "game_fantasy",
-  "seed": 10
+  "project_title": "AIマルチモーダル解説動画",
+  "music_recipe": {
+    "title": "AIマルチモーダル解説動画",
+    "theme": "AIマルチモーダル解説",
+    "mood": "upbeat electronic documentary score",
+    "tempo": 120,
+    "instruments": [
+      "analog synth",
+      "electronic drums",
+      "soft piano"
+    ],
+    "sections": [
+      {
+        "name": "Verse",
+        "duration_seconds": 40,
+        "prompt": "quiet opening with restrained melody and gradual rhythmic build"
+      },
+      {
+        "name": "Chorus",
+        "duration_seconds": 45,
+        "prompt": "emotional peak with fuller instrumentation and stronger accents"
+      }
+    ],
+    "AudioModel": "lyria-3-pro-preview",
+    "ComposeMode": "game_fantasy",
+    "Seed": 10
+  },
+  "cuts": []
 }
 ```
 

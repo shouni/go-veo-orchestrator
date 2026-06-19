@@ -25,8 +25,8 @@ func (b *DefaultVideoRequestBuilder) Build(recipe *ports.VideoRecipe, cut ports.
 		imageData = keyframe.Data
 		seed = keyframe.UsedSeed
 	}
-	if seed == 0 {
-		seed = recipe.Seed
+	if seed == 0 && recipe.MusicRecipe.Seed != nil {
+		seed = *recipe.MusicRecipe.Seed
 	}
 
 	return ports.VideoGenerationRequest{

@@ -4,24 +4,26 @@ import "testing"
 
 func TestVideoRecipeNormalizeBuildsCutsFromVariableSections(t *testing.T) {
 	recipe := &VideoRecipe{
-		Title: "碧き残影、一瞬の奇跡 〜黒き疾風の叙事詩〜",
-		Mood:  "Epic Symphonic Fantasy Rock Ballad, Emotional and Melancholic",
-		Tempo: 72,
-		Sections: []Section{
-			{
-				Name:     "Verse",
-				Duration: 40,
-				Prompt:   "[Silent Awakening] Focus strictly on the first lyrics block marked [Verse].",
-			},
-			{
-				Name:     "Chorus",
-				Duration: 45,
-				Prompt:   "[Emotional Outburst & High-Voltage Peak] Focus on the lyrics marked [Chorus].",
-			},
-			{
-				Name:     "Chorus 2",
-				Duration: 55,
-				Prompt:   "[The Final Peak & Ultimate Triumphant Finale] Focus on the final lyrics marked [Chorus 2].",
+		MusicRecipe: MusicRecipe{
+			Title: "碧き残影、一瞬の奇跡 〜黒き疾風の叙事詩〜",
+			Mood:  "Epic Symphonic Fantasy Rock Ballad, Emotional and Melancholic",
+			Tempo: 72,
+			Sections: []Section{
+				{
+					Name:     "Verse",
+					Duration: 40,
+					Prompt:   "[Silent Awakening] Focus strictly on the first lyrics block marked [Verse].",
+				},
+				{
+					Name:     "Chorus",
+					Duration: 45,
+					Prompt:   "[Emotional Outburst & High-Voltage Peak] Focus on the lyrics marked [Chorus].",
+				},
+				{
+					Name:     "Chorus 2",
+					Duration: 55,
+					Prompt:   "[The Final Peak & Ultimate Triumphant Finale] Focus on the final lyrics marked [Chorus 2].",
+				},
 			},
 		},
 	}
@@ -34,8 +36,8 @@ func TestVideoRecipeNormalizeBuildsCutsFromVariableSections(t *testing.T) {
 	if recipe.MusicRecipe.Tempo != 72 {
 		t.Errorf("Tempo = %d, want 72", recipe.MusicRecipe.Tempo)
 	}
-	if recipe.MusicRecipe.Mood != recipe.Mood {
-		t.Errorf("Mood = %q, want %q", recipe.MusicRecipe.Mood, recipe.Mood)
+	if recipe.MusicRecipe.Mood != "Epic Symphonic Fantasy Rock Ballad, Emotional and Melancholic" {
+		t.Errorf("Mood = %q", recipe.MusicRecipe.Mood)
 	}
 	if len(recipe.MusicRecipe.Sections) != 3 {
 		t.Fatalf("len(MusicRecipe.Sections) = %d, want 3", len(recipe.MusicRecipe.Sections))
@@ -51,50 +53,118 @@ func TestVideoRecipeNormalizeBuildsCutsFromVariableSections(t *testing.T) {
 	}
 }
 
-func TestVideoRecipeNormalizeCopiesSliceFields(t *testing.T) {
+func TestVideoRecipeNormalizeKeepsMusicRecipeSlicesIsolatedFromCuts(t *testing.T) {
 	recipe := &VideoRecipe{
-		Instruments: []string{"piano"},
-		Sections: []Section{
-			{
-				Name:     "Verse",
-				Duration: 30,
+		MusicRecipe: MusicRecipe{
+			Instruments: []string{"piano"},
+			Sections: []Section{
+				{
+					Name:     "Verse",
+					Duration: 30,
+				},
 			},
 		},
 	}
 
 	recipe.Normalize()
 
-	recipe.Instruments[0] = "guitar"
-	if recipe.MusicRecipe.Instruments[0] != "piano" {
-		t.Fatalf("MusicRecipe.Instruments shares backing array with Instruments")
-	}
-
-	recipe.Sections[0].Name = "Chorus"
+	recipe.Cuts[0].VisualAnchor = "Chorus"
 	if recipe.MusicRecipe.Sections[0].Name != "Verse" {
-		t.Fatalf("MusicRecipe.Sections shares backing array with Sections")
+		t.Fatalf("MusicRecipe.Sections should remain unchanged after mutating Cuts")
 	}
+}
 
-	fromMusicRecipe := &VideoRecipe{
+func TestVideoRecipeNormalizeUsesProjectTitleAsMusicTitleFallback(t *testing.T) {
+	recipe := &VideoRecipe{
+		ProjectTitle: "fallback title",
 		MusicRecipe: MusicRecipe{
-			Instruments: []string{"strings"},
 			Sections: []Section{
 				{
-					Name:     "Bridge",
-					Duration: 20,
+					Name:     "Verse",
+					Duration: 30,
 				},
 			},
 		},
 	}
 
-	fromMusicRecipe.Normalize()
+	recipe.Normalize()
 
-	fromMusicRecipe.MusicRecipe.Instruments[0] = "brass"
-	if fromMusicRecipe.Instruments[0] != "strings" {
-		t.Fatalf("Instruments shares backing array with MusicRecipe.Instruments")
+	if recipe.MusicRecipe.Title != "fallback title" {
+		t.Fatalf("MusicRecipe.Title = %q, want fallback title", recipe.MusicRecipe.Title)
+	}
+}
+
+func TestVideoRecipeNormalizeUsesMusicTitleAsProjectTitleFallback(t *testing.T) {
+	recipe := &VideoRecipe{
+		MusicRecipe: MusicRecipe{
+			Title: "music title",
+			Sections: []Section{
+				{
+					Name:     "Verse",
+					Duration: 30,
+				},
+			},
+		},
 	}
 
-	fromMusicRecipe.MusicRecipe.Sections[0].Name = "Outro"
-	if fromMusicRecipe.Sections[0].Name != "Bridge" {
-		t.Fatalf("Sections shares backing array with MusicRecipe.Sections")
+	recipe.Normalize()
+
+	if recipe.ProjectTitle != "music title" {
+		t.Fatalf("ProjectTitle = %q, want music title", recipe.ProjectTitle)
+	}
+}
+
+func TestVideoRecipeNormalizeBuildsCutsFromMusicRecipeSections(t *testing.T) {
+	recipe := &VideoRecipe{
+		MusicRecipe: MusicRecipe{
+			Sections: []Section{
+				{
+					Name:         "Bridge",
+					StartSeconds: 12,
+					EndSeconds:   34,
+					Prompt:       "bridge prompt",
+				},
+			},
+		},
+	}
+
+	recipe.Normalize()
+
+	if len(recipe.Cuts) != 1 {
+		t.Fatalf("len(Cuts) = %d, want 1", len(recipe.Cuts))
+	}
+	if recipe.Cuts[0].DurationSec != 22 {
+		t.Fatalf("DurationSec = %.1f, want 22", recipe.Cuts[0].DurationSec)
+	}
+	if recipe.Cuts[0].AudioCue != "bridge prompt" {
+		t.Fatalf("AudioCue = %q, want bridge prompt", recipe.Cuts[0].AudioCue)
+	}
+}
+
+func TestVideoRecipeNormalizeDoesNotOverwriteExplicitCuts(t *testing.T) {
+	recipe := &VideoRecipe{
+		MusicRecipe: MusicRecipe{
+			Sections: []Section{
+				{
+					Name:     "Verse",
+					Duration: 30,
+				},
+			},
+		},
+		Cuts: []Cut{
+			{
+				VisualAnchor: "explicit cut",
+				DurationSec:  8,
+			},
+		},
+	}
+
+	recipe.Normalize()
+
+	if len(recipe.Cuts) != 1 {
+		t.Fatalf("len(Cuts) = %d, want 1", len(recipe.Cuts))
+	}
+	if recipe.Cuts[0].VisualAnchor != "explicit cut" {
+		t.Fatalf("VisualAnchor = %q, want explicit cut", recipe.Cuts[0].VisualAnchor)
 	}
 }

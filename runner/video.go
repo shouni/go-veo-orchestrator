@@ -32,71 +32,57 @@ func NewVideoTimelineRunner(
 
 // Run はカットのキーフレームを生成し、前カットの VideoID を引き継ぎながら順次動画化します。
 func (r *VideoTimelineRunner) Run(ctx context.Context, recipe *ports.VideoRecipe) ([]*ports.VideoResponse, error) {
-	if recipe == nil {
-		return nil, fmt.Errorf("VideoRecipe がありません")
+	if err := r.validateRun(recipe); err != nil {
+		return nil, err
 	}
-	if r.keyframeRunner == nil {
-		return nil, fmt.Errorf("keyframe runner is required")
-	}
-	if r.videoRunner == nil {
-		return nil, fmt.Errorf("video runner is required")
-	}
-
 	recipe.Normalize()
-	var keyframes []*imagePorts.ImageResponse
-	if requiresKeyframeGeneration(recipe) {
-		generated, err := r.keyframeRunner.Run(ctx, recipe)
-		if err != nil {
-			return nil, fmt.Errorf("カットキーフレーム生成に失敗しました: %w", err)
-		}
-		if len(generated) != len(recipe.Cuts) {
-			return nil, fmt.Errorf("生成されたキーフレーム数(%d)とカット数(%d)が一致しません", len(generated), len(recipe.Cuts))
-		}
-		keyframes = generated
-	} else {
-		keyframes = make([]*imagePorts.ImageResponse, len(recipe.Cuts))
+
+	keyframes, err := r.prepareKeyframes(ctx, recipe)
+	if err != nil {
+		return nil, err
 	}
 
 	responses := make([]*ports.VideoResponse, 0, len(recipe.Cuts))
 	lastVideoID := ""
 
 	for i := range recipe.Cuts {
-		cut := &recipe.Cuts[i]
-		if cut.IsGenerated() {
-			responses = append(responses, &ports.VideoResponse{
-				CloudURL:    cut.VideoURL,
-				VideoID:     cut.VideoID,
-				CutIndex:    cut.CutIndex,
-				DurationSec: cut.DurationSec,
-			})
-			lastVideoID = cut.VideoID
-			continue
-		}
-
-		req := r.requestBuilder.Build(recipe, *cut, keyframes[i], lastVideoID)
-
-		res, err := r.videoRunner.Run(ctx, req)
+		res, err := r.runCut(ctx, recipe, &recipe.Cuts[i], keyframes[i], lastVideoID)
 		if err != nil {
-			cut.Status = ports.CutStatusFailed
-			return nil, fmt.Errorf("cut %d の動画生成に失敗しました: %w", cut.CutIndex, err)
+			return nil, err
 		}
-		if res == nil {
-			return nil, fmt.Errorf("cut %d の動画生成レスポンスが nil です", cut.CutIndex)
-		}
-		if res.CutIndex == 0 {
-			res.CutIndex = cut.CutIndex
-		}
-
-		cut.VideoURL = res.CloudURL
-		cut.VideoID = res.VideoID
-		cut.Status = ports.CutStatusGenerated
 		responses = append(responses, res)
-		if res.VideoID != "" {
-			lastVideoID = res.VideoID
-		}
+		lastVideoID = nextVideoID(lastVideoID, res)
 	}
 
 	return responses, nil
+}
+
+func (r *VideoTimelineRunner) validateRun(recipe *ports.VideoRecipe) error {
+	if recipe == nil {
+		return fmt.Errorf("VideoRecipe がありません")
+	}
+	if r.keyframeRunner == nil {
+		return fmt.Errorf("keyframe runner is required")
+	}
+	if r.videoRunner == nil {
+		return fmt.Errorf("video runner is required")
+	}
+	return nil
+}
+
+func (r *VideoTimelineRunner) prepareKeyframes(ctx context.Context, recipe *ports.VideoRecipe) ([]*imagePorts.ImageResponse, error) {
+	if !requiresKeyframeGeneration(recipe) {
+		return make([]*imagePorts.ImageResponse, len(recipe.Cuts)), nil
+	}
+
+	keyframes, err := r.keyframeRunner.Run(ctx, recipe)
+	if err != nil {
+		return nil, fmt.Errorf("カットキーフレーム生成に失敗しました: %w", err)
+	}
+	if len(keyframes) != len(recipe.Cuts) {
+		return nil, fmt.Errorf("生成されたキーフレーム数(%d)とカット数(%d)が一致しません", len(keyframes), len(recipe.Cuts))
+	}
+	return keyframes, nil
 }
 
 func requiresKeyframeGeneration(recipe *ports.VideoRecipe) bool {
@@ -109,6 +95,56 @@ func requiresKeyframeGeneration(recipe *ports.VideoRecipe) bool {
 		}
 	}
 	return false
+}
+
+func (r *VideoTimelineRunner) runCut(
+	ctx context.Context,
+	recipe *ports.VideoRecipe,
+	cut *ports.Cut,
+	keyframe *imagePorts.ImageResponse,
+	lastVideoID string,
+) (*ports.VideoResponse, error) {
+	if cut.IsGenerated() {
+		return responseFromCut(*cut), nil
+	}
+
+	req := r.requestBuilder.Build(recipe, *cut, keyframe, lastVideoID)
+	res, err := r.videoRunner.Run(ctx, req)
+	if err != nil {
+		cut.Status = ports.CutStatusFailed
+		return nil, fmt.Errorf("cut %d の動画生成に失敗しました: %w", cut.CutIndex, err)
+	}
+	if res == nil {
+		return nil, fmt.Errorf("cut %d の動画生成レスポンスが nil です", cut.CutIndex)
+	}
+
+	applyVideoResponse(cut, res)
+	return res, nil
+}
+
+func responseFromCut(cut ports.Cut) *ports.VideoResponse {
+	return &ports.VideoResponse{
+		CloudURL:    cut.VideoURL,
+		VideoID:     cut.VideoID,
+		CutIndex:    cut.CutIndex,
+		DurationSec: cut.DurationSec,
+	}
+}
+
+func applyVideoResponse(cut *ports.Cut, res *ports.VideoResponse) {
+	if res.CutIndex == 0 {
+		res.CutIndex = cut.CutIndex
+	}
+	cut.VideoURL = res.CloudURL
+	cut.VideoID = res.VideoID
+	cut.Status = ports.CutStatusGenerated
+}
+
+func nextVideoID(current string, res *ports.VideoResponse) string {
+	if res.VideoID == "" {
+		return current
+	}
+	return res.VideoID
 }
 
 // RunAndSave は動画生成後、VideoRecipe を video_music_meta.json として保存します。
