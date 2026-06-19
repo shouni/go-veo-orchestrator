@@ -49,7 +49,7 @@ func mustNewCharacters(t *testing.T, list []characterkit.Character) *characterki
 
 // --- Tests ---
 
-func TestVideoComposer_PrepareCharacterResources(t *testing.T) {
+func TestComposer_PrepareCharacterResources(t *testing.T) {
 	ctx := context.Background()
 	assetMgr := &mockAssetManager{}
 	backend := &mockBackend{isVertex: false}
@@ -70,14 +70,14 @@ func TestVideoComposer_PrepareCharacterResources(t *testing.T) {
 		},
 	})
 
-	mc, _ := NewVideoComposer(assetMgr, backend, cm)
+	mc, _ := NewComposer(assetMgr, backend, cm)
 
-	keyframes := []ports.Cut{
+	cuts := []ports.Cut{
 		{CharacterID: "zundamon"},
 		{CharacterID: "unknown"}, // default (metan) が使用される
 	}
 
-	err := mc.PrepareCharacterResources(ctx, keyframes)
+	err := mc.PrepareCharacterResources(ctx, cuts)
 	if err != nil {
 		t.Fatalf("PrepareCharacterResources failed: %v", err)
 	}
@@ -94,8 +94,8 @@ func TestVideoComposer_PrepareCharacterResources(t *testing.T) {
 	}
 }
 
-func TestNewVideoComposer_RequiresCharacters(t *testing.T) {
-	_, err := NewVideoComposer(&mockAssetManager{}, &mockBackend{}, nil)
+func TestNewComposer_RequiresCharacters(t *testing.T) {
+	_, err := NewComposer(&mockAssetManager{}, &mockBackend{}, nil)
 	if err == nil {
 		t.Fatal("expected error for nil characters")
 	}

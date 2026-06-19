@@ -33,7 +33,7 @@ type ManagerArgs struct {
 // generationUnit は、画像生成と構成を処理するユニットを表します
 type generationUnit struct {
 	imageGenerator imagePorts.ImageGenerator
-	recipeComposer *keyframe.VideoComposer
+	composer       *keyframe.Composer
 	model          string
 }
 

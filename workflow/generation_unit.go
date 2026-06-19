@@ -29,7 +29,7 @@ func (m *manager) buildGenerationUnit(client gemini.GenerativeModel, modelName s
 
 	return &generationUnit{
 		imageGenerator: gen,
-		recipeComposer: composer,
+		composer:       composer,
 		model:          modelName,
 	}, nil
 }
@@ -51,18 +51,18 @@ func (m *manager) buildCore(aiClient gemini.GenerativeModel) (*generator.GeminiI
 	return core, nil
 }
 
-// buildComposer は提供された構成と依存関係を使用して VideoComposerインスタンスを初期化し、返します。
+// buildComposer は提供された構成と依存関係を使用して Composer インスタンスを初期化し、返します。
 func (m *manager) buildComposer(
 	core *generator.GeminiImageCore,
 	chars *characterkit.Characters,
-) (*keyframe.VideoComposer, error) {
-	composer, err := keyframe.NewVideoComposer(
+) (*keyframe.Composer, error) {
+	composer, err := keyframe.NewComposer(
 		core,
 		core,
 		chars,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("VideoComposerの初期化に失敗しました: %w", err)
+		return nil, fmt.Errorf("Composerの初期化に失敗しました: %w", err)
 	}
 
 	return composer, nil

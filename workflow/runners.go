@@ -37,13 +37,13 @@ func (m *manager) buildScriptRunner() (*runner.VideoScriptRunner, error) {
 
 // buildKeyframeRunner は、カットのキーフレーム画像生成を担当する Runner を作成します。
 func (m *manager) buildKeyframeRunner() (*runner.CutKeyframeRunner, error) {
-	keyframeGen := keyframe.NewKeyframeGenerator(
-		m.generationUnit.recipeComposer,
+	keyframeGen := keyframe.NewGenerator(
+		m.generationUnit.composer,
 		m.generationUnit.imageGenerator,
 		m.promptDeps.KeyframePrompt,
 		m.generationUnit.model,
-		keyframe.WithKeyframeMaxConcurrency(m.cfg.MaxConcurrency),
-		keyframe.WithKeyframeRateInterval(m.cfg.RateInterval),
+		keyframe.WithMaxConcurrency(m.cfg.MaxConcurrency),
+		keyframe.WithRateInterval(m.cfg.RateInterval),
 	)
 
 	return runner.NewCutKeyframeRunner(keyframeGen, m.writer), nil
