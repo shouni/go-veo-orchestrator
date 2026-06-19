@@ -16,7 +16,6 @@ func buildRecipeMetadata(recipe *ports.VideoRecipe) ([]byte, error) {
 	if recipe == nil {
 		return nil, fmt.Errorf("VideoRecipe が nil です")
 	}
-	recipe.Normalize()
 
 	data, err := json.MarshalIndent(recipe, "", "  ")
 	if err != nil {
