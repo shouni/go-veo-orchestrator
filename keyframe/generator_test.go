@@ -12,12 +12,12 @@ import (
 
 // --- Mocks ---
 
-type mockKeyframeImageGenerator struct {
+type mockImageGenerator struct {
 	generateCount int
 	generateFunc  func(ctx context.Context, req imagePorts.SingleImageRequest) (*imagePorts.ImageResponse, error)
 }
 
-func (m *mockKeyframeImageGenerator) GenerateSingleImage(ctx context.Context, req imagePorts.SingleImageRequest) (*imagePorts.ImageResponse, error) {
+func (m *mockImageGenerator) GenerateSingleImage(ctx context.Context, req imagePorts.SingleImageRequest) (*imagePorts.ImageResponse, error) {
 	m.generateCount++
 	if m.generateFunc != nil {
 		return m.generateFunc(ctx, req)
@@ -31,13 +31,13 @@ func (m *mockKeyframeImageGenerator) GenerateSingleImage(ctx context.Context, re
 
 type mockImagePrompt struct{}
 
-func (m *mockImagePrompt) BuildCut(keyframe ports.Cut, char *characterkit.Character) (string, string) {
-	return keyframe.VisualAnchor, "system"
+func (m *mockImagePrompt) BuildCut(cut ports.Cut, char *characterkit.Character) (string, string) {
+	return cut.VisualAnchor, "system"
 }
 
 // --- Tests ---
 
-func TestKeyframeGenerator_Execute(t *testing.T) {
+func TestGenerator_Execute(t *testing.T) {
 	ctx := context.Background()
 
 	// 1. 依存関係のセットアップ
@@ -64,18 +64,18 @@ func TestKeyframeGenerator_Execute(t *testing.T) {
 			IsDefault:    true, // 指定なしの場合のデフォルト
 		},
 	})
-	composer, _ := NewVideoComposer(assetMgr, backend, cm)
+	composer, _ := NewComposer(assetMgr, backend, cm)
 
-	genMock := &mockKeyframeImageGenerator{}
+	genMock := &mockImageGenerator{}
 	pbMock := &mockImagePrompt{}
 
 	// 2. Generator の作成 (高速化設定)
-	generator := NewKeyframeGenerator(
+	generator := NewGenerator(
 		composer,
 		genMock,
 		pbMock,
 		"gemini-2.0-flash",
-		func(g *KeyframeGenerator) {
+		func(g *Generator) {
 			g.maxConcurrency = 5
 			g.rateInterval = 1 * time.Microsecond
 			g.rateBurst = 100
@@ -83,21 +83,21 @@ func TestKeyframeGenerator_Execute(t *testing.T) {
 	)
 
 	t.Run("Parallel Generation and Individual Seeds", func(t *testing.T) {
-		keyframes := []ports.Cut{
+		cuts := []ports.Cut{
 			{CharacterID: "zundamon", Dialogue: "こんにちはなのだ！"},
 			{CharacterID: "metan", Dialogue: "ごきげんよう。"},
 			{CharacterID: "unknown", Dialogue: "誰かしら？"}, // Defaultのmetanが使われるはず
 		}
 
 		// リクエストされた Seed を記録するためのスライス
-		capturedSeeds := make([]int64, len(keyframes))
+		capturedSeeds := make([]int64, len(cuts))
 		genMock.generateFunc = func(ctx context.Context, req imagePorts.SingleImageRequest) (*imagePorts.ImageResponse, error) {
 			// どのパネルのリクエストか特定するのが難しいため、
 			// 呼ばれた順ではなく最終的な Seed 値を検証
 			return &imagePorts.ImageResponse{UsedSeed: *req.Seed}, nil
 		}
 
-		res, err := generator.Execute(ctx, keyframes)
+		res, err := generator.Execute(ctx, cuts)
 		if err != nil {
 			t.Fatalf("Execute failed: %v", err)
 		}
@@ -137,9 +137,9 @@ func TestKeyframeGenerator_Execute(t *testing.T) {
 		backend.isVertex = true
 		genMock.generateCount = 0
 
-		keyframes := []ports.Cut{{CharacterID: "zundamon"}}
+		cuts := []ports.Cut{{CharacterID: "zundamon"}}
 
-		_, err := generator.Execute(ctx, keyframes)
+		_, err := generator.Execute(ctx, cuts)
 		if err != nil {
 			t.Fatal(err)
 		}

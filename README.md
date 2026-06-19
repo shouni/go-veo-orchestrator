@@ -259,18 +259,18 @@ go-veo-orchestrator/
 ```mermaid
 sequenceDiagram
   participant WF as workflow.manager
-  participant Composer as keyframe.VideoComposer
-  participant KeyframeGen as keyframe.KeyframeGenerator
+  participant Composer as keyframe.Composer
+  participant KeyframeGen as keyframe.Generator
   participant Timeline as runner.VideoTimelineRunner
   participant Builder as runner.VideoRequestBuilder
   participant VeoAPI as Vertex AI (Veo API)
   participant Writer as remoteio.Writer
 
   Note over WF,KeyframeGen: 1) GenerationUnit / Keyframe Runner 初期化
-  WF->>Composer: keyframe.NewVideoComposer(core, charactersMap)
-  Composer-->>WF: *keyframe.VideoComposer
-  WF->>KeyframeGen: keyframe.NewKeyframeGenerator(composer, imageGenerator, keyframePrompt, model, opts...)
-  KeyframeGen-->>WF: *keyframe.KeyframeGenerator
+  WF->>Composer: keyframe.NewComposer(core, charactersMap)
+  Composer-->>WF: *keyframe.Composer
+  WF->>KeyframeGen: keyframe.NewGenerator(composer, imageGenerator, keyframePrompt, model, opts...)
+  KeyframeGen-->>WF: *keyframe.Generator
   WF->>Timeline: runner.NewVideoTimelineRunner(keyframeRunner, videoRunner, publisher)
   Timeline-->>WF: *runner.VideoTimelineRunner
 

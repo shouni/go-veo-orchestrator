@@ -17,10 +17,10 @@ import (
 // negativeKeyframePrompt は単体カットのキーフレームで「文字」や「フキダシ」を排除するための指定です。
 const negativeKeyframePrompt = "speech bubble, dialogue balloon, text, alphabet, letters, words, signatures, watermark, username, low quality, distorted, bad anatomy, monochrome, black and white, greyscale"
 
-// KeyframeGenerator は、キャラクターの一貫性を保ちながら並列で複数カットのキーフレームを生成します。
-type KeyframeGenerator struct {
-	composer       *VideoComposer
-	generator      KeyframeImageGenerator
+// Generator は、キャラクターの一貫性を保ちながら並列で複数カットのキーフレームを生成します。
+type Generator struct {
+	composer       *Composer
+	generator      ImageGenerator
 	pb             ports.KeyframePrompt
 	model          string
 	limiter        *rate.Limiter
@@ -29,7 +29,7 @@ type KeyframeGenerator struct {
 	rateBurst      int
 }
 
-type KeyframeImageGenerator interface {
+type ImageGenerator interface {
 	GenerateSingleImage(ctx context.Context, req imagePorts.SingleImageRequest) (*imagePorts.ImageResponse, error)
 }
 
@@ -38,15 +38,15 @@ type keyframeTask struct {
 	cut   ports.Cut
 }
 
-// NewKeyframeGenerator は KeyframeGenerator の新しいインスタンスを初期化します。
-func NewKeyframeGenerator(
-	composer *VideoComposer,
-	generator KeyframeImageGenerator,
+// NewGenerator は Generator の新しいインスタンスを初期化します。
+func NewGenerator(
+	composer *Composer,
+	generator ImageGenerator,
 	pb ports.KeyframePrompt,
 	model string,
-	opts ...KeyframeOption,
-) *KeyframeGenerator {
-	g := &KeyframeGenerator{
+	opts ...Option,
+) *Generator {
+	g := &Generator{
 		composer:       composer,
 		generator:      generator,
 		pb:             pb,
@@ -66,7 +66,7 @@ func NewKeyframeGenerator(
 }
 
 // Execute は、errgroupの制限機能を使用して同時実行数を制限しながらカットを並列生成します。
-func (g *KeyframeGenerator) Execute(ctx context.Context, cuts []ports.Cut) ([]*imagePorts.ImageResponse, error) {
+func (g *Generator) Execute(ctx context.Context, cuts []ports.Cut) ([]*imagePorts.ImageResponse, error) {
 	if len(cuts) == 0 {
 		return nil, nil
 	}
@@ -100,7 +100,7 @@ func (g *KeyframeGenerator) Execute(ctx context.Context, cuts []ports.Cut) ([]*i
 	return images, nil
 }
 
-func (g *KeyframeGenerator) generateCutKeyframe(ctx context.Context, task keyframeTask) (*imagePorts.ImageResponse, error) {
+func (g *Generator) generateCutKeyframe(ctx context.Context, task keyframeTask) (*imagePorts.ImageResponse, error) {
 	if err := g.limiter.Wait(ctx); err != nil {
 		return nil, fmt.Errorf("wait for keyframe rate limiter: %w", err)
 	}
@@ -128,11 +128,11 @@ func (g *KeyframeGenerator) generateCutKeyframe(ctx context.Context, task keyfra
 	return resp, nil
 }
 
-func (g *KeyframeGenerator) characterForCut(cut ports.Cut) *characterkit.Character {
+func (g *Generator) characterForCut(cut ports.Cut) *characterkit.Character {
 	return g.composer.Characters.GetCharacterWithDefault(cut.CharacterID)
 }
 
-func (g *KeyframeGenerator) buildImageRequest(cut ports.Cut, char *characterkit.Character) imagePorts.SingleImageRequest {
+func (g *Generator) buildImageRequest(cut ports.Cut, char *characterkit.Character) imagePorts.SingleImageRequest {
 	userPrompt, systemPrompt := g.pb.BuildCut(cut, char)
 	fileURI := g.composer.GetCharacterResourceURI(char.ID)
 
@@ -143,7 +143,7 @@ func (g *KeyframeGenerator) buildImageRequest(cut ports.Cut, char *characterkit.
 			SystemPrompt:   systemPrompt,
 			NegativePrompt: negativeKeyframePrompt,
 			AspectRatio:    CutAspectRatio,
-			ImageSize:      ImageSize1K,
+			ImageSize:      ImageSize2K,
 			Seed:           char.Seed,
 		},
 		Image: imagePorts.ImageURI{
