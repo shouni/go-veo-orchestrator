@@ -37,7 +37,7 @@
 
 | ワークフロー | 担当インターフェース | 内容 |
 | --- | --- | --- |
-| **1. Scripting** | `ScriptRunner` | 非構造化ドキュメントから、キャラ設定・音楽展開（BGM拍子/Audio Cue）・カット割り・カメラワーク・推定秒数を含む**JSON形式のMusic & Video Recipe**を生成。 |
+| **1. Scripting** | `ScriptRunner` | Music Recipe JSON を読み込み、歌詞・section・楽曲展開から、カット割り・カメラワーク・推定秒数を含む**Video Recipe**を生成。 |
 | **2. Cut Keyframe Gen** | `CutKeyframeRunner` | 各カットのベースとなるキーフレーム画像を、キャラクター Seed と参照画像を使って生成。 |
 | **3. Video Gen** | `VideoTimelineRunner` + `VideoRunner` | `VideoRequestBuilder` が `VideoGenerationRequest` を組み立て、Veo adapter に順次投入。 |
 | **4. Metadata Publish** | `VideoPublishRunner` | `video_id` / `video_url` / `status` 更新済みの `video_music_meta.json` を保存。 |
@@ -121,7 +121,11 @@ result, err := workflows.Video.RunAndSave(ctx, recipe, "video_music_meta.json")
 
 ## 🧾 Music Recipe JSON
 
-`ScriptRunner` はドキュメントから、映像指示だけでなく BGM の拍子・感情・盛り上がりを含む動画台本 JSON を生成します。各 `cut` は `duration_sec` と `audio_cue` を持つため、Veo へのプロンプトには `(synchronized with the heavy bass drop at 0:10)` のような同期指示を自動注入できます。
+`ScriptRunner` は `sourceURL` の Music Recipe JSON を `VideoRecipe` として解釈し、prompt builder へ parsed object を渡します。prompt builder は `music_recipe.lyrics` / `music_recipe.sections` から、BGM の拍子・感情・盛り上がりを含む動画台本 JSON を生成します。
+
+歌詞本文は `music_recipe.lyrics` に保存されますが、Veo prompt へ直接は注入されません。歌詞や section の意味は、script generation stage の prompt builder が `cuts[].audio_cue` と `cuts[].visual_anchor` に展開します。
+
+各 `cut` は `duration_sec` と `audio_cue` を持つため、Veo へのプロンプトには `(synchronized with the heavy bass drop at 0:10)` のような同期指示を自動注入できます。アプリ側の責務は、生成された `cuts` を表示・編集し、キーフレーム生成または動画生成フォームへ渡すことです。
 
 ```json
 {
@@ -131,6 +135,19 @@ result, err := workflows.Video.RunAndSave(ctx, recipe, "video_music_meta.json")
     "theme": "AIマルチモーダル解説",
     "mood": "90s retro mech synthwave",
     "tempo": 120,
+    "lyrics": {
+      "title": "AIマルチモーダル解説動画",
+      "theme": "AIマルチモーダル解説",
+      "hook": "未来の映像制作をひらく",
+      "lyrics": "[Verse] 画面の奥で光が走る\n[Chorus] 未来のカットが動き出す",
+      "keywords": [
+        "AI",
+        "video",
+        "orchestration"
+      ],
+      "mood": "90s retro mech synthwave",
+      "narrative": "AI が映像制作の工程をつなぐ物語"
+    },
     "instruments": [
       "analog synth",
       "electronic drums"
@@ -164,15 +181,15 @@ result, err := workflows.Video.RunAndSave(ctx, recipe, "video_music_meta.json")
     {
       "cut_index": 2,
       "duration_sec": 5,
-      "audio_cue": "Aメロ：ドラムのビートが刻まれ始める。テンポアップ (mp3_segment_2)",
-      "visual_anchor": "ずんだもんが自信満々に人差し指を立てて、カメラに向かって喋る",
+      "audio_cue": "Aメロ：歌詞の導入に合わせてドラムのビートが刻まれ始める。テンポアップ (mp3_segment_2)",
+      "visual_anchor": "歌詞の「画面の奥で光が走る」を、ずんだもんの背後に走る光のラインとして映像化する",
       "character_id": "zundamon"
     },
     {
       "cut_index": 3,
       "duration_sec": 5,
-      "audio_cue": "サビ：激しいシンセのメロディ、エフェクト音 (mp3_segment_3)",
-      "visual_anchor": "カメラが高速で旋回し、背景がサイバー空間へと切り替わる",
+      "audio_cue": "サビ：歌詞の hook に合わせて激しいシンセのメロディとエフェクト音が入る (mp3_segment_3)",
+      "visual_anchor": "歌詞の「未来のカットが動き出す」を、カメラが高速旋回しながらサイバー空間へ切り替わる動きで表現する",
       "character_id": "zundamon_metan"
     }
   ]
@@ -180,6 +197,8 @@ result, err := workflows.Video.RunAndSave(ctx, recipe, "video_music_meta.json")
 ```
 
 この JSON は `Normalize()` により `start_sec` / `end_sec` / `status` が補完されます。生成後は `keyframe_reference`、`video_id`、`video_url` が追記された `video_music_meta.json` として保存されます。
+
+Veo に渡る prompt は `cuts[].visual_anchor`、`cuts[].audio_cue`、`music_recipe.mood`、タイムライン情報から構築されます。`music_recipe.lyrics` はメタデータとして保持されますが、動画化したい歌詞の内容は `cuts` へ変換しておく必要があります。
 
 `cuts` が空の場合は、`music_recipe.sections` からカット列を自動生成します。`music_recipe` は `github.com/shouni/go-gemini-client/lyria.MusicRecipe` をそのまま保持するため、楽曲生成側の JSON は `music_recipe` 配下へ入れます。
 

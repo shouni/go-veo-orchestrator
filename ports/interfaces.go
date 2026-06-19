@@ -7,9 +7,9 @@ import (
 	characterkit "github.com/shouni/go-character-kit/character"
 )
 
-// TemplateData はスクリプト生成プロンプトのテンプレートに渡すデータ構造です。
+// TemplateData はスクリプト生成プロンプトのテンプレートに渡す構造化入力です。
 type TemplateData struct {
-	InputText string
+	SourceRecipe *VideoRecipe
 }
 
 // ScriptPrompt は、AIプロンプトを構築する契約です。
