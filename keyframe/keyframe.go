@@ -7,6 +7,7 @@ import (
 	"time"
 
 	imagePorts "github.com/shouni/gemini-image-kit/ports"
+	characterkit "github.com/shouni/go-character-kit/character"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/time/rate"
 
@@ -30,6 +31,11 @@ type KeyframeGenerator struct {
 
 type KeyframeImageGenerator interface {
 	GenerateSingleImage(ctx context.Context, req imagePorts.SingleImageRequest) (*imagePorts.ImageResponse, error)
+}
+
+type keyframeTask struct {
+	index int
+	cut   ports.Cut
 }
 
 // NewKeyframeGenerator は KeyframeGenerator の新しいインスタンスを初期化します。
@@ -60,68 +66,30 @@ func NewKeyframeGenerator(
 }
 
 // Execute は、errgroupの制限機能を使用して同時実行数を制限しながらカットを並列生成します。
-func (g *KeyframeGenerator) Execute(ctx context.Context, keyframes []ports.Cut) ([]*imagePorts.ImageResponse, error) {
-	if len(keyframes) == 0 {
+func (g *KeyframeGenerator) Execute(ctx context.Context, cuts []ports.Cut) ([]*imagePorts.ImageResponse, error) {
+	if len(cuts) == 0 {
 		return nil, nil
 	}
 
-	if err := g.composer.PrepareCharacterResources(ctx, keyframes); err != nil {
-		return nil, err
+	if err := g.composer.PrepareCharacterResources(ctx, cuts); err != nil {
+		return nil, fmt.Errorf("prepare character resources: %w", err)
 	}
 
-	images := make([]*imagePorts.ImageResponse, len(keyframes))
+	images := make([]*imagePorts.ImageResponse, len(cuts))
 	eg, egCtx := errgroup.WithContext(ctx)
 	eg.SetLimit(g.maxConcurrency)
 
-	cm := g.composer.Characters
-
-	for i, keyframe := range keyframes {
+	for i, cut := range cuts {
+		task := keyframeTask{
+			index: i,
+			cut:   cut,
+		}
 		eg.Go(func() error {
-			if err := g.limiter.Wait(egCtx); err != nil {
+			resp, err := g.generateCutKeyframe(egCtx, task)
+			if err != nil {
 				return err
 			}
-
-			char := cm.GetCharacterWithDefault(keyframe.CharacterID)
-			if char == nil {
-				return fmt.Errorf("character not found for character ID '%s'", keyframe.CharacterID)
-			}
-			seed := char.Seed
-			userPrompt, systemPrompt := g.pb.BuildCut(keyframe, char)
-			fileURI := g.composer.GetCharacterResourceURI(char.ID)
-
-			logger := slog.With(
-				"keyframe_index", i+1,
-				"character_id", char.ID,
-				"character_name", char.Name,
-				"seed", seed,
-				"use_file_api", fileURI != "",
-			)
-			logger.Info("Starting keyframe generation")
-
-			startTime := time.Now()
-			resp, err := g.generator.GenerateSingleImage(egCtx, imagePorts.SingleImageRequest{
-				GenerationOptions: imagePorts.GenerationOptions{
-					Model:          g.model,
-					Prompt:         userPrompt,
-					SystemPrompt:   systemPrompt,
-					NegativePrompt: negativeKeyframePrompt,
-					AspectRatio:    CutAspectRatio,
-					ImageSize:      ImageSize1K,
-					Seed:           seed,
-				},
-				Image: imagePorts.ImageURI{
-					FileAPIURI:   fileURI,
-					ReferenceURL: char.ReferenceURL,
-				},
-			})
-			if err != nil {
-				return fmt.Errorf("cut %d (character_id: %s) keyframe generation failed: %w", i+1, char.ID, err)
-			}
-
-			logger.Info("Keyframe generation completed",
-				"duration", time.Since(startTime).Round(time.Second),
-			)
-			images[i] = resp
+			images[task.index] = resp
 			return nil
 		})
 	}
@@ -130,4 +98,67 @@ func (g *KeyframeGenerator) Execute(ctx context.Context, keyframes []ports.Cut) 
 		return nil, err
 	}
 	return images, nil
+}
+
+func (g *KeyframeGenerator) generateCutKeyframe(ctx context.Context, task keyframeTask) (*imagePorts.ImageResponse, error) {
+	if err := g.limiter.Wait(ctx); err != nil {
+		return nil, fmt.Errorf("wait for keyframe rate limiter: %w", err)
+	}
+
+	char := g.characterForCut(task.cut)
+	if char == nil {
+		return nil, fmt.Errorf("character not found for character ID '%s'", task.cut.CharacterID)
+	}
+
+	req := g.buildImageRequest(task.cut, char)
+	logger := newKeyframeLogger(task, char, req.Image.FileAPIURI)
+
+	logger.Info("Starting keyframe generation")
+	startTime := time.Now()
+
+	resp, err := g.generator.GenerateSingleImage(ctx, req)
+	if err != nil {
+		return nil, fmt.Errorf("cut %d (character_id: %s) keyframe generation failed: %w", task.index+1, char.ID, err)
+	}
+
+	logger.Info("Keyframe generation completed",
+		"duration", time.Since(startTime).Round(time.Second),
+	)
+
+	return resp, nil
+}
+
+func (g *KeyframeGenerator) characterForCut(cut ports.Cut) *characterkit.Character {
+	return g.composer.Characters.GetCharacterWithDefault(cut.CharacterID)
+}
+
+func (g *KeyframeGenerator) buildImageRequest(cut ports.Cut, char *characterkit.Character) imagePorts.SingleImageRequest {
+	userPrompt, systemPrompt := g.pb.BuildCut(cut, char)
+	fileURI := g.composer.GetCharacterResourceURI(char.ID)
+
+	return imagePorts.SingleImageRequest{
+		GenerationOptions: imagePorts.GenerationOptions{
+			Model:          g.model,
+			Prompt:         userPrompt,
+			SystemPrompt:   systemPrompt,
+			NegativePrompt: negativeKeyframePrompt,
+			AspectRatio:    CutAspectRatio,
+			ImageSize:      ImageSize1K,
+			Seed:           char.Seed,
+		},
+		Image: imagePorts.ImageURI{
+			FileAPIURI:   fileURI,
+			ReferenceURL: char.ReferenceURL,
+		},
+	}
+}
+
+func newKeyframeLogger(task keyframeTask, char *characterkit.Character, fileURI string) *slog.Logger {
+	return slog.With(
+		"keyframe_index", task.index+1,
+		"character_id", char.ID,
+		"character_name", char.Name,
+		"seed", char.Seed,
+		"use_file_api", fileURI != "",
+	)
 }
