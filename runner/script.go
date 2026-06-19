@@ -45,7 +45,7 @@ func NewVideoScriptRunner(
 	}
 }
 
-// Run は Web ページまたは GCS から内容を抽出し、Gemini を用いて動画台本 JSON を生成します。
+// Run は Music Recipe JSON を読み込み、Gemini を用いて動画台本 JSON を生成します。
 func (r *VideoScriptRunner) Run(ctx context.Context, sourceURL string, mode string) (*ports.VideoRecipe, error) {
 	slog.Info("ScriptRunner: 処理を開始", "url", sourceURL)
 
@@ -56,7 +56,16 @@ func (r *VideoScriptRunner) Run(ctx context.Context, sourceURL string, mode stri
 	}
 
 	// 2. プロンプトの構築
-	data := ports.TemplateData{InputText: inputText}
+	sourceRecipe, err := parseSourceRecipe(inputText)
+	if err != nil {
+		return nil, err
+	}
+	if sourceRecipe == nil {
+		return nil, fmt.Errorf("sourceURL の内容を Music Recipe JSON として解析できませんでした")
+	}
+	data := ports.TemplateData{
+		SourceRecipe: sourceRecipe,
+	}
 	finalPrompt, err := r.promptBuilder.Build(mode, &data)
 	if err != nil {
 		return nil, fmt.Errorf("プロンプトの構築に失敗しました: %w", err)
@@ -109,6 +118,53 @@ func (r *VideoScriptRunner) readContent(ctx context.Context, url string) (string
 	}
 
 	return strings.ToValidUTF8(string(content), ""), nil
+}
+
+func parseSourceRecipe(raw string) (*ports.VideoRecipe, error) {
+	jsonStr := extractJSONString(raw)
+	if jsonStr == "" {
+		return nil, nil
+	}
+
+	var recipe ports.VideoRecipe
+	if err := json.Unmarshal([]byte(jsonStr), &recipe); err == nil && hasVideoRecipeContent(recipe) {
+		recipe.Normalize()
+		return &recipe, nil
+	}
+
+	var musicRecipe ports.MusicRecipe
+	if err := json.Unmarshal([]byte(jsonStr), &musicRecipe); err != nil {
+		return nil, fmt.Errorf("source JSON の解析に失敗しました: %w", err)
+	}
+	if !hasMusicRecipeContent(musicRecipe) {
+		return nil, nil
+	}
+
+	recipe = ports.VideoRecipe{
+		MusicRecipe: musicRecipe,
+	}
+	recipe.Normalize()
+	return &recipe, nil
+}
+
+func hasVideoRecipeContent(recipe ports.VideoRecipe) bool {
+	return recipe.ProjectTitle != "" ||
+		recipe.Description != "" ||
+		len(recipe.Cuts) > 0 ||
+		hasMusicRecipeContent(recipe.MusicRecipe)
+}
+
+func hasMusicRecipeContent(recipe ports.MusicRecipe) bool {
+	return recipe.Title != "" ||
+		recipe.Theme != "" ||
+		recipe.Mood != "" ||
+		recipe.Tempo != 0 ||
+		len(recipe.Instruments) > 0 ||
+		len(recipe.Sections) > 0 ||
+		recipe.Lyrics != nil ||
+		recipe.AudioModel != "" ||
+		recipe.ComposeMode != "" ||
+		recipe.Seed != nil
 }
 
 // parseResponse は AI の応答から JSON を抽出し、構造体に変換します。
