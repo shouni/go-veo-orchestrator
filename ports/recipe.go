@@ -12,10 +12,13 @@ type VideoRecipe struct {
 	Cuts         []Cut             `json:"cuts"`
 }
 
+// MusicRecipe は Lyria の楽曲生成レシピです。
 type MusicRecipe = lyria.MusicRecipe
 
+// Section は Lyria の楽曲セクションです。
 type Section = lyria.MusicSection
 
+// Lyrics は Lyria の歌詞ドラフトです。
 type Lyrics = lyria.LyricsDraft
 
 // Cut は動画内の1カットを表します。
@@ -39,12 +42,16 @@ type Cut struct {
 // Cuts は Cut のスライスに対するカスタム型です。
 type Cuts []Cut
 
+// CutStatus はカットの動画生成状態です。
 type CutStatus string
 
 const (
-	CutStatusPending   CutStatus = "pending"
+	// CutStatusPending はカットの動画生成が未完了であることを示します。
+	CutStatusPending CutStatus = "pending"
+	// CutStatusGenerated はカットの動画生成が完了していることを示します。
 	CutStatusGenerated CutStatus = "generated"
-	CutStatusFailed    CutStatus = "failed"
+	// CutStatusFailed はカットの動画生成が失敗したことを示します。
+	CutStatusFailed CutStatus = "failed"
 )
 
 // Normalize は Music Recipe 由来のカット生成とタイムライン補完を行います。
@@ -102,6 +109,7 @@ func (c *Cut) Normalize(index int, startSec float64) {
 	}
 }
 
+// IsGenerated はカットが動画生成済みとして扱えるかを返します。
 func (c Cut) IsGenerated() bool {
 	return c.Status == CutStatusGenerated || (c.VideoID != "" && c.VideoURL != "")
 }

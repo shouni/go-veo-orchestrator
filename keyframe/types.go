@@ -15,7 +15,7 @@ const (
 	// defaultRateBurst は、短時間に許容される最大リクエスト数（バースト）です。
 	// API のレート制限（429 Too Many Requests）に抵触しないよう制御します。
 	defaultRateBurst = 1
-	// DefaultRateInterval は、リクエスト間のデフォルトの待機間隔です。
+	// defaultRateInterval は、リクエスト間のデフォルトの待機間隔です。
 	defaultRateInterval = 60 * time.Second
 )
 

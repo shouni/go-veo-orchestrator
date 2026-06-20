@@ -23,6 +23,7 @@ const (
 // jsonBlockRegex は、Markdown 形式の JSON ブロックを抽出するための正規表現です。
 var jsonBlockRegex = regexp.MustCompile("(?s)```(?:json)?\\s*(.*\\S)\\s*```")
 
+// VideoScriptRunner は入力ソースから Music Recipe を読み取り、動画レシピを生成します。
 type VideoScriptRunner struct {
 	promptBuilder ports.ScriptPrompt
 	aiClient      gemini.ContentGenerator
@@ -120,6 +121,25 @@ func (r *VideoScriptRunner) readContent(ctx context.Context, url string) (string
 	return strings.ToValidUTF8(string(content), ""), nil
 }
 
+// parseResponse は AI の応答から JSON を抽出し、構造体に変換します。
+func (r *VideoScriptRunner) parseResponse(raw string) (*ports.VideoRecipe, error) {
+	jsonStr := extractJSONString(raw)
+	if jsonStr == "" {
+		slog.Warn("AIの応答からJSONを抽出できませんでした。応答全体を対象にパースを試みます。",
+			"response_snippet", truncateString(raw, 100))
+		jsonStr = raw
+	}
+
+	var recipe ports.VideoRecipe
+	if err := json.Unmarshal([]byte(jsonStr), &recipe); err != nil {
+		return nil, fmt.Errorf("AI応答JSONの解析に失敗しました (抜粋: %q): %w",
+			truncateString(raw, maxErrorResponseLength), err)
+	}
+	recipe.Normalize()
+
+	return &recipe, nil
+}
+
 func parseSourceRecipe(raw string) (*ports.VideoRecipe, error) {
 	jsonStr := extractJSONString(raw)
 	if jsonStr == "" {
@@ -165,25 +185,6 @@ func hasMusicRecipeContent(recipe *ports.MusicRecipe) bool {
 		recipe.AudioModel != "" ||
 		recipe.ComposeMode != "" ||
 		recipe.Seed != nil
-}
-
-// parseResponse は AI の応答から JSON を抽出し、構造体に変換します。
-func (r *VideoScriptRunner) parseResponse(raw string) (*ports.VideoRecipe, error) {
-	jsonStr := extractJSONString(raw)
-	if jsonStr == "" {
-		slog.Warn("AIの応答からJSONを抽出できませんでした。応答全体を対象にパースを試みます。",
-			"response_snippet", truncateString(raw, 100))
-		jsonStr = raw
-	}
-
-	var recipe ports.VideoRecipe
-	if err := json.Unmarshal([]byte(jsonStr), &recipe); err != nil {
-		return nil, fmt.Errorf("AI応答JSONの解析に失敗しました (抜粋: %q): %w",
-			truncateString(raw, maxErrorResponseLength), err)
-	}
-	recipe.Normalize()
-
-	return &recipe, nil
 }
 
 // extractJSONString は文字列から JSON 部分を抽出します。

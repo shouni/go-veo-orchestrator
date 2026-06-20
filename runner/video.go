@@ -57,6 +57,28 @@ func (r *VideoTimelineRunner) Run(ctx context.Context, recipe *ports.VideoRecipe
 	return responses, nil
 }
 
+// RunAndSave は動画生成後、VideoRecipe を video_music_meta.json として保存します。
+func (r *VideoTimelineRunner) RunAndSave(ctx context.Context, recipe *ports.VideoRecipe, outputPath string) (*ports.VideoPlotResponse, error) {
+	videos, err := r.Run(ctx, recipe)
+	if err != nil {
+		return nil, err
+	}
+	if r.publisher == nil {
+		return &ports.VideoPlotResponse{Recipe: recipe, Videos: videos}, nil
+	}
+
+	metadata, err := r.publisher.Run(ctx, recipe, outputPath)
+	if err != nil {
+		return nil, err
+	}
+
+	return &ports.VideoPlotResponse{
+		Recipe:   recipe,
+		Videos:   videos,
+		Metadata: metadata,
+	}, nil
+}
+
 func (r *VideoTimelineRunner) validateRun(recipe *ports.VideoRecipe) error {
 	if recipe == nil {
 		return fmt.Errorf("VideoRecipe がありません")
@@ -145,26 +167,4 @@ func nextVideoID(current string, res *ports.VideoResponse) string {
 		return current
 	}
 	return res.VideoID
-}
-
-// RunAndSave は動画生成後、VideoRecipe を video_music_meta.json として保存します。
-func (r *VideoTimelineRunner) RunAndSave(ctx context.Context, recipe *ports.VideoRecipe, outputPath string) (*ports.VideoPlotResponse, error) {
-	videos, err := r.Run(ctx, recipe)
-	if err != nil {
-		return nil, err
-	}
-	if r.publisher == nil {
-		return &ports.VideoPlotResponse{Recipe: recipe, Videos: videos}, nil
-	}
-
-	metadata, err := r.publisher.Run(ctx, recipe, outputPath)
-	if err != nil {
-		return nil, err
-	}
-
-	return &ports.VideoPlotResponse{
-		Recipe:   recipe,
-		Videos:   videos,
-		Metadata: metadata,
-	}, nil
 }

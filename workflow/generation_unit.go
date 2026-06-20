@@ -10,7 +10,7 @@ import (
 	"github.com/shouni/go-veo-orchestrator/keyframe"
 )
 
-// buildGenerationUnit は、特定の AI クライアントとモデル設定に基づき、 core, composer, generator をひとまとめにした LLM 構造体を構築します。
+// buildGenerationUnit は画像生成 core、composer、generator をまとめた内部ユニットを構築します。
 func (m *manager) buildGenerationUnit(client gemini.GenerativeModel, modelName string) (*generationUnit, error) {
 	core, err := m.buildCore(client)
 	if err != nil {
@@ -34,7 +34,7 @@ func (m *manager) buildGenerationUnit(client gemini.GenerativeModel, modelName s
 	}, nil
 }
 
-// buildCore はGeminiImageCoreエンジンを初期化します。
+// buildCore は GeminiImageCore エンジンを初期化します。
 func (m *manager) buildCore(aiClient gemini.GenerativeModel) (*generator.GeminiImageCore, error) {
 	core, err := generator.NewGeminiImageCore(
 		aiClient,
@@ -51,7 +51,7 @@ func (m *manager) buildCore(aiClient gemini.GenerativeModel) (*generator.GeminiI
 	return core, nil
 }
 
-// buildComposer は提供された構成と依存関係を使用して Composer インスタンスを初期化し、返します。
+// buildComposer はキャラクターリソースを扱う Composer を初期化します。
 func (m *manager) buildComposer(
 	core *generator.GeminiImageCore,
 	chars *characterkit.Characters,
@@ -68,7 +68,7 @@ func (m *manager) buildComposer(
 	return composer, nil
 }
 
-// buildGenerator は提供された構成と依存関係を使用して ImageGenerator インスタンスを初期化し、返します。
+// buildGenerator は画像生成を実行する GeminiGenerator を初期化します。
 func (m *manager) buildGenerator(core *generator.GeminiImageCore) (*generator.GeminiGenerator, error) {
 	gen, err := generator.NewGeminiGenerator(core)
 	if err != nil {
