@@ -8,10 +8,16 @@ type VideoGenerationRequest struct {
 	// ImageReference があれば Veo adapter はこれを優先します。
 	// 空の場合だけ InputImage をアップロードして参照 URI を作る想定です。
 	ImageReference string
-	AudioReference string
-	InputImage     []byte
-	InputAudio     []byte
+	// ReferenceImages はキャラクター立ち絵やキーフレームなど複数の参照画像 GCS URI です。
+	// Veo API の referenceImages フィールドに対応し、最大3枚まで指定できます。
+	// セットされている場合は ImageReference より優先されます。
+	ReferenceImages []string
+	AudioReference  string
+	InputImage      []byte
+	InputAudio      []byte
 	// PreviousVideoID は前カットの Video-to-Video 文脈を維持するための識別子です。
+	// Veo API は video と referenceImages を同時に受け付けないため、
+	// VeoUsePreviousVideo が有効な場合のみ adapter 側で使用します。
 	PreviousVideoID string
 	Seed            int64
 	CutIndex        int
