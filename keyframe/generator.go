@@ -29,6 +29,7 @@ type Generator struct {
 	rateBurst      int
 }
 
+// ImageGenerator は単一画像生成を実行する依存インターフェースです。
 type ImageGenerator interface {
 	GenerateSingleImage(ctx context.Context, req imagePorts.SingleImageRequest) (*imagePorts.ImageResponse, error)
 }
@@ -47,15 +48,13 @@ func NewGenerator(
 	opts ...Option,
 ) *Generator {
 	g := &Generator{
-		composer:       composer,
-		generator:      generator,
-		pb:             pb,
-		model:          model,
-		maxConcurrency: ports.DefaultMaxConcurrency,
-		rateInterval:   defaultRateInterval,
-		rateBurst:      defaultRateBurst,
+		composer:  composer,
+		generator: generator,
+		pb:        pb,
+		model:     model,
 	}
 
+	applyDefaultOptions(g)
 	for _, opt := range opts {
 		opt(g)
 	}

@@ -8,16 +8,20 @@ import (
 	"github.com/shouni/go-veo-orchestrator/ports"
 )
 
+// VideoRequestBuilder は動画生成リクエストをカット情報から組み立てます。
 type VideoRequestBuilder interface {
 	Build(recipe *ports.VideoRecipe, cut ports.Cut, keyframe *imagePorts.ImageResponse, previousVideoID string) ports.VideoGenerationRequest
 }
 
+// DefaultVideoRequestBuilder は標準の動画生成リクエストビルダーです。
 type DefaultVideoRequestBuilder struct{}
 
+// NewVideoRequestBuilder は DefaultVideoRequestBuilder を初期化します。
 func NewVideoRequestBuilder() *DefaultVideoRequestBuilder {
 	return &DefaultVideoRequestBuilder{}
 }
 
+// Build はレシピ、カット、キーフレーム生成結果から Veo 用リクエストを構築します。
 func (b *DefaultVideoRequestBuilder) Build(recipe *ports.VideoRecipe, cut ports.Cut, keyframe *imagePorts.ImageResponse, previousVideoID string) ports.VideoGenerationRequest {
 	var imageData []byte
 	var seed int64

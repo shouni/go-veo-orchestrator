@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-// デフォルト値の定義
+// DefaultGeminiModel などは Config に適用するデフォルト値です。
 const (
 	DefaultGeminiModel    = "gemini-3-flash-preview"
 	DefaultImageModel     = "gemini-3-pro-image-preview"

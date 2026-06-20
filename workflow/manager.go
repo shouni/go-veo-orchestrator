@@ -30,7 +30,7 @@ type ManagerArgs struct {
 	PromptDeps  *PromptDeps
 }
 
-// generationUnit は、画像生成と構成を処理するユニットを表します
+// generationUnit は画像生成とリソース構成をまとめた内部ユニットです。
 type generationUnit struct {
 	imageGenerator imagePorts.ImageGenerator
 	composer       *keyframe.Composer

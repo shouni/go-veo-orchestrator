@@ -1,9 +1,19 @@
 package keyframe
 
-import "time"
+import (
+	"time"
+
+	"github.com/shouni/go-veo-orchestrator/ports"
+)
 
 // Option は Generator の設定を適用する関数型です。
 type Option func(*Generator)
+
+func applyDefaultOptions(g *Generator) {
+	g.maxConcurrency = ports.DefaultMaxConcurrency
+	g.rateInterval = defaultRateInterval
+	g.rateBurst = defaultRateBurst
+}
 
 // WithMaxConcurrency は、キーフレーム生成の最大並列数を設定します。
 func WithMaxConcurrency(value int) Option {

@@ -13,6 +13,7 @@ import (
 	"github.com/shouni/go-veo-orchestrator/ports"
 )
 
+// Composer はキャラクター参照画像のリソース準備と参照 URI の管理を担当します。
 type Composer struct {
 	AssetManager    imagePorts.AssetManager
 	BackendProvider imagePorts.Backend
