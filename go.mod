@@ -3,16 +3,16 @@ module github.com/shouni/go-veo-orchestrator
 go 1.26
 
 require (
-	github.com/jellydator/ttlcache/v3 v3.4.0
+	github.com/jellydator/ttlcache/v3 v3.4.1
 	github.com/shouni/gemini-image-kit v1.7.5
 	github.com/shouni/go-character-kit v1.0.2
-	github.com/shouni/go-gemini-client v1.6.1
-	github.com/shouni/go-http-kit v1.4.2
+	github.com/shouni/go-gemini-client v1.6.8
+	github.com/shouni/go-http-kit v1.4.4
 	github.com/shouni/go-remote-io v1.5.3
 	github.com/shouni/go-utils v1.0.20
 	golang.org/x/sync v0.21.0
 	golang.org/x/time v0.15.0
-	google.golang.org/genai v1.61.0
+	google.golang.org/genai v1.62.0
 )
 
 require (
@@ -57,7 +57,7 @@ require (
 	github.com/ikawaha/kagome-dict/ipa v1.2.6 // indirect
 	github.com/ikawaha/kagome/v2 v2.11.0 // indirect
 	github.com/planetscale/vtprotobuf v0.6.1-0.20240319094008-0393e58bdf10 // indirect
-	github.com/shouni/audio v1.0.19 // indirect
+	github.com/shouni/audio v1.0.21 // indirect
 	github.com/shouni/netarmor v1.0.3 // indirect
 	github.com/spiffe/go-spiffe/v2 v2.6.0 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
