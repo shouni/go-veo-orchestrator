@@ -62,7 +62,7 @@ func (m *manager) buildComposer(
 		chars,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("Composerの初期化に失敗しました: %w", err)
+		return nil, fmt.Errorf("composerの初期化に失敗しました: %w", err)
 	}
 
 	return composer, nil

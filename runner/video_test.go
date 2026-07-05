@@ -15,12 +15,12 @@ type mockCutKeyframeRunner struct {
 	calls  int
 }
 
-func (m *mockCutKeyframeRunner) Run(ctx context.Context, recipe *ports.VideoRecipe) ([]*imagePorts.ImageResponse, error) {
+func (m *mockCutKeyframeRunner) Run(_ context.Context, _ *ports.VideoRecipe) ([]*imagePorts.ImageResponse, error) {
 	m.calls++
 	return m.images, nil
 }
 
-func (m *mockCutKeyframeRunner) RunAndSave(ctx context.Context, recipe *ports.VideoRecipe, outputPath string) (*ports.VideoRecipe, error) {
+func (m *mockCutKeyframeRunner) RunAndSave(_ context.Context, recipe *ports.VideoRecipe, _ string) (*ports.VideoRecipe, error) {
 	return recipe, nil
 }
 
@@ -28,7 +28,7 @@ type mockVideoRunner struct {
 	requests []ports.VideoGenerationRequest
 }
 
-func (m *mockVideoRunner) Run(ctx context.Context, req ports.VideoGenerationRequest) (*ports.VideoResponse, error) {
+func (m *mockVideoRunner) Run(_ context.Context, req ports.VideoGenerationRequest) (*ports.VideoResponse, error) {
 	m.requests = append(m.requests, req)
 	return &ports.VideoResponse{
 		CloudURL: fmt.Sprintf("gs://videos/cut_%d.mp4", req.CutIndex),

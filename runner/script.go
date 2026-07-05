@@ -76,7 +76,7 @@ func (r *VideoScriptRunner) Run(ctx context.Context, sourceURL string, mode stri
 	slog.Info("ScriptRunner: Gemini APIを呼び出し中", "model", r.aiModel)
 	resp, err := r.aiClient.GenerateContent(ctx, r.aiModel, finalPrompt)
 	if err != nil {
-		return nil, fmt.Errorf("Geminiによるコンテンツ生成に失敗しました: %w", err)
+		return nil, fmt.Errorf("geminiによるコンテンツ生成に失敗しました: %w", err)
 	}
 
 	// 4. AI の応答をパース

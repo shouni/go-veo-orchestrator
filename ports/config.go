@@ -1,3 +1,5 @@
+// Package ports は、go-veo-orchestrator の各コンポーネントが依存する
+// インターフェース（ポート）と、動画生成に関する共通データ型・設定を定義します。
 package ports
 
 import (

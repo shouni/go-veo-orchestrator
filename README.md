@@ -1,10 +1,10 @@
 # 🎬 Go Veo Orchestrator
 
+[![CI](https://github.com/shouni/go-veo-orchestrator/actions/workflows/ci.yml/badge.svg)](https://github.com/shouni/go-veo-orchestrator/actions/workflows/ci.yml)
 [![Language](https://img.shields.io/badge/Language-Go-blue)](https://golang.org/)
 [![Go Version](https://img.shields.io/github/go-mod/go-version/shouni/go-veo-orchestrator)](https://golang.org/)
 [![GitHub tag (latest by date)](https://img.shields.io/github/v/tag/shouni/go-veo-orchestrator)](https://github.com/shouni/go-veo-orchestrator/tags)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Go Report Card](https://goreportcard.com/badge/github.com/shouni/go-veo-orchestrator)](https://goreportcard.com/report/github.com/shouni/go-veo-orchestrator)
 [![Go Reference](https://pkg.go.dev/badge/github.com/shouni/go-veo-orchestrator.svg)](https://pkg.go.dev/github.com/shouni/go-veo-orchestrator)
 
 ## 🚀 概要 (About) - Music Recipe Driven Veo Orchestrator

@@ -25,7 +25,7 @@ func (m *mockAssetManager) UploadFile(ctx context.Context, refURL string) (strin
 	return "https://file-api.google.com/" + refURL, nil
 }
 
-func (m *mockAssetManager) DeleteFile(ctx context.Context, fileURI string) error {
+func (m *mockAssetManager) DeleteFile(_ context.Context, _ string) error {
 	atomic.AddInt32(&m.deleteCount, 1)
 	return nil
 }
