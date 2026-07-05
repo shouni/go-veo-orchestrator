@@ -95,7 +95,7 @@ func validateArgs(args *ManagerArgs) error {
 		return fmt.Errorf("PromptDeps is required")
 	}
 	if args.PromptDeps.Characters == nil {
-		return fmt.Errorf("Characters is required")
+		return fmt.Errorf("characters is required")
 	}
 	if args.PromptDeps.ScriptPrompt == nil {
 		return fmt.Errorf("ScriptPrompt is required")

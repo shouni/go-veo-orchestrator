@@ -1,3 +1,5 @@
+// Package runner は、動画レシピの実行（キーフレーム生成・スクリプト実行・
+// 動画生成・公開）を統括するランナー群を提供します。
 package runner
 
 import (

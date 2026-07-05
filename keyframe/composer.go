@@ -1,3 +1,5 @@
+// Package keyframe は、キャラクターやカット情報から動画のキーフレーム画像を
+// 生成・合成するロジックを提供します。
 package keyframe
 
 import (

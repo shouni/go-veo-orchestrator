@@ -1,3 +1,5 @@
+// Package workflow は、キャラクター・キーフレーム・動画生成をまたぐ
+// ワークフロー全体の調整とキャッシュ管理を行います。
 package workflow
 
 import (
