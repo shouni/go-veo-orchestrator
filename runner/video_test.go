@@ -24,6 +24,10 @@ func (m *mockCutKeyframeRunner) RunAndSave(_ context.Context, recipe *ports.Vide
 	return recipe, nil
 }
 
+func (m *mockCutKeyframeRunner) EditAndSave(_ context.Context, recipe *ports.VideoRecipe, _ string, _ string) (*ports.VideoRecipe, error) {
+	return recipe, nil
+}
+
 type mockVideoRunner struct {
 	requests []ports.VideoGenerationRequest
 }

@@ -101,8 +101,8 @@ github.com/shouni/gemini-image-kit v1.8.0 h1:w6QgDjyGSoWcZo1WawgDTDgc7ufutAAgxa1
 github.com/shouni/gemini-image-kit v1.8.0/go.mod h1:M0HA+B67Lqm7QUlld/HpM5ZJKda+Vb/Z5xyuHJgV/p4=
 github.com/shouni/go-character-kit v1.0.2 h1:e6SRCI5JrLwgR7ZCXk1xq2oA7+mX+6gI4bm1iGqOD6A=
 github.com/shouni/go-character-kit v1.0.2/go.mod h1:P+RtKl6YoGQrEROnjpsFHw91cwXdO12wPFDsNUsNHfA=
-github.com/shouni/go-gemini-client v1.7.0 h1:gMCzc28xy1N47UTDXJdgG1zcAXMWHseG/QME6639+Xw=
-github.com/shouni/go-gemini-client v1.7.0/go.mod h1:WFsyJUeCduDI1VSQSxFBW0QKUIL8MimCnaEfFWnuusg=
+github.com/shouni/go-gemini-client v1.8.0 h1:0+YON1O4i0T5OyvrkkQRE08tRkmGzCDTNJtmYyfapqg=
+github.com/shouni/go-gemini-client v1.8.0/go.mod h1:WFsyJUeCduDI1VSQSxFBW0QKUIL8MimCnaEfFWnuusg=
 github.com/shouni/go-http-kit v1.6.0 h1:ZE5X6cnoakIwKeXZj+Rr0fvN+GyuFGvUKwPGB4LsHNQ=
 github.com/shouni/go-http-kit v1.6.0/go.mod h1:AoqjbhDTfR2GV7Hgie59qm2Qe9m/icoJAIw0IVCOivU=
 github.com/shouni/go-remote-io v1.6.0 h1:EAKXcnZ1BvDrYWW5D1Va+cHs9fV2qQHW1Egg0H2GupI=

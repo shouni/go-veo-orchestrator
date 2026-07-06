@@ -29,9 +29,10 @@ type Generator struct {
 	rateBurst      int
 }
 
-// ImageGenerator は単一画像生成を実行する依存インターフェースです。
+// ImageGenerator は単一画像生成・編集を実行する依存インターフェースです。
 type ImageGenerator interface {
 	GenerateSingleImage(ctx context.Context, req imagePorts.SingleImageRequest) (*imagePorts.ImageResponse, error)
+	EditImage(ctx context.Context, req imagePorts.EditImageRequest) (*imagePorts.ImageResponse, error)
 }
 
 type keyframeTask struct {
@@ -121,6 +122,51 @@ func (g *Generator) generateCutKeyframe(ctx context.Context, task keyframeTask) 
 	}
 
 	logger.Info("Keyframe generation completed",
+		"duration", time.Since(startTime).Round(time.Second),
+	)
+
+	return resp, nil
+}
+
+// EditCut edits an existing keyframe image for a single cut using a text instruction
+// (cut.KeyframeReference as the source image), preserving composition/pose/background and
+// changing only what editPrompt specifies. Unlike Execute, this does not regenerate the
+// image from scratch, so it is suited to fixing a localized inconsistency (e.g. a stray
+// prop) without risking a completely different result.
+func (g *Generator) EditCut(ctx context.Context, cut ports.Cut, editPrompt string) (*imagePorts.ImageResponse, error) {
+	if err := g.limiter.Wait(ctx); err != nil {
+		return nil, fmt.Errorf("wait for keyframe rate limiter: %w", err)
+	}
+	if cut.KeyframeReference == "" {
+		return nil, fmt.Errorf("cut %d has no existing keyframe to edit", cut.CutIndex)
+	}
+
+	char := g.characterForCut(cut)
+	if char == nil {
+		return nil, fmt.Errorf("cut %d: character not found for character ID '%s'", cut.CutIndex, cut.CharacterID)
+	}
+
+	req := imagePorts.EditImageRequest{
+		Model:      g.model,
+		Image:      imagePorts.ImageURI{ReferenceURL: cut.KeyframeReference},
+		EditPrompt: editPrompt,
+		Seed:       char.Seed,
+	}
+
+	logger := slog.With(
+		"cut_index", cut.CutIndex,
+		"character_id", char.ID,
+		"character_name", char.Name,
+	)
+	logger.Info("Starting keyframe edit")
+	startTime := time.Now()
+
+	resp, err := g.generator.EditImage(ctx, req)
+	if err != nil {
+		return nil, fmt.Errorf("cut %d (character_id: %s) keyframe edit failed: %w", cut.CutIndex, char.ID, err)
+	}
+
+	logger.Info("Keyframe edit completed",
 		"duration", time.Since(startTime).Round(time.Second),
 	)
 

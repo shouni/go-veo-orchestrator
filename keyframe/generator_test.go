@@ -19,6 +19,7 @@ type mockImageGenerator struct {
 	mu            sync.Mutex
 	generateCount int
 	generateFunc  func(ctx context.Context, req imagePorts.SingleImageRequest) (*imagePorts.ImageResponse, error)
+	editFunc      func(ctx context.Context, req imagePorts.EditImageRequest) (*imagePorts.ImageResponse, error)
 }
 
 func (m *mockImageGenerator) GenerateSingleImage(ctx context.Context, req imagePorts.SingleImageRequest) (*imagePorts.ImageResponse, error) {
@@ -33,6 +34,17 @@ func (m *mockImageGenerator) GenerateSingleImage(ctx context.Context, req imageP
 		s = *req.Seed
 	}
 	return &imagePorts.ImageResponse{Data: []byte("fake-keyframe-image"), UsedSeed: s}, nil
+}
+
+func (m *mockImageGenerator) EditImage(ctx context.Context, req imagePorts.EditImageRequest) (*imagePorts.ImageResponse, error) {
+	if m.editFunc != nil {
+		return m.editFunc(ctx, req)
+	}
+	var s int64
+	if req.Seed != nil {
+		s = *req.Seed
+	}
+	return &imagePorts.ImageResponse{Data: []byte("fake-edited-keyframe-image"), UsedSeed: s}, nil
 }
 
 type mockImagePrompt struct{}
@@ -155,5 +167,70 @@ func TestGenerator_Execute(t *testing.T) {
 		}
 		// mockAssetManager.uploadCount が増えていないことを確認したいが、
 		// PrepareCharacterResources 内の挙動に依存するためここでは生成が成功することを確認
+	})
+}
+
+func TestGenerator_EditCut(t *testing.T) {
+	ctx := context.Background()
+
+	assetMgr := &mockAssetManager{}
+	backend := &mockBackend{isVertex: false}
+	zundamonSeed := int64(10001)
+	cm := mustNewCharacters(t, []characterkit.Character{
+		{ID: "zundamon", Name: "ずんだもん", VisualCues: []string{"green hair"}, Seed: &zundamonSeed, ReferenceURL: "gs://bucket/zunda.png", IsDefault: true},
+	})
+	composer, _ := NewComposer(assetMgr, backend, cm)
+	genMock := &mockImageGenerator{}
+	pbMock := &mockImagePrompt{}
+	generator := NewGenerator(composer, genMock, pbMock, "gemini-2.0-flash", func(g *Generator) {
+		g.maxConcurrency = 5
+		g.rateInterval = 1 * time.Microsecond
+		g.rateBurst = 100
+	})
+
+	t.Run("Uses existing keyframe as source and character seed", func(t *testing.T) {
+		var captured imagePorts.EditImageRequest
+		genMock.editFunc = func(_ context.Context, req imagePorts.EditImageRequest) (*imagePorts.ImageResponse, error) {
+			captured = req
+			return &imagePorts.ImageResponse{Data: []byte("edited"), UsedSeed: *req.Seed}, nil
+		}
+
+		cut := ports.Cut{CutIndex: 2, CharacterID: "zundamon", KeyframeReference: "gs://bucket/jobs/j1/images/keyframe_2.png"}
+		resp, err := generator.EditCut(ctx, cut, "腕には絆創膏を1〜2枚のみにしてください")
+		if err != nil {
+			t.Fatalf("EditCut failed: %v", err)
+		}
+		if string(resp.Data) != "edited" {
+			t.Errorf("unexpected response data: %q", resp.Data)
+		}
+		if captured.Image.ReferenceURL != cut.KeyframeReference {
+			t.Errorf("edit request image = %q, want %q", captured.Image.ReferenceURL, cut.KeyframeReference)
+		}
+		if captured.EditPrompt != "腕には絆創膏を1〜2枚のみにしてください" {
+			t.Errorf("edit request prompt = %q", captured.EditPrompt)
+		}
+		if captured.Seed == nil || *captured.Seed != zundamonSeed {
+			t.Errorf("edit request seed = %v, want %d", captured.Seed, zundamonSeed)
+		}
+	})
+
+	t.Run("Errors when cut has no existing keyframe", func(t *testing.T) {
+		cut := ports.Cut{CutIndex: 1, CharacterID: "zundamon"}
+		if _, err := generator.EditCut(ctx, cut, "edit"); err == nil {
+			t.Fatal("expected error for cut with no KeyframeReference")
+		}
+	})
+
+	t.Run("Errors when character is unknown and no default exists", func(t *testing.T) {
+		emptyComposer, _ := NewComposer(assetMgr, backend, mustNewCharacters(t, nil))
+		g := NewGenerator(emptyComposer, genMock, pbMock, "gemini-2.0-flash", func(g *Generator) {
+			g.maxConcurrency = 5
+			g.rateInterval = 1 * time.Microsecond
+			g.rateBurst = 100
+		})
+		cut := ports.Cut{CutIndex: 1, CharacterID: "no-such-character", KeyframeReference: "gs://bucket/keyframe.png"}
+		if _, err := g.EditCut(ctx, cut, "edit"); err == nil {
+			t.Fatal("expected error for unknown character with no default")
+		}
 	})
 }

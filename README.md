@@ -38,9 +38,37 @@
 | ワークフロー | 担当インターフェース | 内容 |
 | --- | --- | --- |
 | **1. Scripting** | `ScriptRunner` | Music Recipe JSON を読み込み、歌詞・section・楽曲展開から、カット割り・カメラワーク・推定秒数を含む**Video Recipe**を生成。 |
-| **2. Cut Keyframe Gen** | `CutKeyframeRunner` | 各カットのベースとなるキーフレーム画像を、キャラクター Seed と参照画像を使って生成。 |
+| **2. Cut Keyframe Gen** | `CutKeyframeRunner` | 各カットのベースとなるキーフレーム画像を、キャラクター Seed と参照画像を使って生成（`RunAndSave`）。既存キーフレームの局所編集にも対応（`EditAndSave`、詳細は後述）。 |
 | **3. Video Gen** | `VideoTimelineRunner` + `VideoRunner` | `VideoRequestBuilder` が `VideoGenerationRequest` を組み立て、Veo adapter に順次投入。 |
 | **4. Metadata Publish** | `VideoPublishRunner` | `video_id` / `video_url` / `status` 更新済みの `video_music_meta.json` を保存。 |
+
+---
+
+## 🩹 単一カットのキーフレーム編集 (EditAndSave)
+
+`CutKeyframeRunner.RunAndSave` はプロンプトから画像を作り直す「フル生成」ですが、`EditAndSave` は既存のキーフレーム画像を編集元として、テキスト指示で局所的な修正だけを反映します。構図・ポーズ・背景は保たれるため、同じキャラクターの他カットとの一貫性を保ったまま「小物の数を減らす」「色味を揃える」といった軽微な修正に向いています。
+
+```go
+// recipe は必ず 1 カットのみを含みます。対象カットの KeyframeReference は
+// 既存の（編集元となる）キーフレーム画像を指している必要があります。
+recipe := &ports.VideoRecipe{
+	Cuts: []ports.Cut{
+		{CutIndex: 2, CharacterID: "zundamon", KeyframeReference: "gs://bucket/jobs/j1/images/keyframe_2.png"},
+	},
+}
+
+updated, err := workflows.CutKeyframe.EditAndSave(ctx, recipe, "腕には絆創膏を1〜2枚のみにしてください", "gs://bucket/jobs/j1/regens/cut-2/")
+if err != nil {
+	return err
+}
+// updated.Cuts[0].KeyframeReference が編集後の画像パスに更新されています。
+```
+
+内部的には [gemini-image-kit](https://github.com/shouni/gemini-image-kit) の `ImageGenerator.EditImage` を呼び出すため、`ManagerArgs` に渡す画像生成器がこの API を実装している必要があります（`generator.GeminiGenerator` は対応済み）。対応していない画像生成器が設定されている場合、`EditAndSave` はエラーを返します。
+
+* `recipe.Cuts` が 1 件でない場合はエラー
+* 対象カットの `KeyframeReference` が空の場合（＝編集元画像がない）はエラー
+* キャラクターの Seed は `RunAndSave` と同様、`char.Seed` がそのまま編集リクエストに使われます
 
 ---
 
