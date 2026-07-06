@@ -23,6 +23,7 @@ type Generator struct {
 	generator      ImageGenerator
 	pb             ports.KeyframePrompt
 	model          string
+	editModel      string
 	limiter        *rate.Limiter
 	maxConcurrency int
 	rateInterval   time.Duration
@@ -140,6 +141,9 @@ func (g *Generator) EditCut(ctx context.Context, cut ports.Cut, editPrompt strin
 	if cut.KeyframeReference == "" {
 		return nil, fmt.Errorf("cut %d has no existing keyframe to edit", cut.CutIndex)
 	}
+	if g.editModel == "" {
+		return nil, fmt.Errorf("cut %d: no edit-capable image model configured (keyframe.WithEditModel)", cut.CutIndex)
+	}
 
 	char := g.characterForCut(cut)
 	if char == nil {
@@ -147,7 +151,7 @@ func (g *Generator) EditCut(ctx context.Context, cut ports.Cut, editPrompt strin
 	}
 
 	req := imagePorts.EditImageRequest{
-		Model:      g.model,
+		Model:      g.editModel,
 		Image:      imagePorts.ImageURI{ReferenceURL: cut.KeyframeReference},
 		EditPrompt: editPrompt,
 		Seed:       char.Seed,
