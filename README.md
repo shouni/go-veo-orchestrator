@@ -66,8 +66,11 @@ if err != nil {
 
 内部的には [gemini-image-kit](https://github.com/shouni/gemini-image-kit) の `ImageGenerator.EditImage` を呼び出すため、`ManagerArgs` に渡す画像生成器がこの API を実装している必要があります（`generator.GeminiGenerator` は対応済み）。対応していない画像生成器が設定されている場合、`EditAndSave` はエラーを返します。
 
+**`Config.ImageEditModel` は必須です。** `EditImage` は Vertex AI Imagen の編集/カスタマイズ対応モデル（例: `imagen-3.0-capability-001` 系）を必要とし、通常の画像生成に使う `Config.ImageModel` とは別モデルです。デフォルト値は用意していないため（`ApplyDefaults()` でも補完されません）、`EditAndSave` を使うアプリケーションは呼び出し側で明示的に設定してください。未設定のまま `EditAndSave` を呼ぶと、Vertex AI にリクエストを送る前に明確なエラーを返します。
+
 * `recipe.Cuts` が 1 件でない場合はエラー
 * 対象カットの `KeyframeReference` が空の場合（＝編集元画像がない）はエラー
+* `Config.ImageEditModel` が空の場合はエラー
 * キャラクターの Seed は `RunAndSave` と同様、`char.Seed` がそのまま編集リクエストに使われます
 
 ---

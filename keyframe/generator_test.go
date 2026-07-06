@@ -182,11 +182,14 @@ func TestGenerator_EditCut(t *testing.T) {
 	composer, _ := NewComposer(assetMgr, backend, cm)
 	genMock := &mockImageGenerator{}
 	pbMock := &mockImagePrompt{}
-	generator := NewGenerator(composer, genMock, pbMock, "gemini-2.0-flash", func(g *Generator) {
-		g.maxConcurrency = 5
-		g.rateInterval = 1 * time.Microsecond
-		g.rateBurst = 100
-	})
+	generator := NewGenerator(composer, genMock, pbMock, "gemini-2.0-flash",
+		WithEditModel("imagen-3.0-capability-001"),
+		func(g *Generator) {
+			g.maxConcurrency = 5
+			g.rateInterval = 1 * time.Microsecond
+			g.rateBurst = 100
+		},
+	)
 
 	t.Run("Uses existing keyframe as source and character seed", func(t *testing.T) {
 		var captured imagePorts.EditImageRequest
@@ -212,12 +215,27 @@ func TestGenerator_EditCut(t *testing.T) {
 		if captured.Seed == nil || *captured.Seed != zundamonSeed {
 			t.Errorf("edit request seed = %v, want %d", captured.Seed, zundamonSeed)
 		}
+		if captured.Model != "imagen-3.0-capability-001" {
+			t.Errorf("edit request model = %q, want the configured edit model (not the generation model)", captured.Model)
+		}
 	})
 
 	t.Run("Errors when cut has no existing keyframe", func(t *testing.T) {
 		cut := ports.Cut{CutIndex: 1, CharacterID: "zundamon"}
 		if _, err := generator.EditCut(ctx, cut, "edit"); err == nil {
 			t.Fatal("expected error for cut with no KeyframeReference")
+		}
+	})
+
+	t.Run("Errors when no edit model is configured", func(t *testing.T) {
+		g := NewGenerator(composer, genMock, pbMock, "gemini-2.0-flash", func(g *Generator) {
+			g.maxConcurrency = 5
+			g.rateInterval = 1 * time.Microsecond
+			g.rateBurst = 100
+		})
+		cut := ports.Cut{CutIndex: 1, CharacterID: "zundamon", KeyframeReference: "gs://bucket/keyframe.png"}
+		if _, err := g.EditCut(ctx, cut, "edit"); err == nil {
+			t.Fatal("expected error when no edit model is configured")
 		}
 	})
 

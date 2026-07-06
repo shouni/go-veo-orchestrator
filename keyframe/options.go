@@ -41,3 +41,13 @@ func WithRateBurst(value int) Option {
 		}
 	}
 }
+
+// WithEditModel は、EditCut（既存キーフレームの部分編集）で使う画像編集モデルを設定します。
+// 未設定のままだと EditCut はエラーを返します。
+func WithEditModel(model string) Option {
+	return func(g *Generator) {
+		if model != "" {
+			g.editModel = model
+		}
+	}
+}
