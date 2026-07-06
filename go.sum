@@ -97,12 +97,12 @@ github.com/planetscale/vtprotobuf v0.6.1-0.20240319094008-0393e58bdf10 h1:GFCKgm
 github.com/planetscale/vtprotobuf v0.6.1-0.20240319094008-0393e58bdf10/go.mod h1:t/avpk3KcrXxUnYOhZhMXJlSEyie6gQbtLq5NM3loB8=
 github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 h1:Jamvg5psRIccs7FGNTlIRMkT8wgtp5eCXdBlqhYGL6U=
 github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
-github.com/shouni/gemini-image-kit v1.8.0 h1:w6QgDjyGSoWcZo1WawgDTDgc7ufutAAgxa1vpU85qVg=
-github.com/shouni/gemini-image-kit v1.8.0/go.mod h1:M0HA+B67Lqm7QUlld/HpM5ZJKda+Vb/Z5xyuHJgV/p4=
+github.com/shouni/gemini-image-kit v1.9.0 h1:NbCaV7pzggfuuoRdd1CZZkwXq0QYTyV5IQr08tWyhNc=
+github.com/shouni/gemini-image-kit v1.9.0/go.mod h1:VlEOcxofPYML0Wop+U2S9UnMFCb+Bt0CIDz8KulOv6Y=
 github.com/shouni/go-character-kit v1.0.2 h1:e6SRCI5JrLwgR7ZCXk1xq2oA7+mX+6gI4bm1iGqOD6A=
 github.com/shouni/go-character-kit v1.0.2/go.mod h1:P+RtKl6YoGQrEROnjpsFHw91cwXdO12wPFDsNUsNHfA=
-github.com/shouni/go-gemini-client v1.8.0 h1:0+YON1O4i0T5OyvrkkQRE08tRkmGzCDTNJtmYyfapqg=
-github.com/shouni/go-gemini-client v1.8.0/go.mod h1:WFsyJUeCduDI1VSQSxFBW0QKUIL8MimCnaEfFWnuusg=
+github.com/shouni/go-gemini-client v1.9.0 h1:VG4/iCn0CZ/UKiB5+MOiYLsMJlrPOPMP+zNDYZ1ZOOY=
+github.com/shouni/go-gemini-client v1.9.0/go.mod h1:WFsyJUeCduDI1VSQSxFBW0QKUIL8MimCnaEfFWnuusg=
 github.com/shouni/go-http-kit v1.6.0 h1:ZE5X6cnoakIwKeXZj+Rr0fvN+GyuFGvUKwPGB4LsHNQ=
 github.com/shouni/go-http-kit v1.6.0/go.mod h1:AoqjbhDTfR2GV7Hgie59qm2Qe9m/icoJAIw0IVCOivU=
 github.com/shouni/go-remote-io v1.6.0 h1:EAKXcnZ1BvDrYWW5D1Va+cHs9fV2qQHW1Egg0H2GupI=

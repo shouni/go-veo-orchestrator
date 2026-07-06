@@ -72,10 +72,6 @@ func (fakeGenerativeModel) GenerateWithParts(context.Context, string, []*genai.P
 	return &gemini.Response{}, nil
 }
 
-func (fakeGenerativeModel) EditImage(context.Context, string, string, []genai.ReferenceImage, *genai.EditImageConfig) (*genai.EditImageResponse, error) {
-	return &genai.EditImageResponse{}, nil
-}
-
 func (fakeGenerativeModel) IsVertexAI() bool {
 	return false
 }
@@ -164,4 +160,8 @@ type fakeKeyframePrompt struct{}
 
 func (fakeKeyframePrompt) BuildCut(ports.Cut, *characterkit.Character) (string, string) {
 	return "user", "system"
+}
+
+func (fakeKeyframePrompt) BuildEdit(ports.Cut, *characterkit.Character, string) (string, string) {
+	return "edit-user", "edit-system"
 }

@@ -23,17 +23,15 @@ type Generator struct {
 	generator      ImageGenerator
 	pb             ports.KeyframePrompt
 	model          string
-	editModel      string
 	limiter        *rate.Limiter
 	maxConcurrency int
 	rateInterval   time.Duration
 	rateBurst      int
 }
 
-// ImageGenerator は単一画像生成・編集を実行する依存インターフェースです。
+// ImageGenerator は単一画像生成を実行する依存インターフェースです。
 type ImageGenerator interface {
 	GenerateSingleImage(ctx context.Context, req imagePorts.SingleImageRequest) (*imagePorts.ImageResponse, error)
-	EditImage(ctx context.Context, req imagePorts.EditImageRequest) (*imagePorts.ImageResponse, error)
 }
 
 type keyframeTask struct {
@@ -131,9 +129,10 @@ func (g *Generator) generateCutKeyframe(ctx context.Context, task keyframeTask) 
 
 // EditCut edits an existing keyframe image for a single cut using a text instruction
 // (cut.KeyframeReference as the source image), preserving composition/pose/background and
-// changing only what editPrompt specifies. Unlike Execute, this does not regenerate the
-// image from scratch, so it is suited to fixing a localized inconsistency (e.g. a stray
-// prop) without risking a completely different result.
+// changing only what editPrompt specifies. It reuses the same conversational image model as
+// Execute/GenerateSingleImage (Gemini's multimodal "Nano Banana" image models support editing
+// an input image via a plain generateContent call), rather than a dedicated edit API — Vertex
+// AI's Imagen mask-based edit/capability models have no supported successor.
 func (g *Generator) EditCut(ctx context.Context, cut ports.Cut, editPrompt string) (*imagePorts.ImageResponse, error) {
 	if err := g.limiter.Wait(ctx); err != nil {
 		return nil, fmt.Errorf("wait for keyframe rate limiter: %w", err)
@@ -141,20 +140,24 @@ func (g *Generator) EditCut(ctx context.Context, cut ports.Cut, editPrompt strin
 	if cut.KeyframeReference == "" {
 		return nil, fmt.Errorf("cut %d has no existing keyframe to edit", cut.CutIndex)
 	}
-	if g.editModel == "" {
-		return nil, fmt.Errorf("cut %d: no edit-capable image model configured (keyframe.WithEditModel)", cut.CutIndex)
-	}
 
 	char := g.characterForCut(cut)
 	if char == nil {
 		return nil, fmt.Errorf("cut %d: character not found for character ID '%s'", cut.CutIndex, cut.CharacterID)
 	}
 
-	req := imagePorts.EditImageRequest{
-		Model:      g.editModel,
-		Image:      imagePorts.ImageURI{ReferenceURL: cut.KeyframeReference},
-		EditPrompt: editPrompt,
-		Seed:       char.Seed,
+	userPrompt, systemPrompt := g.pb.BuildEdit(cut, char, editPrompt)
+	req := imagePorts.SingleImageRequest{
+		GenerationOptions: imagePorts.GenerationOptions{
+			Model:          g.model,
+			Prompt:         userPrompt,
+			SystemPrompt:   systemPrompt,
+			NegativePrompt: negativeKeyframePrompt,
+			AspectRatio:    CutAspectRatio,
+			ImageSize:      ImageSize2K,
+			Seed:           char.Seed,
+		},
+		Image: imagePorts.ImageURI{ReferenceURL: cut.KeyframeReference},
 	}
 
 	logger := slog.With(
@@ -165,7 +168,7 @@ func (g *Generator) EditCut(ctx context.Context, cut ports.Cut, editPrompt strin
 	logger.Info("Starting keyframe edit")
 	startTime := time.Now()
 
-	resp, err := g.generator.EditImage(ctx, req)
+	resp, err := g.generator.GenerateSingleImage(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("cut %d (character_id: %s) keyframe edit failed: %w", cut.CutIndex, char.ID, err)
 	}
