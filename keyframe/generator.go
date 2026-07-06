@@ -143,7 +143,7 @@ func (g *Generator) EditCut(ctx context.Context, cut ports.Cut, editPrompt strin
 
 	char := g.characterForCut(cut)
 	if char == nil {
-		return nil, fmt.Errorf("character not found for character ID '%s'", cut.CharacterID)
+		return nil, fmt.Errorf("cut %d: character not found for character ID '%s'", cut.CutIndex, cut.CharacterID)
 	}
 
 	req := imagePorts.EditImageRequest{
