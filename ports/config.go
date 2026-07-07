@@ -20,11 +20,6 @@ type Config struct {
 	// --- AI Model Settings (Common) ---
 	GeminiModel string
 	ImageModel  string
-	// ImageEditModel は CutKeyframeRunner.EditAndSave（既存キーフレームの部分編集）で使う
-	// 画像編集モデルです。Vertex AI Imagen の編集/カスタマイズ対応モデルなど、ImageModel
-	// （通常の画像生成モデル）とは別のモデルが必要になる場合があります。デフォルト値は
-	// 用意していないため、EditAndSave を使う場合は明示的に設定してください。
-	ImageEditModel string
 
 	// --- Generation Settings ---
 	MaxConcurrency int

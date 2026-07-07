@@ -20,6 +20,10 @@ type ScriptPrompt interface {
 // KeyframePrompt は、カットのキーフレーム画像生成AI向けのプロンプトを構築する契約です。
 type KeyframePrompt interface {
 	BuildCut(cut Cut, char *characterkit.Character) (userPrompt string, systemPrompt string)
+	// BuildEdit builds the user/system prompt for editing an existing keyframe image with
+	// editPrompt, reinforcing character identity and style consistency (art style, negative
+	// prompt guidance) the same way BuildCut does for full generation.
+	BuildEdit(cut Cut, char *characterkit.Character, editPrompt string) (userPrompt string, systemPrompt string)
 }
 
 // CutImageGenerator は、一連のカットのキーフレーム画像レスポンスを生成します。

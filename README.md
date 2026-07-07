@@ -64,13 +64,12 @@ if err != nil {
 // updated.Cuts[0].KeyframeReference が編集後の画像パスに更新されています。
 ```
 
-内部的には [gemini-image-kit](https://github.com/shouni/gemini-image-kit) の `ImageGenerator.EditImage` を呼び出すため、`ManagerArgs` に渡す画像生成器がこの API を実装している必要があります（`generator.GeminiGenerator` は対応済み）。対応していない画像生成器が設定されている場合、`EditAndSave` はエラーを返します。
+内部的には [gemini-image-kit](https://github.com/shouni/gemini-image-kit) の `ImageGenerator.GenerateSingleImage` に既存キーフレーム画像を入力として渡し、`editPrompt` をプロンプトとして呼び出します。`RunAndSave`（通常のキーフレーム生成）と同じ会話型マルチモーダル画像モデル（`Config.ImageModel`、Gemini の「Nano Banana」系）をそのまま再利用するため、編集専用のモデルやAPIは不要です。
 
-**`Config.ImageEditModel` は必須です。** `EditImage` は Vertex AI Imagen の編集/カスタマイズ対応モデル（例: `imagen-3.0-capability-001` 系）を必要とし、通常の画像生成に使う `Config.ImageModel` とは別モデルです。デフォルト値は用意していないため（`ApplyDefaults()` でも補完されません）、`EditAndSave` を使うアプリケーションは呼び出し側で明示的に設定してください。未設定のまま `EditAndSave` を呼ぶと、Vertex AI にリクエストを送る前に明確なエラーを返します。
+> Vertex AI Imagen のマスクベース編集/カスタマイズ API（`imagen-3.0-capability-001` 系）は2026年6月30日に廃止され、後継の「capability」モデルも用意されていません。そのため `EditAndSave` はマスク指定には対応せず、自由記述の編集指示のみをサポートします。
 
 * `recipe.Cuts` が 1 件でない場合はエラー
 * 対象カットの `KeyframeReference` が空の場合（＝編集元画像がない）はエラー
-* `Config.ImageEditModel` が空の場合はエラー
 * キャラクターの Seed は `RunAndSave` と同様、`char.Seed` がそのまま編集リクエストに使われます
 
 ---
