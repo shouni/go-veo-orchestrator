@@ -30,6 +30,15 @@ func NewVideoTimelineRunner(
 	}
 }
 
+// WithRequestBuilder は動画生成リクエストの組み立てを差し替えます。
+// nil を渡した場合は変更せず、メソッドチェーンできるよう自身を返します。
+func (r *VideoTimelineRunner) WithRequestBuilder(builder VideoRequestBuilder) *VideoTimelineRunner {
+	if builder != nil {
+		r.requestBuilder = builder
+	}
+	return r
+}
+
 // Run はカットのキーフレームを生成し、前カットの VideoID を引き継ぎながら順次動画化します。
 func (r *VideoTimelineRunner) Run(ctx context.Context, recipe *ports.VideoRecipe) ([]*ports.VideoResponse, error) {
 	if err := r.validateRun(recipe); err != nil {

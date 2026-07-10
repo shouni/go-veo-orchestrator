@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	imagePorts "github.com/shouni/gemini-image-kit/ports"
+	characterkit "github.com/shouni/go-character-kit/character"
 	"github.com/shouni/go-veo-orchestrator/ports"
 )
 
@@ -14,11 +15,21 @@ type VideoRequestBuilder interface {
 }
 
 // DefaultVideoRequestBuilder は標準の動画生成リクエストビルダーです。
-type DefaultVideoRequestBuilder struct{}
+// characters が設定されている場合、カットのキャラクター立ち絵とキーフレームを
+// ReferenceImages（Veo の referenceImages、asset タイプ・最大3枚）として組み立てます。
+type DefaultVideoRequestBuilder struct {
+	characters *characterkit.Characters
+}
 
 // NewVideoRequestBuilder は DefaultVideoRequestBuilder を初期化します。
 func NewVideoRequestBuilder() *DefaultVideoRequestBuilder {
 	return &DefaultVideoRequestBuilder{}
+}
+
+// NewVideoRequestBuilderWithCharacters は、キャラクター立ち絵を referenceImages として
+// 組み立てるビルダーを初期化します。characters が nil の場合は標準ビルダーと同じ挙動です。
+func NewVideoRequestBuilderWithCharacters(characters *characterkit.Characters) *DefaultVideoRequestBuilder {
+	return &DefaultVideoRequestBuilder{characters: characters}
 }
 
 // Build はレシピ、カット、キーフレーム生成結果から Veo 用リクエストを構築します。
@@ -36,6 +47,7 @@ func (b *DefaultVideoRequestBuilder) Build(recipe *ports.VideoRecipe, cut ports.
 	return ports.VideoGenerationRequest{
 		Prompt:          b.buildPrompt(recipe, cut),
 		ImageReference:  cut.KeyframeReference,
+		ReferenceImages: b.buildReferenceImages(cut),
 		AudioReference:  cut.AudioReference,
 		InputImage:      imageData,
 		PreviousVideoID: previousVideoID,
@@ -43,6 +55,28 @@ func (b *DefaultVideoRequestBuilder) Build(recipe *ports.VideoRecipe, cut ports.
 		CutIndex:        cut.CutIndex,
 		DurationSec:     cut.DurationSec,
 	}
+}
+
+// buildReferenceImages はキャラクター立ち絵とキーフレームから referenceImages 用の
+// GCS URI リストを組み立てます。characters 未設定、または参照が1つもない場合は nil を
+// 返し、adapter 側はキーフレームの image 入力（image-to-video）へフォールバックします。
+func (b *DefaultVideoRequestBuilder) buildReferenceImages(cut ports.Cut) []string {
+	if b.characters == nil {
+		return nil
+	}
+	char := b.characters.GetCharacter(strings.TrimSpace(cut.CharacterID))
+	if char == nil {
+		return nil
+	}
+	characterRef := strings.TrimSpace(char.ReferenceURL)
+	if characterRef == "" {
+		return nil
+	}
+	refs := []string{characterRef}
+	if keyframeRef := strings.TrimSpace(cut.KeyframeReference); keyframeRef != "" {
+		refs = append(refs, keyframeRef)
+	}
+	return refs
 }
 
 func (b *DefaultVideoRequestBuilder) buildPrompt(recipe *ports.VideoRecipe, cut ports.Cut) string {
