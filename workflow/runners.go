@@ -55,6 +55,8 @@ func (m *manager) buildPublishRunner() (*runner.VideoPublisherRunner, error) {
 }
 
 // buildVideoTimelineRunner は、キーフレーム生成から Veo 生成までをつなぐ Runner を作成します。
+// キャラクター定義が利用できる場合は、カットの立ち絵を referenceImages として渡す
+// リクエストビルダーを使います。
 func (m *manager) buildVideoTimelineRunner(
 	keyframeRunner ports.CutKeyframeRunner,
 	publisher ports.VideoPublishRunner,
@@ -62,5 +64,6 @@ func (m *manager) buildVideoTimelineRunner(
 	if m.videoRunner == nil {
 		return nil
 	}
-	return runner.NewVideoTimelineRunner(keyframeRunner, m.videoRunner, publisher)
+	return runner.NewVideoTimelineRunner(keyframeRunner, m.videoRunner, publisher).
+		WithRequestBuilder(runner.NewVideoRequestBuilderWithCharacters(m.promptDeps.Characters))
 }
