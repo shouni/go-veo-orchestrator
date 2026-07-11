@@ -42,8 +42,14 @@ type Cut struct {
 	EndSec            float64   `json:"end_sec,omitempty"`
 	// IsChainStart は、このカットが継続チェーンの新規起点（PreviousVideoIDを使わない
 	// image_to_videoベース）であることを示します。累積尺がVeoのvideo_extension上限に
-	// 達する手前でのチェーンリセット、またはジョブ内最初のチェーンの先頭で立ちます。
+	// 達する手前でのチェーンリセット、セクション境界、またはジョブ内最初のチェーンの
+	// 先頭で立ちます。
 	IsChainStart bool `json:"is_chain_start,omitempty"`
+	// IsSectionStart は、IsChainStartのうち特に「曲のセクションが変わったこと」による
+	// リセットであることを示します（30秒上限による技術的なリセットとは区別する）。
+	// この場合、直前チェーンの最終フレームを引き継がず、そのカット自身のキーフレーム
+	// 参照（セクションごとの意図した絵）から生成します。
+	IsSectionStart bool `json:"is_section_start,omitempty"`
 }
 
 // Cuts は Cut のスライスに対するカスタム型です。
