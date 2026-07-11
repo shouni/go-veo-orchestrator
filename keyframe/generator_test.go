@@ -162,6 +162,72 @@ func TestGenerator_Execute(t *testing.T) {
 	})
 }
 
+// TestGenerator_AspectRatio verifies WithAspectRatio's precedence: an explicit non-empty value
+// overrides the default (CutAspectRatio), while an empty value leaves the default unchanged.
+func TestGenerator_AspectRatio(t *testing.T) {
+	ctx := context.Background()
+	zundamonSeed := int64(10001)
+	cm := mustNewCharacters(t, []characterkit.Character{
+		{ID: "zundamon", Name: "ずんだもん", VisualCues: []string{"green hair"}, Seed: &zundamonSeed, ReferenceURL: "gs://bucket/zunda.png", IsDefault: true},
+	})
+	cuts := []ports.Cut{{CharacterID: "zundamon"}}
+
+	newGeneratorWithAspectRatio := func(opts ...Option) (*Generator, *mockImageGenerator) {
+		assetMgr := &mockAssetManager{}
+		backend := &mockBackend{isVertex: false}
+		composer, _ := NewComposer(assetMgr, backend, cm)
+		genMock := &mockImageGenerator{}
+		pbMock := &mockImagePrompt{}
+		g := NewGenerator(composer, genMock, pbMock, "gemini-2.0-flash", opts...)
+		return g, genMock
+	}
+
+	t.Run("defaults to CutAspectRatio when not set", func(t *testing.T) {
+		g, genMock := newGeneratorWithAspectRatio()
+		var captured string
+		genMock.generateFunc = func(_ context.Context, req imagePorts.SingleImageRequest) (*imagePorts.ImageResponse, error) {
+			captured = req.AspectRatio
+			return &imagePorts.ImageResponse{}, nil
+		}
+		if _, err := g.Execute(ctx, cuts); err != nil {
+			t.Fatalf("Execute failed: %v", err)
+		}
+		if captured != CutAspectRatio {
+			t.Errorf("AspectRatio = %q, want default %q", captured, CutAspectRatio)
+		}
+	})
+
+	t.Run("explicit value overrides default", func(t *testing.T) {
+		g, genMock := newGeneratorWithAspectRatio(WithAspectRatio("9:16"))
+		var captured string
+		genMock.generateFunc = func(_ context.Context, req imagePorts.SingleImageRequest) (*imagePorts.ImageResponse, error) {
+			captured = req.AspectRatio
+			return &imagePorts.ImageResponse{}, nil
+		}
+		if _, err := g.Execute(ctx, cuts); err != nil {
+			t.Fatalf("Execute failed: %v", err)
+		}
+		if captured != "9:16" {
+			t.Errorf("AspectRatio = %q, want %q", captured, "9:16")
+		}
+	})
+
+	t.Run("empty value does not override default", func(t *testing.T) {
+		g, genMock := newGeneratorWithAspectRatio(WithAspectRatio(""))
+		var captured string
+		genMock.generateFunc = func(_ context.Context, req imagePorts.SingleImageRequest) (*imagePorts.ImageResponse, error) {
+			captured = req.AspectRatio
+			return &imagePorts.ImageResponse{}, nil
+		}
+		if _, err := g.Execute(ctx, cuts); err != nil {
+			t.Fatalf("Execute failed: %v", err)
+		}
+		if captured != CutAspectRatio {
+			t.Errorf("AspectRatio = %q, want default %q", captured, CutAspectRatio)
+		}
+	})
+}
+
 func TestGenerator_EditCut(t *testing.T) {
 	ctx := context.Background()
 

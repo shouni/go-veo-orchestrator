@@ -13,6 +13,7 @@ func applyDefaultOptions(g *Generator) {
 	g.maxConcurrency = ports.DefaultMaxConcurrency
 	g.rateInterval = defaultRateInterval
 	g.rateBurst = defaultRateBurst
+	g.aspectRatio = CutAspectRatio
 }
 
 // WithMaxConcurrency は、キーフレーム生成の最大並列数を設定します。
@@ -38,6 +39,16 @@ func WithRateBurst(value int) Option {
 	return func(g *Generator) {
 		if value > 0 {
 			g.rateBurst = value
+		}
+	}
+}
+
+// WithAspectRatio は、生成するキーフレーム画像のアスペクト比を設定します
+// （例: "16:9", "9:16"）。空文字の場合は既定値（CutAspectRatio）のまま変更しません。
+func WithAspectRatio(value string) Option {
+	return func(g *Generator) {
+		if value != "" {
+			g.aspectRatio = value
 		}
 	}
 }

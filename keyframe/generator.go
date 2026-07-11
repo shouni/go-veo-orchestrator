@@ -27,6 +27,7 @@ type Generator struct {
 	maxConcurrency int
 	rateInterval   time.Duration
 	rateBurst      int
+	aspectRatio    string
 }
 
 // ImageGenerator は単一画像生成を実行する依存インターフェースです。
@@ -153,7 +154,7 @@ func (g *Generator) EditCut(ctx context.Context, cut ports.Cut, editPrompt strin
 			Prompt:         userPrompt,
 			SystemPrompt:   systemPrompt,
 			NegativePrompt: negativeKeyframePrompt,
-			AspectRatio:    CutAspectRatio,
+			AspectRatio:    g.aspectRatio,
 			ImageSize:      ImageSize2K,
 			Seed:           char.Seed,
 		},
@@ -194,7 +195,7 @@ func (g *Generator) buildImageRequest(cut ports.Cut, char *characterkit.Characte
 			Prompt:         userPrompt,
 			SystemPrompt:   systemPrompt,
 			NegativePrompt: negativeKeyframePrompt,
-			AspectRatio:    CutAspectRatio,
+			AspectRatio:    g.aspectRatio,
 			ImageSize:      ImageSize2K,
 			Seed:           char.Seed,
 		},
