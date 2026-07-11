@@ -25,6 +25,9 @@ type Config struct {
 	MaxConcurrency int
 	RateInterval   time.Duration
 	StyleSuffix    string
+	// KeyframeAspectRatio はキーフレーム画像生成のアスペクト比です（例: "16:9", "9:16"）。
+	// 空文字の場合は keyframe.CutAspectRatio（既定値）が使われます。
+	KeyframeAspectRatio string
 
 	// --- Timeout & Retries ---
 	RequestTimeout time.Duration
@@ -56,6 +59,15 @@ func (c Config) WithModels(geminiModel, imageModel string) Config {
 		c.ImageModel = imageModel
 	}
 	c.ApplyDefaults()
+	return c
+}
+
+// WithAspectRatio は、指定されたアスペクト比で上書きした Config のコピーを返します。
+// 空文字は「変更なし」として扱います。
+func (c Config) WithAspectRatio(aspectRatio string) Config {
+	if aspectRatio = strings.TrimSpace(aspectRatio); aspectRatio != "" {
+		c.KeyframeAspectRatio = aspectRatio
+	}
 	return c
 }
 

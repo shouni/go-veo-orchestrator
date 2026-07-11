@@ -13,6 +13,10 @@ type VideoRecipe struct {
 	// FinalVideoURL は、全チェーンをハードカットで1本に結合した完成動画のURLです。
 	// チェーンの継続生成（video_extension）を使わないジョブでは空のままです。
 	FinalVideoURL string `json:"final_video_url,omitempty"`
+	// AspectRatio は、このレシピのキーフレーム・動画生成に使われたアスペクト比です
+	// （例: "16:9", "9:16"）。キーフレーム作成時に一度だけ決まり、以降の動画生成
+	// （フルMV・ショート・カット再生成いずれも）はこの値をそのまま使います。
+	AspectRatio string `json:"aspect_ratio,omitempty"`
 }
 
 // MusicRecipe は Lyria の楽曲生成レシピです。

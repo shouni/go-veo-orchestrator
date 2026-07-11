@@ -44,6 +44,7 @@ func (m *manager) buildKeyframeRunner() (*runner.CutKeyframeRunner, error) {
 		m.generationUnit.model,
 		keyframe.WithMaxConcurrency(m.cfg.MaxConcurrency),
 		keyframe.WithRateInterval(m.cfg.RateInterval),
+		keyframe.WithAspectRatio(m.cfg.KeyframeAspectRatio),
 	)
 
 	return runner.NewCutKeyframeRunner(keyframeGen, m.writer), nil
