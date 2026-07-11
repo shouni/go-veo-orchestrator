@@ -10,6 +10,9 @@ type VideoRecipe struct {
 	Description  string            `json:"description,omitempty"`
 	MusicRecipe  lyria.MusicRecipe `json:"music_recipe"`
 	Cuts         []Cut             `json:"cuts"`
+	// FinalVideoURL は、全チェーンをハードカットで1本に結合した完成動画のURLです。
+	// チェーンの継続生成（video_extension）を使わないジョブでは空のままです。
+	FinalVideoURL string `json:"final_video_url,omitempty"`
 }
 
 // MusicRecipe は Lyria の楽曲生成レシピです。
@@ -37,6 +40,10 @@ type Cut struct {
 	Status            CutStatus `json:"status,omitempty"`
 	StartSec          float64   `json:"start_sec,omitempty"`
 	EndSec            float64   `json:"end_sec,omitempty"`
+	// IsChainStart は、このカットが継続チェーンの新規起点（PreviousVideoIDを使わない
+	// image_to_videoベース）であることを示します。累積尺がVeoのvideo_extension上限に
+	// 達する手前でのチェーンリセット、またはジョブ内最初のチェーンの先頭で立ちます。
+	IsChainStart bool `json:"is_chain_start,omitempty"`
 }
 
 // Cuts は Cut のスライスに対するカスタム型です。
