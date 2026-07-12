@@ -94,6 +94,50 @@ func TestComposer_PrepareCharacterResources(t *testing.T) {
 	}
 }
 
+// TestComposer_PrepareCharacterResourcesUploadsAllAspectRatioVariants verifies that
+// PrepareCharacterResources uploads both ReferenceURL and every ReferenceURLs entry, and that
+// GetResourceURI resolves each one independently by URL.
+func TestComposer_PrepareCharacterResourcesUploadsAllAspectRatioVariants(t *testing.T) {
+	ctx := context.Background()
+	assetMgr := &mockAssetManager{}
+	backend := &mockBackend{isVertex: false}
+
+	cm := mustNewCharacters(t, []characterkit.Character{
+		{
+			ID:           "tsumugi",
+			Name:         "つむぎ",
+			VisualCues:   []string{"orange hair"},
+			ReferenceURL: "gs://bucket/tsumugi-16x9.png",
+			ReferenceURLs: map[string]string{
+				"9:16": "gs://bucket/tsumugi-9x16.png",
+				"1:1":  "gs://bucket/tsumugi-1x1.png",
+			},
+			IsDefault: true,
+		},
+	})
+
+	mc, _ := NewComposer(assetMgr, backend, cm)
+
+	err := mc.PrepareCharacterResources(ctx, []ports.Cut{{CharacterID: "tsumugi"}})
+	if err != nil {
+		t.Fatalf("PrepareCharacterResources failed: %v", err)
+	}
+
+	for _, url := range []string{
+		"gs://bucket/tsumugi-16x9.png",
+		"gs://bucket/tsumugi-9x16.png",
+		"gs://bucket/tsumugi-1x1.png",
+	} {
+		if uri := mc.GetResourceURI(url); uri == "" {
+			t.Errorf("resource for %q not cached", url)
+		}
+	}
+
+	if assetMgr.uploadCount != 3 {
+		t.Errorf("Expected 3 uploads (one per aspect ratio variant), got %d", assetMgr.uploadCount)
+	}
+}
+
 func TestNewComposer_RequiresCharacters(t *testing.T) {
 	_, err := NewComposer(&mockAssetManager{}, &mockBackend{}, nil)
 	if err == nil {

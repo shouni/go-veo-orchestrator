@@ -228,6 +228,66 @@ func TestGenerator_AspectRatio(t *testing.T) {
 	})
 }
 
+// TestGenerator_ReferenceURLPerAspectRatio verifies that buildImageRequest picks the character's
+// aspect-ratio-specific reference image (ReferenceURLs) when one matches the generator's
+// aspectRatio, falling back to ReferenceURL when no entry matches or none are configured.
+func TestGenerator_ReferenceURLPerAspectRatio(t *testing.T) {
+	ctx := context.Background()
+	cm := mustNewCharacters(t, []characterkit.Character{
+		{
+			ID:           "tsumugi",
+			Name:         "つむぎ",
+			VisualCues:   []string{"orange hair"},
+			ReferenceURL: "gs://bucket/tsumugi-16x9.png",
+			ReferenceURLs: map[string]string{
+				"9:16": "gs://bucket/tsumugi-9x16.png",
+			},
+			IsDefault: true,
+		},
+	})
+	cuts := []ports.Cut{{CharacterID: "tsumugi"}}
+
+	newGenerator := func(opts ...Option) (*Generator, *mockImageGenerator) {
+		assetMgr := &mockAssetManager{}
+		backend := &mockBackend{isVertex: false}
+		composer, _ := NewComposer(assetMgr, backend, cm)
+		genMock := &mockImageGenerator{}
+		pbMock := &mockImagePrompt{}
+		g := NewGenerator(composer, genMock, pbMock, "gemini-2.0-flash", opts...)
+		return g, genMock
+	}
+
+	t.Run("uses aspect-ratio-specific entry when present", func(t *testing.T) {
+		g, genMock := newGenerator(WithAspectRatio("9:16"))
+		var captured string
+		genMock.generateFunc = func(_ context.Context, req imagePorts.SingleImageRequest) (*imagePorts.ImageResponse, error) {
+			captured = req.Image.ReferenceURL
+			return &imagePorts.ImageResponse{}, nil
+		}
+		if _, err := g.Execute(ctx, cuts); err != nil {
+			t.Fatalf("Execute failed: %v", err)
+		}
+		if captured != "gs://bucket/tsumugi-9x16.png" {
+			t.Errorf("Image.ReferenceURL = %q, want the 9:16 entry", captured)
+		}
+	})
+
+	t.Run("falls back to ReferenceURL when aspect ratio has no entry", func(t *testing.T) {
+		g, genMock := newGenerator(WithAspectRatio("16:9"))
+		var captured string
+		genMock.generateFunc = func(_ context.Context, req imagePorts.SingleImageRequest) (*imagePorts.ImageResponse, error) {
+			captured = req.Image.ReferenceURL
+			return &imagePorts.ImageResponse{}, nil
+		}
+		if _, err := g.Execute(ctx, cuts); err != nil {
+			t.Fatalf("Execute failed: %v", err)
+		}
+		if captured != "gs://bucket/tsumugi-16x9.png" {
+			t.Errorf("Image.ReferenceURL = %q, want the ReferenceURL fallback", captured)
+		}
+	})
+}
+
 func TestGenerator_EditCut(t *testing.T) {
 	ctx := context.Background()
 
