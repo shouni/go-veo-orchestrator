@@ -187,7 +187,11 @@ func (g *Generator) characterForCut(cut ports.Cut) *characterkit.Character {
 
 func (g *Generator) buildImageRequest(cut ports.Cut, char *characterkit.Character) imagePorts.SingleImageRequest {
 	userPrompt, systemPrompt := g.pb.BuildCut(cut, char)
-	fileURI := g.composer.GetCharacterResourceURI(char.ID)
+	// キャラクターの参照画像が生成対象と異なるアスペクト比（例: 横長3ポーズシートを縦長
+	// キーフレームの参照に使う）だと、色・小物配置・髪型などの細部が生成のたびにブレやすいため、
+	// g.aspectRatio に一致する参照画像（ReferenceURLs）があればそちらを優先します。
+	referenceURL := char.ReferenceURLFor(g.aspectRatio)
+	fileURI := g.composer.GetResourceURI(referenceURL)
 
 	return imagePorts.SingleImageRequest{
 		GenerationOptions: imagePorts.GenerationOptions{
@@ -201,7 +205,7 @@ func (g *Generator) buildImageRequest(cut ports.Cut, char *characterkit.Characte
 		},
 		Image: imagePorts.ImageURI{
 			FileAPIURI:   fileURI,
-			ReferenceURL: char.ReferenceURL,
+			ReferenceURL: referenceURL,
 		},
 	}
 }

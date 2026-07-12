@@ -26,7 +26,7 @@ type Composer struct {
 }
 
 type resourceMap struct {
-	character map[string]string // CharacterID -> FileAPIURI
+	character map[string]string // ReferenceURL -> FileAPIURI
 }
 
 // NewComposer は Composer の新しいインスタンスを初期化済みの状態で生成します。
@@ -55,37 +55,61 @@ func NewComposer(
 	}, nil
 }
 
-// GetCharacterResourceURI はキャラクターの画像URIを取得します。
+// GetCharacterResourceURI はキャラクターの既定参照画像（ReferenceURL）の画像URIを取得します。
+// アスペクト比別の参照画像（ReferenceURLs）を取得するには GetResourceURI を使ってください。
 func (c *Composer) GetCharacterResourceURI(charID string) string {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	return c.resourceMap.character[charID]
+	char := c.Characters.GetCharacterWithDefault(charID)
+	if char == nil {
+		return ""
+	}
+	return c.GetResourceURI(char.ReferenceURL)
 }
 
-// PrepareCharacterResources はカットに使用される全キャラクターの画像を File API に事前アップロードします。
+// GetResourceURI は、指定した参照画像URL（ReferenceURL または ReferenceURLs の値）に対応する
+// File API 上の画像URIを取得します。PrepareCharacterResources で事前アップロード済みである必要が
+// あります（未準備、または Vertex AI + GCS URI でアップロードをバイパスした場合は空文字を返し、
+// 呼び出し側は referenceURL 自体をそのまま参照として使うことになります）。
+func (c *Composer) GetResourceURI(referenceURL string) string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.resourceMap.character[referenceURL]
+}
+
+// PrepareCharacterResources はカットに使用される全キャラクターの画像を File API に事前アップロード
+// します。各キャラクターの ReferenceURL（既定のフォールバック）と ReferenceURLs（アスペクト比別）の
+// 両方に含まれる参照画像URLをすべて対象にします。
 func (c *Composer) PrepareCharacterResources(ctx context.Context, cuts []ports.Cut) error {
 	targets := make(map[string]string)
+	addCharacterURLs := func(char *characterkit.Character) {
+		if char == nil {
+			return
+		}
+		if char.ReferenceURL != "" {
+			targets[char.ReferenceURL] = char.ReferenceURL
+		}
+		for _, url := range char.ReferenceURLs {
+			if url != "" {
+				targets[url] = url
+			}
+		}
+	}
 
 	// デフォルトキャラクターをアップロード対象に追加
-	if def := c.Characters.GetDefault(); def != nil && def.ReferenceURL != "" {
-		targets[def.ID] = def.ReferenceURL
-	}
+	addCharacterURLs(c.Characters.GetDefault())
 
 	// カットで使用されているキャラクターをアップロード対象に追加
 	for _, id := range ports.Cuts(cuts).UniqueCharacterIDs() {
-		char := c.Characters.GetCharacterWithDefault(id)
-		if char == nil || char.ReferenceURL == "" {
-			continue
-		}
-		targets[char.ID] = char.ReferenceURL
+		addCharacterURLs(c.Characters.GetCharacterWithDefault(id))
 	}
 
 	return c.prepareResources(ctx, targets, c.getOrUploadAsset, "character")
 }
 
 // getOrUploadAsset はキャラクター用アセットをキャッシュ制御しつつ取得またはアップロードします。
-func (c *Composer) getOrUploadAsset(ctx context.Context, charID, referenceURL string) (string, error) {
-	return c.getOrUploadResource(ctx, charID, referenceURL, c.resourceMap.character)
+// key と referenceURL は常に同じ値（参照画像URL自体）です。resourceMap がURLをキーにしている
+// ため、渡す2引数は同一になります。
+func (c *Composer) getOrUploadAsset(ctx context.Context, key, referenceURL string) (string, error) {
+	return c.getOrUploadResource(ctx, key, referenceURL, c.resourceMap.character)
 }
 
 // prepareResources は指定されたリソースを事前アップロードします。
