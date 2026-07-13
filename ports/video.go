@@ -19,9 +19,14 @@ type VideoGenerationRequest struct {
 	// Veo API は video と referenceImages を同時に受け付けないため、
 	// VeoUsePreviousVideo が有効な場合のみ adapter 側で使用します。
 	PreviousVideoID string
-	Seed            int64
-	CutIndex        int
-	DurationSec     float64
+	// LastFrameReference は動画の終了フレームとして使う画像の GCS URI です
+	// （Veo の first/last frame 補間）。Veo API では image（開始フレーム）との
+	// 併用が必須のため、adapter 側は image 入力（image_to_video）のときだけ
+	// lastFrame として送ります。対応モデルは Veo 2 / Veo 3.1 系のみです。
+	LastFrameReference string
+	Seed               int64
+	CutIndex           int
+	DurationSec        float64
 }
 
 // VideoResponse は生成された動画のメタデータです。
