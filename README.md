@@ -141,6 +141,7 @@ result, err := workflows.Video.RunAndSave(ctx, recipe, "video_music_meta.json")
 | `AudioReference` | 既に参照可能な音声セグメント URI。 |
 | `InputAudio` | `AudioReference` が空の場合に adapter 側でアップロードして使う音声バイト列です。 |
 | `PreviousVideoID` | 前カットの文脈を引き継ぐための ID。空の場合はチェーンなしで生成します。 |
+| `LastFrameReference` | 終了フレームとして使う画像 URI（Veo の first/last frame 補間）。Veo API では開始フレーム画像との併用が必須のため、image 入力（image_to_video）のときだけ `lastFrame` として送ります。対応モデルは Veo 2 / Veo 3.1 系のみです。 |
 | `Seed` | キャラクター Seed を優先し、未指定時は `music_recipe.Seed` を使います。 |
 | `CutIndex` | レスポンスやエラー表示で使うカット番号です。 |
 | `DurationSec` | カットの目標秒数です。 |
