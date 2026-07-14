@@ -19,7 +19,7 @@ const negativeKeyframePrompt = "speech bubble, dialogue balloon, text, alphabet,
 
 // Generator は、キャラクターの一貫性を保ちながら並列で複数カットのキーフレームを生成します。
 type Generator struct {
-	composer       *Composer
+	composer       CharacterResourceProvider
 	generator      ImageGenerator
 	pb             ports.KeyframePrompt
 	model          string
@@ -35,6 +35,17 @@ type ImageGenerator interface {
 	GenerateSingleImage(ctx context.Context, req imagePorts.SingleImageRequest) (*imagePorts.ImageResponse, error)
 }
 
+// CharacterResourceProvider は、Generator が Composer に依存している範囲だけを切り出した
+// 契約です。キャラクター参照画像の事前準備・カットからのキャラクター解決・準備済み画像 URI の
+// 参照を提供します。*Composer がこれを実装しますが、Generator を単体テストする際は
+// AssetManager/Backend を伴う本物の Composer を組み立てずに、この interface を満たす軽量な
+// fake を渡せます。
+type CharacterResourceProvider interface {
+	PrepareCharacterResources(ctx context.Context, cuts []ports.Cut) error
+	CharacterForCut(cut ports.Cut) *characterkit.Character
+	GetResourceURI(referenceURL string) string
+}
+
 type keyframeTask struct {
 	index int
 	cut   ports.Cut
@@ -42,7 +53,7 @@ type keyframeTask struct {
 
 // NewGenerator は Generator の新しいインスタンスを初期化します。
 func NewGenerator(
-	composer *Composer,
+	composer CharacterResourceProvider,
 	generator ImageGenerator,
 	pb ports.KeyframePrompt,
 	model string,
@@ -182,7 +193,7 @@ func (g *Generator) EditCut(ctx context.Context, cut ports.Cut, editPrompt strin
 }
 
 func (g *Generator) characterForCut(cut ports.Cut) *characterkit.Character {
-	return g.composer.Characters.GetCharacterWithDefault(cut.CharacterID)
+	return g.composer.CharacterForCut(cut)
 }
 
 func (g *Generator) buildImageRequest(cut ports.Cut, char *characterkit.Character) imagePorts.SingleImageRequest {

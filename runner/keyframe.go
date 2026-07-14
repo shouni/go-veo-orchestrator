@@ -57,10 +57,9 @@ func (r *CutKeyframeRunner) RunAndSave(ctx context.Context, recipe *ports.VideoR
 	}
 	recipe.Normalize()
 
-	targetDir := resolveBaseURL(outputPath)
-	basePath, err := resolveOutputPath(targetDir, defaultKeyframePath())
+	targetDir, basePath, err := resolveKeyframeBasePath(outputPath)
 	if err != nil {
-		return nil, fmt.Errorf("出力パスの解決に失敗しました: %w", err)
+		return nil, err
 	}
 
 	images, err := r.Run(ctx, recipe)
@@ -72,21 +71,9 @@ func (r *CutKeyframeRunner) RunAndSave(ctx context.Context, recipe *ports.VideoR
 		return nil, fmt.Errorf("生成された画像の数(%d)とカット数(%d)が一致しません", len(images), len(recipe.Cuts))
 	}
 	for i, image := range images {
-		keyframePath, err := generateIndexedPath(basePath, i+1)
+		keyframePath, err := r.saveKeyframeImage(ctx, basePath, i+1, image)
 		if err != nil {
-			return nil, fmt.Errorf("cut %d のキーフレーム出力パス生成に失敗しました: %w", i+1, err)
-		}
-
-		slog.InfoContext(ctx, "キーフレーム画像を保存しています",
-			"index", i+1,
-			"path", keyframePath,
-		)
-
-		if err := r.writer.Write(ctx, keyframePath, bytes.NewReader(image.Data),
-			remoteio.WithContentType(image.MimeType),
-			remoteio.WithCacheControl(defaultCacheControl),
-		); err != nil {
-			return nil, fmt.Errorf("cut %d のキーフレーム保存に失敗しました (path: %s): %w", i+1, keyframePath, err)
+			return nil, err
 		}
 		recipe.Cuts[i].KeyframeReference = keyframePath
 	}
@@ -97,6 +84,40 @@ func (r *CutKeyframeRunner) RunAndSave(ctx context.Context, recipe *ports.VideoR
 	}
 
 	return recipe, nil
+}
+
+// resolveKeyframeBasePath は、RunAndSave / EditAndSave が共通して必要とする保存先ディレクトリと
+// インデックス付きキーフレームパスの基点を解決します。
+func resolveKeyframeBasePath(outputPath string) (targetDir string, basePath string, err error) {
+	targetDir = resolveBaseURL(outputPath)
+	basePath, err = resolveOutputPath(targetDir, defaultKeyframePath())
+	if err != nil {
+		return "", "", fmt.Errorf("出力パスの解決に失敗しました: %w", err)
+	}
+	return targetDir, basePath, nil
+}
+
+// saveKeyframeImage は、basePath から index 番目のキーフレームパスを生成し、画像を保存します。
+// RunAndSave / EditAndSave の両方から使われる共通の保存ロジックです。
+func (r *CutKeyframeRunner) saveKeyframeImage(ctx context.Context, basePath string, index int, image *imagePorts.ImageResponse) (string, error) {
+	keyframePath, err := generateIndexedPath(basePath, index)
+	if err != nil {
+		return "", fmt.Errorf("cut %d のキーフレーム出力パス生成に失敗しました: %w", index, err)
+	}
+
+	slog.InfoContext(ctx, "キーフレーム画像を保存しています",
+		"index", index,
+		"path", keyframePath,
+	)
+
+	if err := r.writer.Write(ctx, keyframePath, bytes.NewReader(image.Data),
+		remoteio.WithContentType(image.MimeType),
+		remoteio.WithCacheControl(defaultCacheControl),
+	); err != nil {
+		return "", fmt.Errorf("cut %d のキーフレーム保存に失敗しました (path: %s): %w", index, keyframePath, err)
+	}
+
+	return keyframePath, nil
 }
 
 // cutImageEditor is implemented by image generators that can edit an existing single-cut
@@ -127,10 +148,9 @@ func (r *CutKeyframeRunner) EditAndSave(ctx context.Context, recipe *ports.Video
 		return nil, fmt.Errorf("cut %d に編集対象のキーフレームがありません", cut.CutIndex)
 	}
 
-	targetDir := resolveBaseURL(outputPath)
-	basePath, err := resolveOutputPath(targetDir, defaultKeyframePath())
+	targetDir, basePath, err := resolveKeyframeBasePath(outputPath)
 	if err != nil {
-		return nil, fmt.Errorf("出力パスの解決に失敗しました: %w", err)
+		return nil, err
 	}
 
 	slog.InfoContext(ctx, "キーフレームを編集しています", "cut_index", cut.CutIndex)
@@ -139,20 +159,9 @@ func (r *CutKeyframeRunner) EditAndSave(ctx context.Context, recipe *ports.Video
 		return nil, fmt.Errorf("cut %d keyframe edit failed: %w", cut.CutIndex, err)
 	}
 
-	keyframePath, err := generateIndexedPath(basePath, 1)
+	keyframePath, err := r.saveKeyframeImage(ctx, basePath, 1, image)
 	if err != nil {
-		return nil, fmt.Errorf("cut %d のキーフレーム出力パス生成に失敗しました: %w", cut.CutIndex, err)
-	}
-
-	slog.InfoContext(ctx, "編集済みキーフレーム画像を保存しています",
-		"cut_index", cut.CutIndex,
-		"path", keyframePath,
-	)
-	if err := r.writer.Write(ctx, keyframePath, bytes.NewReader(image.Data),
-		remoteio.WithContentType(image.MimeType),
-		remoteio.WithCacheControl(defaultCacheControl),
-	); err != nil {
-		return nil, fmt.Errorf("cut %d のキーフレーム保存に失敗しました (path: %s): %w", cut.CutIndex, keyframePath, err)
+		return nil, err
 	}
 	recipe.Cuts[0].KeyframeReference = keyframePath
 
