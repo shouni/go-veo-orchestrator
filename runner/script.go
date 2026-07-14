@@ -132,8 +132,8 @@ func (r *VideoScriptRunner) parseResponse(raw string) (*ports.VideoRecipe, error
 
 	var recipe ports.VideoRecipe
 	if err := json.Unmarshal([]byte(jsonStr), &recipe); err != nil {
-		return nil, fmt.Errorf("AI応答JSONの解析に失敗しました (抜粋: %q): %w",
-			truncateString(raw, maxErrorResponseLength), err)
+		return nil, fmt.Errorf("AI応答JSONの解析に失敗しました (抜粋: %q): %w: %w",
+			truncateString(raw, maxErrorResponseLength), ports.ErrInvalidAIResponse, err)
 	}
 	recipe.Normalize()
 

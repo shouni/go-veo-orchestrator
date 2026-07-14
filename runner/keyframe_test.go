@@ -2,6 +2,7 @@ package runner
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"testing"
@@ -52,6 +53,22 @@ type nonEditingCutImageGenerator struct{}
 
 func (nonEditingCutImageGenerator) Execute(_ context.Context, _ []ports.Cut) ([]*imagePorts.ImageResponse, error) {
 	return nil, fmt.Errorf("not implemented")
+}
+
+// recordingCutImageGenerator implements ports.CutImageGenerator and records how many times
+// Execute was called, so tests can drive Run/RunAndSave independently of EditAndSave.
+type recordingCutImageGenerator struct {
+	images []*imagePorts.ImageResponse
+	err    error
+	calls  int
+}
+
+func (g *recordingCutImageGenerator) Execute(_ context.Context, _ []ports.Cut) ([]*imagePorts.ImageResponse, error) {
+	g.calls++
+	if g.err != nil {
+		return nil, g.err
+	}
+	return g.images, nil
 }
 
 func TestCutKeyframeRunner_EditAndSave(t *testing.T) {
@@ -118,8 +135,112 @@ func TestCutKeyframeRunner_EditAndSave(t *testing.T) {
 		r := NewCutKeyframeRunner(nonEditingCutImageGenerator{}, newFakeWriter())
 		recipe := &ports.VideoRecipe{Cuts: []ports.Cut{{CutIndex: 1, KeyframeReference: "gs://bucket/k.png"}}}
 
-		if _, err := r.EditAndSave(ctx, recipe, "edit", "gs://bucket/out/"); err == nil {
-			t.Fatal("expected error when generator does not implement cutImageEditor")
+		_, err := r.EditAndSave(ctx, recipe, "edit", "gs://bucket/out/")
+		if !errors.Is(err, ports.ErrEditingNotSupported) {
+			t.Fatalf("expected ErrEditingNotSupported, got %v", err)
+		}
+	})
+
+	t.Run("returns ErrRecipeRequired for nil recipe", func(t *testing.T) {
+		r := NewCutKeyframeRunner(&fakeCutImageGenerator{}, newFakeWriter())
+
+		_, err := r.EditAndSave(ctx, nil, "edit", "gs://bucket/out/")
+		if !errors.Is(err, ports.ErrRecipeRequired) {
+			t.Fatalf("expected ErrRecipeRequired, got %v", err)
+		}
+	})
+}
+
+func TestCutKeyframeRunner_Run(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("returns generated images for the recipe's cuts", func(t *testing.T) {
+		want := []*imagePorts.ImageResponse{
+			{Data: []byte("a"), MimeType: "image/png"},
+			{Data: []byte("b"), MimeType: "image/png"},
+		}
+		gen := &recordingCutImageGenerator{images: want}
+		r := NewCutKeyframeRunner(gen, newFakeWriter())
+		recipe := &ports.VideoRecipe{Cuts: []ports.Cut{{CutIndex: 1}, {CutIndex: 2}}}
+
+		got, err := r.Run(ctx, recipe)
+		if err != nil {
+			t.Fatalf("Run() error = %v", err)
+		}
+		if len(got) != 2 {
+			t.Fatalf("len(got) = %d, want 2", len(got))
+		}
+		if gen.calls != 1 {
+			t.Fatalf("generator calls = %d, want 1", gen.calls)
+		}
+	})
+
+	t.Run("returns ErrRecipeRequired for nil recipe", func(t *testing.T) {
+		r := NewCutKeyframeRunner(&recordingCutImageGenerator{}, newFakeWriter())
+
+		_, err := r.Run(ctx, nil)
+		if !errors.Is(err, ports.ErrRecipeRequired) {
+			t.Fatalf("expected ErrRecipeRequired, got %v", err)
+		}
+	})
+
+	t.Run("wraps generator failure", func(t *testing.T) {
+		gen := &recordingCutImageGenerator{err: fmt.Errorf("upstream failure")}
+		r := NewCutKeyframeRunner(gen, newFakeWriter())
+		recipe := &ports.VideoRecipe{Cuts: []ports.Cut{{CutIndex: 1}}}
+
+		if _, err := r.Run(ctx, recipe); err == nil {
+			t.Fatal("expected error when generator fails")
+		}
+	})
+}
+
+func TestCutKeyframeRunner_RunAndSave(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("saves indexed keyframes and updated metadata", func(t *testing.T) {
+		images := []*imagePorts.ImageResponse{
+			{Data: []byte("img-1"), MimeType: "image/png"},
+			{Data: []byte("img-2"), MimeType: "image/png"},
+		}
+		gen := &recordingCutImageGenerator{images: images}
+		writer := newFakeWriter()
+		r := NewCutKeyframeRunner(gen, writer)
+		recipe := &ports.VideoRecipe{Cuts: []ports.Cut{{CutIndex: 1}, {CutIndex: 2}}}
+
+		got, err := r.RunAndSave(ctx, recipe, "gs://bucket/jobs/j1/")
+		if err != nil {
+			t.Fatalf("RunAndSave() error = %v", err)
+		}
+		if got.Cuts[0].KeyframeReference == "" || got.Cuts[1].KeyframeReference == "" {
+			t.Fatal("expected KeyframeReference to be set for all cuts")
+		}
+		if got.Cuts[0].KeyframeReference == got.Cuts[1].KeyframeReference {
+			t.Fatalf("expected distinct indexed paths per cut, both = %q", got.Cuts[0].KeyframeReference)
+		}
+		if len(writer.writes) != 3 { // 2 keyframes + metadata
+			t.Fatalf("expected 3 writes, got %d: %v", len(writer.writes), writer.writes)
+		}
+	})
+
+	t.Run("errors when image count does not match cut count", func(t *testing.T) {
+		gen := &recordingCutImageGenerator{
+			images: []*imagePorts.ImageResponse{{Data: []byte("only-one"), MimeType: "image/png"}},
+		}
+		r := NewCutKeyframeRunner(gen, newFakeWriter())
+		recipe := &ports.VideoRecipe{Cuts: []ports.Cut{{CutIndex: 1}, {CutIndex: 2}}}
+
+		if _, err := r.RunAndSave(ctx, recipe, "gs://bucket/out/"); err == nil {
+			t.Fatal("expected error for image/cut count mismatch")
+		}
+	})
+
+	t.Run("returns ErrRecipeRequired for nil recipe", func(t *testing.T) {
+		r := NewCutKeyframeRunner(&recordingCutImageGenerator{}, newFakeWriter())
+
+		_, err := r.RunAndSave(ctx, nil, "gs://bucket/out/")
+		if !errors.Is(err, ports.ErrRecipeRequired) {
+			t.Fatalf("expected ErrRecipeRequired, got %v", err)
 		}
 	})
 }
