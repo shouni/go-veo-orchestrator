@@ -22,7 +22,7 @@ func NewVideoPublisherRunner(writer remoteio.Writer) *VideoPublisherRunner {
 // Run は HTML/Markdown ではなく、結合・検証に使う JSON メタデータだけを保存します。
 func (pr *VideoPublisherRunner) Run(ctx context.Context, recipe *ports.VideoRecipe, outputDir string) (*ports.PublishResult, error) {
 	if recipe == nil {
-		return nil, fmt.Errorf("VideoRecipe が nil です")
+		return nil, ports.ErrRecipeRequired
 	}
 	if pr.writer == nil {
 		return nil, fmt.Errorf("writer is required")

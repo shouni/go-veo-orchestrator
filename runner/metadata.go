@@ -14,7 +14,7 @@ const metadataContentType = "application/json"
 
 func buildRecipeMetadata(recipe *ports.VideoRecipe) ([]byte, error) {
 	if recipe == nil {
-		return nil, fmt.Errorf("VideoRecipe が nil です")
+		return nil, ports.ErrRecipeRequired
 	}
 
 	data, err := json.MarshalIndent(recipe, "", "  ")

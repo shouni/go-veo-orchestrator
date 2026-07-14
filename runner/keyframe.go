@@ -35,7 +35,7 @@ func NewCutKeyframeRunner(
 // Run は、動画レシピを受け取り、カットのキーフレーム画像を生成します。
 func (r *CutKeyframeRunner) Run(ctx context.Context, recipe *ports.VideoRecipe) ([]*imagePorts.ImageResponse, error) {
 	if recipe == nil {
-		return nil, fmt.Errorf("VideoRecipe がありません")
+		return nil, ports.ErrRecipeRequired
 	}
 	recipe.Normalize()
 
@@ -53,7 +53,7 @@ func (r *CutKeyframeRunner) Run(ctx context.Context, recipe *ports.VideoRecipe) 
 // RunAndSave はカットキーフレームを生成し、インデックスを付けて指定のパスに保存します。
 func (r *CutKeyframeRunner) RunAndSave(ctx context.Context, recipe *ports.VideoRecipe, outputPath string) (*ports.VideoRecipe, error) {
 	if recipe == nil {
-		return nil, fmt.Errorf("VideoRecipe がありません")
+		return nil, ports.ErrRecipeRequired
 	}
 	recipe.Normalize()
 
@@ -110,7 +110,7 @@ type cutImageEditor interface {
 // same way RunAndSave does, and returns the recipe with the updated KeyframeReference.
 func (r *CutKeyframeRunner) EditAndSave(ctx context.Context, recipe *ports.VideoRecipe, editPrompt string, outputPath string) (*ports.VideoRecipe, error) {
 	if recipe == nil {
-		return nil, fmt.Errorf("VideoRecipe がありません")
+		return nil, ports.ErrRecipeRequired
 	}
 	recipe.Normalize()
 	if len(recipe.Cuts) != 1 {
@@ -119,7 +119,7 @@ func (r *CutKeyframeRunner) EditAndSave(ctx context.Context, recipe *ports.Video
 
 	editor, ok := r.generator.(cutImageEditor)
 	if !ok {
-		return nil, fmt.Errorf("configured image generator does not support keyframe editing")
+		return nil, ports.ErrEditingNotSupported
 	}
 
 	cut := recipe.Cuts[0]

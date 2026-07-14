@@ -90,7 +90,7 @@ func (r *VideoTimelineRunner) RunAndSave(ctx context.Context, recipe *ports.Vide
 
 func (r *VideoTimelineRunner) validateRun(recipe *ports.VideoRecipe) error {
 	if recipe == nil {
-		return fmt.Errorf("VideoRecipe がありません")
+		return ports.ErrRecipeRequired
 	}
 	if r.keyframeRunner == nil {
 		return fmt.Errorf("keyframe runner is required")
