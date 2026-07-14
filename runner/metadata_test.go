@@ -12,8 +12,8 @@ func TestBuildRecipeMetadataDoesNotNormalizeRecipe(t *testing.T) {
 		ProjectTitle: "fallback title",
 		Cuts: []ports.Cut{
 			{
-				DurationSec:  8,
 				VisualAnchor: "explicit cut",
+				AudioSync:    ports.AudioSync{DurationSec: 8},
 			},
 		},
 	}

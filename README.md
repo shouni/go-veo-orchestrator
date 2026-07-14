@@ -93,7 +93,7 @@ Veo API への実通信は `ports.VideoRunner` の実装として、利用側ア
 
 adapter 実装では `VideoGenerationRequest.ImageReference` を優先し、空の場合だけ `InputImage` をアップロードして参照 URI を作る想定です。`AudioReference` も同様に、参照 URI がある場合はそれを優先し、必要に応じて `InputAudio` をアップロードします。
 
-`VideoRunner` を指定しない場合、`workflow.New` が返す `Workflows.Video` は `nil` になります。Design / Script / CutKeyframe / Publish だけを使う構成ではそのまま利用できますが、動画生成まで実行する場合は `ManagerArgs.VideoRunner` に実装を渡してください。
+`VideoRunner` を指定しない場合、`workflow.New` が返す `Workflows.Video` は `nil` ではなく、呼び出すと常に `ports.ErrVideoRunnerNotConfigured` を返すダミー実装（`ports.NewNoopVideoTimelineRunner()`）になります。Script / CutKeyframe / Publish だけを使う構成ではそのまま利用できますが、動画生成まで実行する場合は `ManagerArgs.VideoRunner` に実装を渡してください。呼び出し側で未設定を検知したい場合は `errors.Is(err, ports.ErrVideoRunnerNotConfigured)` で判定できます（`Workflows.Video == nil` によるチェックは機能しません）。
 
 ```go
 type VeoRunner struct {
@@ -147,6 +147,19 @@ result, err := workflows.Video.RunAndSave(ctx, recipe, "video_music_meta.json")
 | `DurationSec` | カットの目標秒数です。 |
 
 `VideoResponse.VideoID` が空の場合、そのカットの生成結果は保存できますが、次カットへの `PreviousVideoID` 連鎖は更新されません。連続カットの一貫性を重視する adapter では、可能な限り Veo 側の動画 ID を返してください。
+
+---
+
+## ⚠️ Sentinel Errors
+
+呼び出し側が `errors.Is` で判定し、汎用エラーとは異なる制御（フォールバックやリトライ）を行えるよう、`ports` パッケージは以下の sentinel error を公開しています。
+
+| エラー | 発生条件 | 想定される呼び出し側の対応 |
+| --- | --- | --- |
+| `ports.ErrRecipeRequired` | `VideoRecipe` が必須の処理に `nil` を渡した場合 | 呼び出し側の実装不備。基本的に発生させない |
+| `ports.ErrEditingNotSupported` | `EditAndSave` で、設定済みの画像生成エンジンがキーフレーム編集（`EditCut`）を実装していない場合 | 全体再生成（`RunAndSave`）へのフォールバック |
+| `ports.ErrInvalidAIResponse` | AI の応答テキストを `VideoRecipe` の JSON として解析できなかった場合 | ネットワーク/認証エラーと区別したリトライ判断 |
+| `ports.ErrVideoRunnerNotConfigured` | `VideoRunner` 未設定のまま `Workflows.Video` を呼び出した場合 | 動画生成ステップのスキップ、設定不備の通知 |
 
 ---
 
@@ -232,6 +245,10 @@ result, err := workflows.Video.RunAndSave(ctx, recipe, "video_music_meta.json")
 Veo に渡る prompt は `cuts[].visual_anchor`、`cuts[].audio_cue`、`music_recipe.mood`、タイムライン情報から構築されます。`music_recipe.lyrics` はメタデータとして保持されますが、動画化したい歌詞の内容は `cuts` へ変換しておく必要があります。
 
 `cuts` が空の場合は、`music_recipe.sections` からカット列を自動生成します。`music_recipe` は `github.com/shouni/go-gemini-client/lyria.MusicRecipe` をそのまま保持するため、楽曲生成側の JSON は `music_recipe` 配下へ入れます。
+
+各 `cut` は `section_index`（1始まり）で、由来となった `music_recipe.sections` の位置を保持します。1セクションが `scene_split` 等で複数カットに分割されても、分割後の全カットが同じ `section_index` を引き継ぐため、呼び出し側は `start_sec` とセクションの時間範囲を突き合わせて逆算せずに、カットの所属セクションを直接判定できます。明示的に設定されていないカットは、`Normalize()` が `start_sec` から自動的に補完します。
+
+> **⚠️ `ports.Cut` の内部構造について**: `Cut` の JSON はフラットな構造のままですが、Go の構造体としては `AudioSync` / `KeyframeResult` / `VideoResult` / `ChainControl` へ分割され、匿名フィールドとして埋め込まれています。`cut.VideoID` のようなフィールドアクセスは変わりませんが、`ports.Cut{DurationSec: 5, KeyframeReference: "..."}` のようなフラットなコンポジットリテラルは、`ports.Cut{AudioSync: ports.AudioSync{DurationSec: 5}, KeyframeResult: ports.KeyframeResult{KeyframeReference: "..."}}` のようにグループ単位で書き直す必要があります。
 
 ```json
 {

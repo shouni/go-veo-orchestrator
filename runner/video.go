@@ -149,7 +149,7 @@ func (r *VideoTimelineRunner) runCut(
 		return nil, fmt.Errorf("cut %d の動画生成レスポンスが nil です", cut.CutIndex)
 	}
 
-	applyVideoResponse(cut, res)
+	applyVideoResponse(cut.CutIndex, &cut.VideoResult, res)
 	return res, nil
 }
 
@@ -162,13 +162,15 @@ func responseFromCut(cut ports.Cut) *ports.VideoResponse {
 	}
 }
 
-func applyVideoResponse(cut *ports.Cut, res *ports.VideoResponse) {
+// applyVideoResponse は、動画生成結果 (res) をカットの VideoResult に反映します。
+// cutIndex 以外は VideoResult フィールドしか読み書きしないことをシグネチャで示しています。
+func applyVideoResponse(cutIndex int, result *ports.VideoResult, res *ports.VideoResponse) {
 	if res.CutIndex == 0 {
-		res.CutIndex = cut.CutIndex
+		res.CutIndex = cutIndex
 	}
-	cut.VideoURL = res.CloudURL
-	cut.VideoID = res.VideoID
-	cut.Status = ports.CutStatusGenerated
+	result.VideoURL = res.CloudURL
+	result.VideoID = res.VideoID
+	result.Status = ports.CutStatusGenerated
 }
 
 func nextVideoID(current string, res *ports.VideoResponse) string {

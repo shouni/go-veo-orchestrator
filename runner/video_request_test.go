@@ -28,11 +28,11 @@ func TestVideoRequestBuilderWithCharactersBuildsReferenceImages(t *testing.T) {
 	builder := NewVideoRequestBuilderWithCharacters(newTestCharacters())
 	recipe := &ports.VideoRecipe{ProjectTitle: "test"}
 	cut := ports.Cut{
-		CutIndex:          1,
-		DurationSec:       8,
-		VisualAnchor:      "anchor",
-		CharacterID:       "zundamon",
-		KeyframeReference: "gs://bucket/jobs/job-1/images/cut_1.png",
+		CutIndex:       1,
+		VisualAnchor:   "anchor",
+		CharacterID:    "zundamon",
+		AudioSync:      ports.AudioSync{DurationSec: 8},
+		KeyframeResult: ports.KeyframeResult{KeyframeReference: "gs://bucket/jobs/job-1/images/cut_1.png"},
 	}
 
 	req := builder.Build(recipe, cut, nil, "")
@@ -66,17 +66,17 @@ func TestVideoRequestBuilderReferenceImagesFallsBackWithoutCharacter(t *testing.
 		{
 			name:    "characters not configured",
 			builder: NewVideoRequestBuilder(),
-			cut:     ports.Cut{CharacterID: "zundamon", KeyframeReference: "gs://bucket/kf.png"},
+			cut:     ports.Cut{CharacterID: "zundamon", KeyframeResult: ports.KeyframeResult{KeyframeReference: "gs://bucket/kf.png"}},
 		},
 		{
 			name:    "unknown character",
 			builder: NewVideoRequestBuilderWithCharacters(newTestCharacters()),
-			cut:     ports.Cut{CharacterID: "unknown", KeyframeReference: "gs://bucket/kf.png"},
+			cut:     ports.Cut{CharacterID: "unknown", KeyframeResult: ports.KeyframeResult{KeyframeReference: "gs://bucket/kf.png"}},
 		},
 		{
 			name:    "character without reference url",
 			builder: NewVideoRequestBuilderWithCharacters(newTestCharacters()),
-			cut:     ports.Cut{CharacterID: "no-ref", KeyframeReference: "gs://bucket/kf.png"},
+			cut:     ports.Cut{CharacterID: "no-ref", KeyframeResult: ports.KeyframeResult{KeyframeReference: "gs://bucket/kf.png"}},
 		},
 	}
 	recipe := &ports.VideoRecipe{ProjectTitle: "test"}

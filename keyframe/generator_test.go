@@ -315,7 +315,7 @@ func TestGenerator_EditCut(t *testing.T) {
 			return &imagePorts.ImageResponse{Data: []byte("edited"), UsedSeed: *req.Seed}, nil
 		}
 
-		cut := ports.Cut{CutIndex: 2, CharacterID: "zundamon", KeyframeReference: "gs://bucket/jobs/j1/images/keyframe_2.png"}
+		cut := ports.Cut{CutIndex: 2, CharacterID: "zundamon", KeyframeResult: ports.KeyframeResult{KeyframeReference: "gs://bucket/jobs/j1/images/keyframe_2.png"}}
 		resp, err := generator.EditCut(ctx, cut, "腕には絆創膏を1〜2枚のみにしてください")
 		if err != nil {
 			t.Fatalf("EditCut failed: %v", err)
@@ -351,7 +351,7 @@ func TestGenerator_EditCut(t *testing.T) {
 			g.rateInterval = 1 * time.Microsecond
 			g.rateBurst = 100
 		})
-		cut := ports.Cut{CutIndex: 1, CharacterID: "no-such-character", KeyframeReference: "gs://bucket/keyframe.png"}
+		cut := ports.Cut{CutIndex: 1, CharacterID: "no-such-character", KeyframeResult: ports.KeyframeResult{KeyframeReference: "gs://bucket/keyframe.png"}}
 		if _, err := g.EditCut(ctx, cut, "edit"); err == nil {
 			t.Fatal("expected error for unknown character with no default")
 		}
