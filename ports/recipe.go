@@ -28,22 +28,35 @@ type Section = lyria.MusicSection
 // Lyrics は Lyria の歌詞ドラフトです。
 type Lyrics = lyria.LyricsDraft
 
-// Cut は動画内の1カットを表します。
-// audio_cue は BGM 上の展開、visual_anchor は映像上の固定指示です。
-type Cut struct {
-	CutIndex          int       `json:"cut_index"`
-	DurationSec       float64   `json:"duration_sec"`
-	AudioCue          string    `json:"audio_cue"`
-	AudioReference    string    `json:"audio_reference,omitempty"`
-	VisualAnchor      string    `json:"visual_anchor"`
-	CharacterID       string    `json:"character_id"`
-	Dialogue          string    `json:"dialogue,omitempty"`
-	KeyframeReference string    `json:"keyframe_reference,omitempty"`
-	VideoURL          string    `json:"video_url,omitempty"`
-	VideoID           string    `json:"video_id,omitempty"`
-	Status            CutStatus `json:"status,omitempty"`
-	StartSec          float64   `json:"start_sec,omitempty"`
-	EndSec            float64   `json:"end_sec,omitempty"`
+// AudioSync は、カットを楽曲のタイムラインに同期させるための情報を保持します。
+type AudioSync struct {
+	DurationSec    float64 `json:"duration_sec"`
+	AudioCue       string  `json:"audio_cue"`
+	AudioReference string  `json:"audio_reference,omitempty"`
+	StartSec       float64 `json:"start_sec,omitempty"`
+	EndSec         float64 `json:"end_sec,omitempty"`
+}
+
+// KeyframeResult は、カットのキーフレーム（静止画）生成結果を保持します。
+type KeyframeResult struct {
+	KeyframeReference string `json:"keyframe_reference,omitempty"`
+}
+
+// VideoResult は、カットの Veo 動画生成結果を保持します。
+type VideoResult struct {
+	VideoURL string    `json:"video_url,omitempty"`
+	VideoID  string    `json:"video_id,omitempty"`
+	Status   CutStatus `json:"status,omitempty"`
+}
+
+// IsGenerated はカットが動画生成済みとして扱えるかを返します。
+func (r VideoResult) IsGenerated() bool {
+	return r.Status == CutStatusGenerated || (r.VideoID != "" && r.VideoURL != "")
+}
+
+// ChainControl は、カットが Veo の video-to-video チェーンにどう接続するかを決めるフラグを
+// 保持します。
+type ChainControl struct {
 	// IsChainStart は、このカットが継続チェーンの新規起点（PreviousVideoIDを使わない
 	// image_to_videoベース）であることを示します。累積尺がVeoのvideo_extension上限に
 	// 達する手前でのチェーンリセット、セクション境界、またはジョブ内最初のチェーンの
@@ -54,6 +67,29 @@ type Cut struct {
 	// この場合、直前チェーンの最終フレームを引き継がず、そのカット自身のキーフレーム
 	// 参照（セクションごとの意図した絵）から生成します。
 	IsSectionStart bool `json:"is_section_start,omitempty"`
+}
+
+// Cut は動画内の1カットを表します。
+// audio_cue は BGM 上の展開、visual_anchor は映像上の固定指示です。
+// 生成結果・制御フラグは種別ごとに AudioSync / KeyframeResult / VideoResult / ChainControl
+// へ分割し、匿名フィールドとして埋め込んでいます。JSON はフラットな構造のまま維持され、
+// cut.VideoID のようなフィールドアクセスも変わりません。
+type Cut struct {
+	CutIndex int `json:"cut_index"`
+	// SectionIndex は、このカットが属する MusicRecipe.Sections の1始まりの位置です
+	// （0 は未割り当て）。同じセクション由来のカットがシーン分割で複数のサブカットに
+	// 分かれても、分割後の全サブカットが同じ SectionIndex を引き継ぎます。呼び出し側は
+	// StartSec とセクションの時間範囲を突き合わせて逆算せずに、この値で直接セクションの
+	// 所属を判定できます。
+	SectionIndex int    `json:"section_index,omitempty"`
+	VisualAnchor string `json:"visual_anchor"`
+	CharacterID  string `json:"character_id"`
+	Dialogue     string `json:"dialogue,omitempty"`
+
+	AudioSync
+	KeyframeResult
+	VideoResult
+	ChainControl
 }
 
 // Cuts は Cut のスライスに対するカスタム型です。
@@ -89,6 +125,9 @@ func (vr *VideoRecipe) Normalize() {
 	var current float64
 	for i := range vr.Cuts {
 		vr.Cuts[i].Normalize(i+1, current)
+		if vr.Cuts[i].SectionIndex == 0 {
+			vr.Cuts[i].SectionIndex = sectionIndexForStartSec(vr.MusicRecipe.Sections, vr.Cuts[i].StartSec)
+		}
 		current = vr.Cuts[i].EndSec
 	}
 }
@@ -102,12 +141,36 @@ func cutsFromSections(sections []lyria.MusicSection) []Cut {
 		}
 		cuts = append(cuts, Cut{
 			CutIndex:     i + 1,
-			DurationSec:  duration,
-			AudioCue:     section.Prompt,
+			SectionIndex: i + 1,
 			VisualAnchor: section.Name,
+			AudioSync: AudioSync{
+				DurationSec: duration,
+				AudioCue:    section.Prompt,
+			},
 		})
 	}
 	return cuts
+}
+
+// sectionIndexForStartSec は、startSec を含む時間範囲を持つセクションの1始まりの位置を返します
+// （該当なしの場合は 0）。Cut.SectionIndex が未設定（0）のまま Normalize が呼ばれた場合の
+// フォールバックとしてのみ使われ、明示的に設定された SectionIndex を上書きしません。
+// 一致するセクションが複数ありうる境界値では、startSec 以下で最大の StartSeconds を持つ
+// セクションを採用します（EndSeconds との間の丸め誤差に頑健にするため）。
+func sectionIndexForStartSec(sections []lyria.MusicSection, startSec float64) int {
+	bestIndex := -1
+	bestStart := -1.0
+	for i, s := range sections {
+		start := float64(s.StartSeconds)
+		if start <= startSec && start >= bestStart {
+			bestIndex = i
+			bestStart = start
+		}
+	}
+	if bestIndex == -1 {
+		return 0
+	}
+	return bestIndex + 1
 }
 
 // Normalize はカット番号と時間範囲を補完します。
@@ -124,9 +187,4 @@ func (c *Cut) Normalize(index int, startSec float64) {
 	if c.EndSec == 0 {
 		c.EndSec = c.StartSec + c.DurationSec
 	}
-}
-
-// IsGenerated はカットが動画生成済みとして扱えるかを返します。
-func (c Cut) IsGenerated() bool {
-	return c.Status == CutStatusGenerated || (c.VideoID != "" && c.VideoURL != "")
 }

@@ -51,6 +51,10 @@ func TestVideoRecipeNormalizeBuildsCutsFromVariableSections(t *testing.T) {
 	if recipe.Cuts[0].VisualAnchor != "Verse" {
 		t.Errorf("first cut VisualAnchor = %q, want Verse", recipe.Cuts[0].VisualAnchor)
 	}
+	if recipe.Cuts[0].SectionIndex != 1 || recipe.Cuts[1].SectionIndex != 2 || recipe.Cuts[2].SectionIndex != 3 {
+		t.Errorf("SectionIndex = %d, %d, %d, want 1, 2, 3",
+			recipe.Cuts[0].SectionIndex, recipe.Cuts[1].SectionIndex, recipe.Cuts[2].SectionIndex)
+	}
 }
 
 func TestVideoRecipeNormalizeKeepsMusicRecipeSlicesIsolatedFromCuts(t *testing.T) {
@@ -141,6 +145,60 @@ func TestVideoRecipeNormalizeBuildsCutsFromMusicRecipeSections(t *testing.T) {
 	}
 }
 
+// TestVideoRecipeNormalizeDerivesSectionIndexFromStartSec verifies the fallback path: when an
+// explicit Cut list is provided without SectionIndex (e.g. scene-split sub-cuts authored before
+// this field existed), Normalize derives it from StartSec against the section time ranges,
+// instead of leaving it at the zero value.
+func TestVideoRecipeNormalizeDerivesSectionIndexFromStartSec(t *testing.T) {
+	recipe := &VideoRecipe{
+		MusicRecipe: MusicRecipe{
+			Sections: []Section{
+				{Name: "Verse", StartSeconds: 0, EndSeconds: 30},
+				{Name: "Chorus", StartSeconds: 30, EndSeconds: 60},
+			},
+		},
+		Cuts: []Cut{
+			{VisualAnchor: "verse scene 1", AudioSync: AudioSync{StartSec: 0, DurationSec: 15}},
+			{VisualAnchor: "verse scene 2", AudioSync: AudioSync{StartSec: 15, DurationSec: 15}},
+			{VisualAnchor: "chorus scene 1", AudioSync: AudioSync{StartSec: 30, DurationSec: 30}},
+		},
+	}
+
+	recipe.Normalize()
+
+	if recipe.Cuts[0].SectionIndex != 1 || recipe.Cuts[1].SectionIndex != 1 {
+		t.Errorf("verse cuts SectionIndex = %d, %d, want 1, 1", recipe.Cuts[0].SectionIndex, recipe.Cuts[1].SectionIndex)
+	}
+	if recipe.Cuts[2].SectionIndex != 2 {
+		t.Errorf("chorus cut SectionIndex = %d, want 2", recipe.Cuts[2].SectionIndex)
+	}
+}
+
+// TestVideoRecipeNormalizeKeepsExplicitSectionIndex verifies that an explicitly set
+// SectionIndex is never overwritten by the StartSec-based fallback derivation.
+func TestVideoRecipeNormalizeKeepsExplicitSectionIndex(t *testing.T) {
+	recipe := &VideoRecipe{
+		MusicRecipe: MusicRecipe{
+			Sections: []Section{
+				{Name: "Verse", StartSeconds: 0, EndSeconds: 30},
+			},
+		},
+		Cuts: []Cut{
+			{
+				SectionIndex: 7,
+				VisualAnchor: "explicit section",
+				AudioSync:    AudioSync{StartSec: 0, DurationSec: 15},
+			},
+		},
+	}
+
+	recipe.Normalize()
+
+	if recipe.Cuts[0].SectionIndex != 7 {
+		t.Fatalf("SectionIndex = %d, want 7 (explicit value preserved)", recipe.Cuts[0].SectionIndex)
+	}
+}
+
 func TestVideoRecipeNormalizeDoesNotOverwriteExplicitCuts(t *testing.T) {
 	recipe := &VideoRecipe{
 		MusicRecipe: MusicRecipe{
@@ -154,7 +212,7 @@ func TestVideoRecipeNormalizeDoesNotOverwriteExplicitCuts(t *testing.T) {
 		Cuts: []Cut{
 			{
 				VisualAnchor: "explicit cut",
-				DurationSec:  8,
+				AudioSync:    AudioSync{DurationSec: 8},
 			},
 		},
 	}

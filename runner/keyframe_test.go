@@ -91,7 +91,7 @@ func TestCutKeyframeRunner_EditAndSave(t *testing.T) {
 
 		recipe := &ports.VideoRecipe{
 			Cuts: []ports.Cut{
-				{CutIndex: 2, CharacterID: "zundamon", KeyframeReference: "gs://bucket/jobs/j1/images/keyframe_2.png"},
+				{CutIndex: 2, CharacterID: "zundamon", KeyframeResult: ports.KeyframeResult{KeyframeReference: "gs://bucket/jobs/j1/images/keyframe_2.png"}},
 			},
 		}
 
@@ -133,7 +133,7 @@ func TestCutKeyframeRunner_EditAndSave(t *testing.T) {
 
 	t.Run("errors when generator does not support editing", func(t *testing.T) {
 		r := NewCutKeyframeRunner(nonEditingCutImageGenerator{}, newFakeWriter())
-		recipe := &ports.VideoRecipe{Cuts: []ports.Cut{{CutIndex: 1, KeyframeReference: "gs://bucket/k.png"}}}
+		recipe := &ports.VideoRecipe{Cuts: []ports.Cut{{CutIndex: 1, KeyframeResult: ports.KeyframeResult{KeyframeReference: "gs://bucket/k.png"}}}}
 
 		_, err := r.EditAndSave(ctx, recipe, "edit", "gs://bucket/out/")
 		if !errors.Is(err, ports.ErrEditingNotSupported) {

@@ -73,7 +73,12 @@ func TestVideoTimelineRunner_RunAndSave(t *testing.T) {
 	ctx := context.Background()
 	baseRecipe := func() *ports.VideoRecipe {
 		return &ports.VideoRecipe{Cuts: []ports.Cut{
-			{CutIndex: 1, DurationSec: 5, VisualAnchor: "a", KeyframeReference: "gs://images/cut_1.png"},
+			{
+				CutIndex:       1,
+				VisualAnchor:   "a",
+				AudioSync:      ports.AudioSync{DurationSec: 5},
+				KeyframeResult: ports.KeyframeResult{KeyframeReference: "gs://images/cut_1.png"},
+			},
 		}}
 	}
 
@@ -160,17 +165,21 @@ func TestVideoTimelineRunner_RunChainsPreviousVideoID(t *testing.T) {
 		MusicRecipe:  ports.MusicRecipe{Mood: "symphonic rock"},
 		Cuts: []ports.Cut{
 			{
-				CutIndex:       1,
-				DurationSec:    5,
-				AudioCue:       "intro pad",
-				VisualAnchor:   "slow dolly in",
-				AudioReference: "gs://audio/seg_1.mp3",
+				CutIndex:     1,
+				VisualAnchor: "slow dolly in",
+				AudioSync: ports.AudioSync{
+					DurationSec:    5,
+					AudioCue:       "intro pad",
+					AudioReference: "gs://audio/seg_1.mp3",
+				},
 			},
 			{
 				CutIndex:     2,
-				DurationSec:  5,
-				AudioCue:     "heavy chorus",
 				VisualAnchor: "fast orbit camera",
+				AudioSync: ports.AudioSync{
+					DurationSec: 5,
+					AudioCue:    "heavy chorus",
+				},
 			},
 		},
 	}
@@ -228,16 +237,16 @@ func TestVideoTimelineRunner_RunUsesSavedKeyframeReferences(t *testing.T) {
 		ProjectTitle: "saved keyframes",
 		Cuts: []ports.Cut{
 			{
-				CutIndex:          1,
-				DurationSec:       5,
-				VisualAnchor:      "first saved keyframe",
-				KeyframeReference: "gs://images/cut_1.png",
+				CutIndex:       1,
+				VisualAnchor:   "first saved keyframe",
+				AudioSync:      ports.AudioSync{DurationSec: 5},
+				KeyframeResult: ports.KeyframeResult{KeyframeReference: "gs://images/cut_1.png"},
 			},
 			{
-				CutIndex:          2,
-				DurationSec:       5,
-				VisualAnchor:      "second saved keyframe",
-				KeyframeReference: "gs://images/cut_2.png",
+				CutIndex:       2,
+				VisualAnchor:   "second saved keyframe",
+				AudioSync:      ports.AudioSync{DurationSec: 5},
+				KeyframeResult: ports.KeyframeResult{KeyframeReference: "gs://images/cut_2.png"},
 			},
 		},
 	}
@@ -269,16 +278,18 @@ func TestVideoTimelineRunner_RunSkipsGeneratedCutAndChainsItsVideoID(t *testing.
 		Cuts: []ports.Cut{
 			{
 				CutIndex:     1,
-				DurationSec:  5,
 				VisualAnchor: "resume from existing context",
-				VideoID:      "existing-video-1",
-				VideoURL:     "gs://videos/cut_1.mp4",
-				Status:       ports.CutStatusGenerated,
+				AudioSync:    ports.AudioSync{DurationSec: 5},
+				VideoResult: ports.VideoResult{
+					VideoID:  "existing-video-1",
+					VideoURL: "gs://videos/cut_1.mp4",
+					Status:   ports.CutStatusGenerated,
+				},
 			},
 			{
 				CutIndex:     2,
-				DurationSec:  5,
 				VisualAnchor: "continue from existing context",
+				AudioSync:    ports.AudioSync{DurationSec: 5},
 			},
 		},
 	}
