@@ -63,7 +63,7 @@ func (m *manager) buildVideoTimelineRunner(
 	publisher ports.VideoPublishRunner,
 ) ports.VideoTimelineRunner {
 	if m.videoRunner == nil {
-		return nil
+		return ports.NewNoopVideoTimelineRunner()
 	}
 	return runner.NewVideoTimelineRunner(keyframeRunner, m.videoRunner, publisher).
 		WithRequestBuilder(runner.NewVideoRequestBuilderWithCharacters(m.promptDeps.Characters))

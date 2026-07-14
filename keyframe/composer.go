@@ -55,6 +55,12 @@ func NewComposer(
 	}, nil
 }
 
+// CharacterForCut はカットに対応するキャラクターを解決します。cut.CharacterID が未設定、
+// または未知の ID の場合はデフォルトキャラクターにフォールバックします。
+func (c *Composer) CharacterForCut(cut ports.Cut) *characterkit.Character {
+	return c.Characters.GetCharacterWithDefault(cut.CharacterID)
+}
+
 // GetCharacterResourceURI はキャラクターの既定参照画像（ReferenceURL）の画像URIを取得します。
 // アスペクト比別の参照画像（ReferenceURLs）を取得するには GetResourceURI を使ってください。
 func (c *Composer) GetCharacterResourceURI(charID string) string {

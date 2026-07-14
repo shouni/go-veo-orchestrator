@@ -55,6 +55,26 @@ type VideoTimelineRunner interface {
 	RunAndSave(ctx context.Context, recipe *VideoRecipe, outputPath string) (*VideoPlotResponse, error)
 }
 
+// noopVideoTimelineRunner is a VideoTimelineRunner that always fails with
+// ErrVideoRunnerNotConfigured. It stands in for a nil Workflows.Video when no VideoRunner
+// (Veo adapter) was supplied at construction time, so callers get a clear, checkable error
+// instead of a nil-pointer panic on first use.
+type noopVideoTimelineRunner struct{}
+
+// NewNoopVideoTimelineRunner returns a VideoTimelineRunner that always fails with
+// ErrVideoRunnerNotConfigured.
+func NewNoopVideoTimelineRunner() VideoTimelineRunner {
+	return noopVideoTimelineRunner{}
+}
+
+func (noopVideoTimelineRunner) Run(context.Context, *VideoRecipe) ([]*VideoResponse, error) {
+	return nil, ErrVideoRunnerNotConfigured
+}
+
+func (noopVideoTimelineRunner) RunAndSave(context.Context, *VideoRecipe, string) (*VideoPlotResponse, error) {
+	return nil, ErrVideoRunnerNotConfigured
+}
+
 // VideoPlotResponse は動画生成結果を反映したメタデータです。
 type VideoPlotResponse struct {
 	Recipe   *VideoRecipe

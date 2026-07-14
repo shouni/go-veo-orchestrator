@@ -21,4 +21,8 @@ var (
 	// 解析できなかった場合に返されます。呼び出し側はこれを検知して、
 	// プロンプトやネットワークの失敗とは区別したリトライ判断ができます。
 	ErrInvalidAIResponse = errors.New("AI response could not be parsed as video recipe JSON")
+
+	// ErrVideoRunnerNotConfigured は、VideoRunner（Veo アダプター）が設定されていない
+	// ワークフローで Workflows.Video を呼び出した場合に返されます。
+	ErrVideoRunnerNotConfigured = errors.New("video runner is not configured")
 )

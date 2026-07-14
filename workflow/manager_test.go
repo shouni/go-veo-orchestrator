@@ -2,6 +2,7 @@ package workflow
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"testing"
@@ -28,8 +29,11 @@ func TestNewBuildsWorkflows(t *testing.T) {
 	if workflows.Publish == nil {
 		t.Fatal("Publish runner is nil")
 	}
-	if workflows.Video != nil {
-		t.Fatal("Video runner should be nil without VideoRunner dependency")
+	if workflows.Video == nil {
+		t.Fatal("Video runner should not be nil even without a VideoRunner dependency")
+	}
+	if _, err := workflows.Video.Run(context.Background(), &ports.VideoRecipe{}); !errors.Is(err, ports.ErrVideoRunnerNotConfigured) {
+		t.Fatalf("expected ErrVideoRunnerNotConfigured when no VideoRunner is configured, got %v", err)
 	}
 }
 
