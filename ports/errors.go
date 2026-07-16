@@ -25,4 +25,9 @@ var (
 	// ErrVideoRunnerNotConfigured は、VideoRunner（Veo アダプター）が設定されていない
 	// ワークフローで Workflows.Video を呼び出した場合に返されます。
 	ErrVideoRunnerNotConfigured = errors.New("video runner is not configured")
+
+	// ErrInputTooLarge は、入力ソースが許容される最大サイズを超えていた場合に
+	// 返されます。呼び出し側はこれを検知して、解析失敗とは区別した入力側の
+	// 是正（分割やソースの見直し）を促せます。
+	ErrInputTooLarge = errors.New("input source exceeds maximum allowed size")
 )
