@@ -138,6 +138,61 @@ func TestVideoScriptRunner_Run(t *testing.T) {
 			t.Fatalf("expected ErrInvalidAIResponse, got %v", err)
 		}
 	})
+
+	t.Run("returns ErrInvalidAIResponse for a nil AI response", func(t *testing.T) {
+		reader := staticContentReader{content: []byte(`{"title":"t"}`)}
+		ai := &fakeContentGenerator{resp: nil}
+		r := NewVideoScriptRunner(&fakeScriptPrompt{prompt: "p"}, ai, reader, "model")
+
+		_, err := r.Run(ctx, "memory://source", "default")
+		if !errors.Is(err, ports.ErrInvalidAIResponse) {
+			t.Fatalf("expected ErrInvalidAIResponse, got %v", err)
+		}
+	})
+
+	t.Run("returns ErrInvalidAIResponse for a semantically empty recipe", func(t *testing.T) {
+		reader := staticContentReader{content: []byte(`{"title":"t"}`)}
+		ai := &fakeContentGenerator{resp: &gemini.Response{Text: `{}`}}
+		r := NewVideoScriptRunner(&fakeScriptPrompt{prompt: "p"}, ai, reader, "model")
+
+		_, err := r.Run(ctx, "memory://source", "default")
+		if !errors.Is(err, ports.ErrInvalidAIResponse) {
+			t.Fatalf("expected ErrInvalidAIResponse, got %v", err)
+		}
+	})
+
+	t.Run("picks the recipe when the AI response has multiple JSON blocks", func(t *testing.T) {
+		reader := staticContentReader{content: []byte(`{"title":"t"}`)}
+		ai := &fakeContentGenerator{
+			resp: &gemini.Response{Text: "構造の説明:\n```json\n{\"note\": \"this is an example\"}\n```\n完成した台本:\n```json\n{\"project_title\":\"Final\",\"cuts\":[{\"cut_index\":1,\"duration_sec\":5}]}\n```"},
+		}
+		r := NewVideoScriptRunner(&fakeScriptPrompt{prompt: "p"}, ai, reader, "model")
+
+		recipe, err := r.Run(ctx, "memory://source", "default")
+		if err != nil {
+			t.Fatalf("Run() error = %v", err)
+		}
+		if recipe.ProjectTitle != "Final" {
+			t.Errorf("ProjectTitle = %q, want Final", recipe.ProjectTitle)
+		}
+		if len(recipe.Cuts) != 1 {
+			t.Errorf("len(Cuts) = %d, want 1", len(recipe.Cuts))
+		}
+	})
+
+	t.Run("returns ErrInputTooLarge when the source exceeds the size limit", func(t *testing.T) {
+		oversized := append([]byte(`{"title":"`), make([]byte, maxInputSize)...)
+		reader := staticContentReader{content: oversized}
+		r := NewVideoScriptRunner(&fakeScriptPrompt{prompt: "p"}, &fakeContentGenerator{}, reader, "model")
+
+		_, err := r.Run(ctx, "memory://source?X-Goog-Signature=secret", "default")
+		if !errors.Is(err, ports.ErrInputTooLarge) {
+			t.Fatalf("expected ErrInputTooLarge, got %v", err)
+		}
+		if strings.Contains(err.Error(), "secret") {
+			t.Errorf("error message leaks query parameters: %v", err)
+		}
+	})
 }
 
 func TestReadContentRemovesInvalidUTF8Anywhere(t *testing.T) {
@@ -154,21 +209,36 @@ func TestReadContentRemovesInvalidUTF8Anywhere(t *testing.T) {
 	}
 }
 
-func TestExtractJSONStringSupportsArrayRoot(t *testing.T) {
+func TestExtractJSONCandidatesSupportsArrayRoot(t *testing.T) {
 	raw := "prefix [{\"id\":1}] suffix"
 
-	got := extractJSONString(raw)
-	if got != "[{\"id\":1}]" {
-		t.Fatalf("extractJSONString() = %q", got)
+	got := extractJSONCandidates(raw)
+	if len(got) != 1 || got[0] != "[{\"id\":1}]" {
+		t.Fatalf("extractJSONCandidates() = %q", got)
 	}
 }
 
-func TestExtractJSONStringSupportsObjectRoot(t *testing.T) {
+func TestExtractJSONCandidatesSupportsObjectRoot(t *testing.T) {
 	raw := "prefix {\"id\":1} suffix"
 
-	got := extractJSONString(raw)
-	if got != "{\"id\":1}" {
-		t.Fatalf("extractJSONString() = %q", got)
+	got := extractJSONCandidates(raw)
+	if len(got) != 1 || got[0] != "{\"id\":1}" {
+		t.Fatalf("extractJSONCandidates() = %q", got)
+	}
+}
+
+func TestExtractJSONCandidatesListsCodeBlocksSeparately(t *testing.T) {
+	raw := "説明:\n```json\n{\"example\": true}\n```\n完成版:\n```json\n{\"project_title\":\"Final\"}\n```"
+
+	got := extractJSONCandidates(raw)
+	if len(got) < 2 {
+		t.Fatalf("len(extractJSONCandidates()) = %d, want >= 2 (%q)", len(got), got)
+	}
+	if got[0] != `{"example": true}` {
+		t.Errorf("candidates[0] = %q", got[0])
+	}
+	if got[1] != `{"project_title":"Final"}` {
+		t.Errorf("candidates[1] = %q", got[1])
 	}
 }
 
@@ -244,6 +314,14 @@ func TestParseSourceRecipeIgnoresNonRecipeJSON(t *testing.T) {
 	}
 	if recipe != nil {
 		t.Fatalf("parseSourceRecipe() = %#v, want nil", recipe)
+	}
+}
+
+func TestSanitizeURLStripsQueryAndFragment(t *testing.T) {
+	got := sanitizeURL("https://storage.example.com/bucket/file.json?X-Goog-Signature=secret#frag")
+	want := "https://storage.example.com/bucket/file.json"
+	if got != want {
+		t.Fatalf("sanitizeURL() = %q, want %q", got, want)
 	}
 }
 
