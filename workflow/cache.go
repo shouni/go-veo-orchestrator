@@ -35,6 +35,11 @@ func (c *imageCache) Set(key string, value any, ttl time.Duration) {
 	c.cache.Set(key, value, ttl)
 }
 
+// Delete は、指定されたキーに紐づくアイテムを削除します。存在しないキーは無視します。
+func (c *imageCache) Delete(key string) {
+	c.cache.Delete(key)
+}
+
 func (c *imageCache) Stop() {
 	if c != nil && c.cache != nil {
 		c.cache.Stop()
