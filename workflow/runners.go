@@ -32,7 +32,7 @@ func (m *manager) buildAllRunners() (*ports.Workflows, error) {
 
 // buildScriptRunner は、台本生成を担当する Runner を作成します。
 func (m *manager) buildScriptRunner() (*runner.VideoScriptRunner, error) {
-	return runner.NewVideoScriptRunner(m.promptDeps.ScriptPrompt, m.aiClient, m.reader, m.cfg.GeminiModel), nil
+	return runner.NewVideoScriptRunner(m.promptDeps.ScriptPrompt, m.aiClient, m.reader, m.cfg.GeminiModel, m.promptDeps.Characters), nil
 }
 
 // buildKeyframeRunner は、カットのキーフレーム画像生成を担当する Runner を作成します。

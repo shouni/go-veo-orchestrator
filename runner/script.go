@@ -10,8 +10,10 @@ import (
 	"regexp"
 	"strings"
 
+	characterkit "github.com/shouni/go-character-kit/character"
 	"github.com/shouni/go-gemini-client/gemini"
 	"github.com/shouni/go-veo-orchestrator/ports"
+	"google.golang.org/genai"
 )
 
 const (
@@ -28,24 +30,42 @@ var jsonBlockRegex = regexp.MustCompile("(?s)```(?:json)?\\s*(.*?\\S)\\s*```")
 // VideoScriptRunner は入力ソースから Music Recipe を読み取り、動画レシピを生成します。
 type VideoScriptRunner struct {
 	promptBuilder ports.ScriptPrompt
-	aiClient      gemini.ContentGenerator
+	aiClient      gemini.Generator
 	reader        ports.ContentReader
 	aiModel       string
+	characters    *characterkit.Characters
 }
 
 // NewVideoScriptRunner は依存関係を注入して初期化します。
+// characters は、AI に生成させる cuts[].character_id を既知のキャラクターIDに
+// 制約する（ResponseSchema の enum）ために使われます。nil の場合は制約なし
+// （空文字のみ許容）になります。
 func NewVideoScriptRunner(
 	pb ports.ScriptPrompt,
-	ai gemini.ContentGenerator,
+	ai gemini.Generator,
 	r ports.ContentReader,
 	aiModel string,
+	characters *characterkit.Characters,
 ) *VideoScriptRunner {
 	return &VideoScriptRunner{
 		promptBuilder: pb,
 		aiClient:      ai,
 		reader:        r,
 		aiModel:       aiModel,
+		characters:    characters,
 	}
+}
+
+// characterIDs は、スキーマの character_id enum に使うキャラクターID一覧を返します。
+func (r *VideoScriptRunner) characterIDs() []string {
+	if r.characters == nil {
+		return nil
+	}
+	ids := make([]string, 0, len(r.characters.List))
+	for _, c := range r.characters.List {
+		ids = append(ids, c.ID)
+	}
+	return ids
 }
 
 // Run は Music Recipe JSON を読み込み、Gemini を用いて動画台本 JSON を生成します。
@@ -74,9 +94,13 @@ func (r *VideoScriptRunner) Run(ctx context.Context, sourceURL string, mode stri
 		return nil, fmt.Errorf("プロンプトの構築に失敗しました: %w", err)
 	}
 
-	// 3. Gemini API を呼び出し
+	// 3. Gemini API を呼び出し（構造化出力でJSON文法を強制）
 	slog.Info("ScriptRunner: Gemini APIを呼び出し中", "model", r.aiModel)
-	resp, err := r.aiClient.GenerateContent(ctx, r.aiModel, finalPrompt)
+	opts := gemini.GenerateOptions{
+		ResponseMIMEType: "application/json",
+		ResponseSchema:   ports.VideoRecipeSchema(r.characterIDs()),
+	}
+	resp, err := r.aiClient.GenerateWithParts(ctx, r.aiModel, []*genai.Part{{Text: finalPrompt}}, opts)
 	if err != nil {
 		return nil, fmt.Errorf("geminiによるコンテンツ生成に失敗しました: %w", err)
 	}
@@ -89,6 +113,11 @@ func (r *VideoScriptRunner) Run(ctx context.Context, sourceURL string, mode stri
 	if err != nil {
 		return nil, err
 	}
+
+	// music_recipe はスキーマから意図的に除外している（AIには生成させない）ため、
+	// source 側の値をそのまま引き継ぐ。
+	recipe.MusicRecipe = sourceRecipe.MusicRecipe
+	recipe.Normalize()
 
 	return recipe, nil
 }

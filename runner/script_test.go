@@ -7,8 +7,10 @@ import (
 	"strings"
 	"testing"
 
+	characterkit "github.com/shouni/go-character-kit/character"
 	"github.com/shouni/go-gemini-client/gemini"
 	"github.com/shouni/go-veo-orchestrator/ports"
+	"google.golang.org/genai"
 )
 
 // fakeScriptPrompt implements ports.ScriptPrompt and records the last mode/data it was
@@ -29,24 +31,34 @@ func (f *fakeScriptPrompt) Build(mode string, data *ports.TemplateData) (string,
 	return f.prompt, nil
 }
 
-// fakeContentGenerator implements gemini.ContentGenerator and records the model/prompt it
+// fakeContentGenerator implements gemini.Generator and records the model/parts/options it
 // was called with.
 type fakeContentGenerator struct {
-	resp       *gemini.Response
-	err        error
-	calls      int
-	lastModel  string
-	lastPrompt string
+	resp      *gemini.Response
+	err       error
+	calls     int
+	lastModel string
+	lastParts []*genai.Part
+	lastOpts  gemini.GenerateOptions
 }
 
-func (f *fakeContentGenerator) GenerateContent(_ context.Context, modelName string, prompt string) (*gemini.Response, error) {
+func (f *fakeContentGenerator) GenerateContent(ctx context.Context, modelName string, prompt string) (*gemini.Response, error) {
+	return f.GenerateWithParts(ctx, modelName, []*genai.Part{{Text: prompt}}, gemini.GenerateOptions{})
+}
+
+func (f *fakeContentGenerator) GenerateWithParts(_ context.Context, modelName string, parts []*genai.Part, opts gemini.GenerateOptions) (*gemini.Response, error) {
 	f.calls++
 	f.lastModel = modelName
-	f.lastPrompt = prompt
+	f.lastParts = parts
+	f.lastOpts = opts
 	if f.err != nil {
 		return nil, f.err
 	}
 	return f.resp, nil
+}
+
+func (f *fakeContentGenerator) IsVertexAI() bool {
+	return false
 }
 
 type failingContentReader struct {
@@ -67,7 +79,7 @@ func TestVideoScriptRunner_Run(t *testing.T) {
 			resp: &gemini.Response{Text: `{"project_title":"Generated","cuts":[{"cut_index":1,"duration_sec":5}]}`},
 		}
 
-		r := NewVideoScriptRunner(promptBuilder, ai, reader, "gemini-test-model")
+		r := NewVideoScriptRunner(promptBuilder, ai, reader, "gemini-test-model", nil)
 		recipe, err := r.Run(ctx, "memory://source", "default")
 		if err != nil {
 			t.Fatalf("Run() error = %v", err)
@@ -90,10 +102,21 @@ func TestVideoScriptRunner_Run(t *testing.T) {
 		if promptBuilder.lastData.SourceRecipe.MusicRecipe.Title != "music title" {
 			t.Errorf("source recipe title = %q, want music title", promptBuilder.lastData.SourceRecipe.MusicRecipe.Title)
 		}
+		// music_recipe is deliberately excluded from the AI response schema; the
+		// runner must carry it over from the source recipe instead of leaving it zero.
+		if recipe.MusicRecipe.Title != "music title" {
+			t.Errorf("recipe.MusicRecipe.Title = %q, want music title (carried over from source)", recipe.MusicRecipe.Title)
+		}
+		if ai.lastOpts.ResponseMIMEType != "application/json" {
+			t.Errorf("ResponseMIMEType = %q, want application/json", ai.lastOpts.ResponseMIMEType)
+		}
+		if ai.lastOpts.ResponseSchema == nil {
+			t.Error("expected a non-nil ResponseSchema to be passed to the AI client")
+		}
 	})
 
 	t.Run("wraps a source read failure", func(t *testing.T) {
-		r := NewVideoScriptRunner(&fakeScriptPrompt{}, &fakeContentGenerator{}, failingContentReader{err: errors.New("boom")}, "model")
+		r := NewVideoScriptRunner(&fakeScriptPrompt{}, &fakeContentGenerator{}, failingContentReader{err: errors.New("boom")}, "model", nil)
 
 		if _, err := r.Run(ctx, "memory://source", "default"); err == nil {
 			t.Fatal("expected error when source read fails")
@@ -102,7 +125,7 @@ func TestVideoScriptRunner_Run(t *testing.T) {
 
 	t.Run("errors when source has no recipe content", func(t *testing.T) {
 		reader := staticContentReader{content: []byte("just some prose, no JSON here")}
-		r := NewVideoScriptRunner(&fakeScriptPrompt{}, &fakeContentGenerator{}, reader, "model")
+		r := NewVideoScriptRunner(&fakeScriptPrompt{}, &fakeContentGenerator{}, reader, "model", nil)
 
 		if _, err := r.Run(ctx, "memory://source", "default"); err == nil {
 			t.Fatal("expected error when source cannot be parsed as a recipe")
@@ -111,7 +134,7 @@ func TestVideoScriptRunner_Run(t *testing.T) {
 
 	t.Run("wraps a prompt build failure", func(t *testing.T) {
 		reader := staticContentReader{content: []byte(`{"title":"t"}`)}
-		r := NewVideoScriptRunner(&fakeScriptPrompt{err: errors.New("bad template")}, &fakeContentGenerator{}, reader, "model")
+		r := NewVideoScriptRunner(&fakeScriptPrompt{err: errors.New("bad template")}, &fakeContentGenerator{}, reader, "model", nil)
 
 		if _, err := r.Run(ctx, "memory://source", "default"); err == nil {
 			t.Fatal("expected error when prompt building fails")
@@ -121,7 +144,7 @@ func TestVideoScriptRunner_Run(t *testing.T) {
 	t.Run("wraps an AI call failure", func(t *testing.T) {
 		reader := staticContentReader{content: []byte(`{"title":"t"}`)}
 		ai := &fakeContentGenerator{err: errors.New("api down")}
-		r := NewVideoScriptRunner(&fakeScriptPrompt{prompt: "p"}, ai, reader, "model")
+		r := NewVideoScriptRunner(&fakeScriptPrompt{prompt: "p"}, ai, reader, "model", nil)
 
 		if _, err := r.Run(ctx, "memory://source", "default"); err == nil {
 			t.Fatal("expected error when the AI call fails")
@@ -131,7 +154,7 @@ func TestVideoScriptRunner_Run(t *testing.T) {
 	t.Run("returns ErrInvalidAIResponse for unparsable AI output", func(t *testing.T) {
 		reader := staticContentReader{content: []byte(`{"title":"t"}`)}
 		ai := &fakeContentGenerator{resp: &gemini.Response{Text: `{"cuts": not-json}`}}
-		r := NewVideoScriptRunner(&fakeScriptPrompt{prompt: "p"}, ai, reader, "model")
+		r := NewVideoScriptRunner(&fakeScriptPrompt{prompt: "p"}, ai, reader, "model", nil)
 
 		_, err := r.Run(ctx, "memory://source", "default")
 		if !errors.Is(err, ports.ErrInvalidAIResponse) {
@@ -142,7 +165,7 @@ func TestVideoScriptRunner_Run(t *testing.T) {
 	t.Run("returns ErrInvalidAIResponse for a nil AI response", func(t *testing.T) {
 		reader := staticContentReader{content: []byte(`{"title":"t"}`)}
 		ai := &fakeContentGenerator{resp: nil}
-		r := NewVideoScriptRunner(&fakeScriptPrompt{prompt: "p"}, ai, reader, "model")
+		r := NewVideoScriptRunner(&fakeScriptPrompt{prompt: "p"}, ai, reader, "model", nil)
 
 		_, err := r.Run(ctx, "memory://source", "default")
 		if !errors.Is(err, ports.ErrInvalidAIResponse) {
@@ -153,7 +176,7 @@ func TestVideoScriptRunner_Run(t *testing.T) {
 	t.Run("returns ErrInvalidAIResponse for a semantically empty recipe", func(t *testing.T) {
 		reader := staticContentReader{content: []byte(`{"title":"t"}`)}
 		ai := &fakeContentGenerator{resp: &gemini.Response{Text: `{}`}}
-		r := NewVideoScriptRunner(&fakeScriptPrompt{prompt: "p"}, ai, reader, "model")
+		r := NewVideoScriptRunner(&fakeScriptPrompt{prompt: "p"}, ai, reader, "model", nil)
 
 		_, err := r.Run(ctx, "memory://source", "default")
 		if !errors.Is(err, ports.ErrInvalidAIResponse) {
@@ -166,7 +189,7 @@ func TestVideoScriptRunner_Run(t *testing.T) {
 		ai := &fakeContentGenerator{
 			resp: &gemini.Response{Text: "構造の説明:\n```json\n{\"note\": \"this is an example\"}\n```\n完成した台本:\n```json\n{\"project_title\":\"Final\",\"cuts\":[{\"cut_index\":1,\"duration_sec\":5}]}\n```"},
 		}
-		r := NewVideoScriptRunner(&fakeScriptPrompt{prompt: "p"}, ai, reader, "model")
+		r := NewVideoScriptRunner(&fakeScriptPrompt{prompt: "p"}, ai, reader, "model", nil)
 
 		recipe, err := r.Run(ctx, "memory://source", "default")
 		if err != nil {
@@ -183,7 +206,7 @@ func TestVideoScriptRunner_Run(t *testing.T) {
 	t.Run("returns ErrInputTooLarge when the source exceeds the size limit", func(t *testing.T) {
 		oversized := append([]byte(`{"title":"`), make([]byte, maxInputSize)...)
 		reader := staticContentReader{content: oversized}
-		r := NewVideoScriptRunner(&fakeScriptPrompt{prompt: "p"}, &fakeContentGenerator{}, reader, "model")
+		r := NewVideoScriptRunner(&fakeScriptPrompt{prompt: "p"}, &fakeContentGenerator{}, reader, "model", nil)
 
 		_, err := r.Run(ctx, "memory://source?X-Goog-Signature=secret", "default")
 		if !errors.Is(err, ports.ErrInputTooLarge) {
@@ -193,6 +216,37 @@ func TestVideoScriptRunner_Run(t *testing.T) {
 			t.Errorf("error message leaks query parameters: %v", err)
 		}
 	})
+}
+
+func TestVideoScriptRunner_RunConstrainsCharacterIDEnum(t *testing.T) {
+	reader := staticContentReader{content: []byte(`{"title":"t"}`)}
+	ai := &fakeContentGenerator{
+		resp: &gemini.Response{Text: `{"project_title":"Generated","cuts":[{"visual_anchor":"a","character_id":"zundamon"}]}`},
+	}
+	characters := &characterkit.Characters{
+		List: []characterkit.Character{{ID: "zundamon"}, {ID: "metan"}},
+	}
+
+	r := NewVideoScriptRunner(&fakeScriptPrompt{prompt: "p"}, ai, reader, "model", characters)
+	if _, err := r.Run(context.Background(), "memory://source", "default"); err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+
+	schema := ai.lastOpts.ResponseSchema
+	if schema == nil {
+		t.Fatal("expected a non-nil ResponseSchema")
+	}
+	cutSchema := schema.Properties["cuts"].Items
+	enum := cutSchema.Properties["character_id"].Enum
+	want := map[string]bool{"": true, "zundamon": true, "metan": true}
+	if len(enum) != len(want) {
+		t.Fatalf("character_id enum = %v, want keys %v", enum, want)
+	}
+	for _, id := range enum {
+		if !want[id] {
+			t.Errorf("unexpected character_id enum value %q", id)
+		}
+	}
 }
 
 func TestReadContentRemovesInvalidUTF8Anywhere(t *testing.T) {
