@@ -83,7 +83,7 @@ func (g *Generator) Execute(ctx context.Context, cuts []ports.Cut) ([]*imagePort
 	}
 
 	if err := g.composer.PrepareCharacterResources(ctx, cuts); err != nil {
-		return nil, fmt.Errorf("prepare character resources: %w", err)
+		return nil, fmt.Errorf("キャラクターリソースの準備に失敗しました: %w", err)
 	}
 
 	images := make([]*imagePorts.ImageResponse, len(cuts))
@@ -112,29 +112,50 @@ func (g *Generator) Execute(ctx context.Context, cuts []ports.Cut) ([]*imagePort
 }
 
 func (g *Generator) generateCutKeyframe(ctx context.Context, task keyframeTask) (*imagePorts.ImageResponse, error) {
-	if err := g.limiter.Wait(ctx); err != nil {
-		return nil, fmt.Errorf("wait for keyframe rate limiter: %w", err)
+	if err := g.waitForRateLimit(ctx); err != nil {
+		return nil, err
 	}
 
 	char := g.characterForCut(task.cut)
 	if char == nil {
-		return nil, fmt.Errorf("character not found for character ID '%s'", task.cut.CharacterID)
+		return nil, fmt.Errorf("キャラクターID '%s' に対応するキャラクターが見つかりません", task.cut.CharacterID)
 	}
 
 	req := g.buildImageRequest(task.cut, char)
 	logger := newKeyframeLogger(task, char, req.Image.FileAPIURI)
 
-	logger.Info("Starting keyframe generation")
+	return g.runImageGeneration(ctx, req, logger,
+		"Starting keyframe generation", "Keyframe generation completed", "キーフレーム生成",
+		task.index+1, char.ID)
+}
+
+// waitForRateLimit blocks until the keyframe generation rate limiter admits the next call.
+func (g *Generator) waitForRateLimit(ctx context.Context) error {
+	if err := g.limiter.Wait(ctx); err != nil {
+		return fmt.Errorf("キーフレーム生成のレート制限待機に失敗しました: %w", err)
+	}
+	return nil
+}
+
+// runImageGeneration wraps a single GenerateSingleImage call with the start/complete logging and
+// error message shape shared by generateCutKeyframe and EditCut.
+func (g *Generator) runImageGeneration(
+	ctx context.Context,
+	req imagePorts.SingleImageRequest,
+	logger *slog.Logger,
+	startLog, completeLog, actionJP string,
+	cutIndex int,
+	characterID string,
+) (*imagePorts.ImageResponse, error) {
+	logger.Info(startLog)
 	startTime := time.Now()
 
 	resp, err := g.generator.GenerateSingleImage(ctx, req)
 	if err != nil {
-		return nil, fmt.Errorf("cut %d (character_id: %s) keyframe generation failed: %w", task.index+1, char.ID, err)
+		return nil, fmt.Errorf("cut %d (character_id: %s) の%sに失敗しました: %w", cutIndex, characterID, actionJP, err)
 	}
 
-	logger.Info("Keyframe generation completed",
-		"duration", time.Since(startTime).Round(time.Second),
-	)
+	logger.Info(completeLog, "duration", time.Since(startTime).Round(time.Second))
 
 	return resp, nil
 }
@@ -146,16 +167,16 @@ func (g *Generator) generateCutKeyframe(ctx context.Context, task keyframeTask) 
 // an input image via a plain generateContent call), rather than a dedicated edit API — Vertex
 // AI's Imagen mask-based edit/capability models have no supported successor.
 func (g *Generator) EditCut(ctx context.Context, cut ports.Cut, editPrompt string) (*imagePorts.ImageResponse, error) {
-	if err := g.limiter.Wait(ctx); err != nil {
-		return nil, fmt.Errorf("wait for keyframe rate limiter: %w", err)
+	if err := g.waitForRateLimit(ctx); err != nil {
+		return nil, err
 	}
 	if cut.KeyframeReference == "" {
-		return nil, fmt.Errorf("cut %d has no existing keyframe to edit", cut.CutIndex)
+		return nil, fmt.Errorf("cut %d には編集対象の既存キーフレームがありません", cut.CutIndex)
 	}
 
 	char := g.characterForCut(cut)
 	if char == nil {
-		return nil, fmt.Errorf("cut %d: character not found for character ID '%s'", cut.CutIndex, cut.CharacterID)
+		return nil, fmt.Errorf("cut %d: キャラクターID '%s' に対応するキャラクターが見つかりません", cut.CutIndex, cut.CharacterID)
 	}
 
 	userPrompt, systemPrompt := g.pb.BuildEdit(cut, char, editPrompt)
@@ -177,19 +198,10 @@ func (g *Generator) EditCut(ctx context.Context, cut ports.Cut, editPrompt strin
 		"character_id", char.ID,
 		"character_name", char.Name,
 	)
-	logger.Info("Starting keyframe edit")
-	startTime := time.Now()
 
-	resp, err := g.generator.GenerateSingleImage(ctx, req)
-	if err != nil {
-		return nil, fmt.Errorf("cut %d (character_id: %s) keyframe edit failed: %w", cut.CutIndex, char.ID, err)
-	}
-
-	logger.Info("Keyframe edit completed",
-		"duration", time.Since(startTime).Round(time.Second),
-	)
-
-	return resp, nil
+	return g.runImageGeneration(ctx, req, logger,
+		"Starting keyframe edit", "Keyframe edit completed", "キーフレーム編集",
+		cut.CutIndex, char.ID)
 }
 
 func (g *Generator) characterForCut(cut ports.Cut) *characterkit.Character {

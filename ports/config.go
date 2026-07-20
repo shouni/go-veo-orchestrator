@@ -28,9 +28,6 @@ type Config struct {
 	// KeyframeAspectRatio はキーフレーム画像生成のアスペクト比です（例: "16:9", "9:16"）。
 	// 空文字の場合は keyframe.CutAspectRatio（既定値）が使われます。
 	KeyframeAspectRatio string
-
-	// --- Timeout & Retries ---
-	RequestTimeout time.Duration
 }
 
 // ApplyDefaults は未設定（ゼロ値）の項目にデフォルト値を適用します。
