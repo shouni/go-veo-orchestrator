@@ -130,7 +130,7 @@ func (c *Composer) prepareResources(
 	for key, referenceURL := range targets {
 		eg.Go(func() error {
 			if _, err := upload(egCtx, key, referenceURL); err != nil {
-				return fmt.Errorf("%s resource preparation failed for '%s': %w", resourceType, key, err)
+				return fmt.Errorf("%sリソースの準備に失敗しました ('%s'): %w", resourceType, key, err)
 			}
 			return nil
 		})
