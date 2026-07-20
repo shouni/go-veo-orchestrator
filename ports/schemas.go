@@ -48,6 +48,11 @@ func cutSchema(characterIDs []string) *genai.Schema {
 			"dialogue":     {Type: genai.TypeString},
 			"audio_cue":    {Type: genai.TypeString},
 			"duration_sec": {Type: genai.TypeNumber},
+			// AudioReference is normally left empty and backfilled later from the job's shared
+			// audio track (see the caller's cut-audio backfill step); it is exposed here only so
+			// the model can copy a cut-specific GCS audio URI when the source recipe explicitly
+			// calls for a different segment per cut.
+			"audio_reference": {Type: genai.TypeString},
 		},
 		Required: []string{"visual_anchor", "character_id"},
 	}

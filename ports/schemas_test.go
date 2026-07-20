@@ -23,6 +23,14 @@ func TestVideoRecipeSchemaExcludesPipelineFields(t *testing.T) {
 	}
 }
 
+func TestVideoRecipeSchemaAllowsPerCutAudioReference(t *testing.T) {
+	schema := VideoRecipeSchema(nil)
+
+	if _, ok := schema.Properties["cuts"].Items.Properties["audio_reference"]; !ok {
+		t.Error("cutSchema.Properties[\"audio_reference\"] should be present so the model can copy a cut-specific GCS audio URI from the source recipe")
+	}
+}
+
 func TestVideoRecipeSchemaCharacterIDEnumAllowsEmptyForScenery(t *testing.T) {
 	schema := VideoRecipeSchema([]string{"zundamon", "metan"})
 
