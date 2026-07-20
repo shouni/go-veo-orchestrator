@@ -6,10 +6,20 @@ import "github.com/shouni/go-gemini-client/lyria"
 // Lyria の Music Recipe と各カットの Audio Cue / Visual Anchor を同じ JSON に保持し、
 // Veo への音楽同期プロンプトと後段の決定論的な結合処理の入力にします。
 type VideoRecipe struct {
-	ProjectTitle string            `json:"project_title,omitempty"`
-	Description  string            `json:"description,omitempty"`
-	MusicRecipe  lyria.MusicRecipe `json:"music_recipe"`
-	Cuts         []Cut             `json:"cuts"`
+	ProjectTitle string `json:"project_title,omitempty"`
+	Description  string `json:"description,omitempty"`
+	// LocationAnchor is the single persistent core setting (location plus any recurring prop —
+	// e.g. "a misty coastal cliffside road overlooking the ocean at dawn; her bicycle beside
+	// her") for the entire video. It is decided once at script-generation time and propagated
+	// onto every Cut by Normalize. Keyframe generation runs each cut independently and in
+	// parallel (see go-veo-orchestrator/keyframe.Generator.Execute), and prompt builders such as
+	// ports.KeyframePrompt.BuildCut only ever see a single Cut, not the parent VideoRecipe — so
+	// without this field, a cut whose own VisualAnchor omits the location (e.g. a tight emotional
+	// close-up) has nothing grounding its background, and the image model is free to hallucinate
+	// an unrelated one.
+	LocationAnchor string            `json:"location_anchor,omitempty"`
+	MusicRecipe    lyria.MusicRecipe `json:"music_recipe"`
+	Cuts           []Cut             `json:"cuts"`
 	// FinalVideoURL は、全チェーンをハードカットで1本に結合した完成動画のURLです。
 	// チェーンの継続生成（video_extension）を使わないジョブでは空のままです。
 	FinalVideoURL string `json:"final_video_url,omitempty"`
@@ -83,8 +93,13 @@ type Cut struct {
 	// 所属を判定できます。
 	SectionIndex int    `json:"section_index,omitempty"`
 	VisualAnchor string `json:"visual_anchor"`
-	CharacterID  string `json:"character_id"`
-	Dialogue     string `json:"dialogue,omitempty"`
+	// LocationAnchor mirrors VideoRecipe.LocationAnchor for this cut. It is populated by
+	// VideoRecipe.Normalize, not meant to be set independently per cut, and exists only so that
+	// prompt builders operating on a single Cut (ports.KeyframePrompt.BuildCut) can still ground
+	// their keyframe prompt in the video's persistent setting.
+	LocationAnchor string `json:"location_anchor,omitempty"`
+	CharacterID    string `json:"character_id"`
+	Dialogue       string `json:"dialogue,omitempty"`
 
 	AudioSync
 	KeyframeResult
@@ -127,6 +142,9 @@ func (vr *VideoRecipe) Normalize() {
 		vr.Cuts[i].Normalize(i+1, current)
 		if vr.Cuts[i].SectionIndex == 0 {
 			vr.Cuts[i].SectionIndex = sectionIndexForStartSec(vr.MusicRecipe.Sections, vr.Cuts[i].StartSec)
+		}
+		if vr.Cuts[i].LocationAnchor == "" {
+			vr.Cuts[i].LocationAnchor = vr.LocationAnchor
 		}
 		current = vr.Cuts[i].EndSec
 	}

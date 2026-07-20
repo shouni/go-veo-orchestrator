@@ -199,6 +199,51 @@ func TestVideoRecipeNormalizeKeepsExplicitSectionIndex(t *testing.T) {
 	}
 }
 
+// TestVideoRecipeNormalizePropagatesLocationAnchorToCuts verifies that VideoRecipe.LocationAnchor
+// is copied onto every cut that doesn't already have one, so prompt builders that only see a
+// single Cut (ports.KeyframePrompt.BuildCut) can still ground their prompt in the recipe's
+// persistent setting.
+func TestVideoRecipeNormalizePropagatesLocationAnchorToCuts(t *testing.T) {
+	recipe := &VideoRecipe{
+		LocationAnchor: "a misty coastal cliffside road overlooking the ocean at dawn; her bicycle beside her",
+		Cuts: []Cut{
+			{VisualAnchor: "wide establishing shot", AudioSync: AudioSync{DurationSec: 8}},
+			{VisualAnchor: "close-up shot", AudioSync: AudioSync{DurationSec: 8}},
+		},
+	}
+
+	recipe.Normalize()
+
+	for i, cut := range recipe.Cuts {
+		if cut.LocationAnchor != recipe.LocationAnchor {
+			t.Errorf("Cuts[%d].LocationAnchor = %q, want %q", i, cut.LocationAnchor, recipe.LocationAnchor)
+		}
+	}
+}
+
+// TestVideoRecipeNormalizeKeepsExplicitCutLocationAnchor verifies that a cut with its own
+// LocationAnchor already set (e.g. a section that explicitly moves to a new place) is never
+// overwritten by the recipe-level fallback.
+func TestVideoRecipeNormalizeKeepsExplicitCutLocationAnchor(t *testing.T) {
+	recipe := &VideoRecipe{
+		LocationAnchor: "a misty coastal cliffside road overlooking the ocean at dawn; her bicycle beside her",
+		Cuts: []Cut{
+			{
+				VisualAnchor:   "on the rooftop",
+				LocationAnchor: "a school rooftop at sunset; the city skyline behind her",
+				AudioSync:      AudioSync{DurationSec: 8},
+			},
+		},
+	}
+
+	recipe.Normalize()
+
+	want := "a school rooftop at sunset; the city skyline behind her"
+	if recipe.Cuts[0].LocationAnchor != want {
+		t.Fatalf("LocationAnchor = %q, want %q (explicit value preserved)", recipe.Cuts[0].LocationAnchor, want)
+	}
+}
+
 func TestVideoRecipeNormalizeDoesNotOverwriteExplicitCuts(t *testing.T) {
 	recipe := &VideoRecipe{
 		MusicRecipe: MusicRecipe{
