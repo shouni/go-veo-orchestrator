@@ -36,11 +36,13 @@ func (m *manager) buildGenerationUnit(client gemini.GenerativeModel, modelName s
 
 // buildCore は GeminiImageCore エンジンを初期化します。
 func (m *manager) buildCore(aiClient gemini.GenerativeModel) (*generator.GeminiImageCore, error) {
+	// キャッシュを manager に保持し、Workflows.Close から Stop できるようにする。
+	m.imageCache = newImageCache()
 	core, err := generator.NewGeminiImageCore(
 		aiClient,
 		m.reader,
 		m.httpClient,
-		newImageCache(),
+		m.imageCache,
 		defaultTTL,
 		false,
 	)

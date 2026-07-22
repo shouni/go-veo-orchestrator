@@ -37,6 +37,21 @@ func TestNewBuildsWorkflows(t *testing.T) {
 	}
 }
 
+func TestWorkflowsCloseStopsImageCache(t *testing.T) {
+	workflows, err := New(testManagerArgs())
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	// Close は panic せず、複数回呼んでも安全であること。
+	if err := workflows.Close(); err != nil {
+		t.Fatalf("first Close() error = %v", err)
+	}
+	if err := workflows.Close(); err != nil {
+		t.Fatalf("second Close() error = %v", err)
+	}
+}
+
 func testManagerArgs() ManagerArgs {
 	chars, err := newTestCharacters([]characterkit.Character{
 		{ID: "main", Name: "Main", VisualCues: []string{"blue jacket"}, ReferenceURL: "gs://bucket/main.png", IsDefault: true},
