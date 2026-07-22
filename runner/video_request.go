@@ -44,10 +44,18 @@ func (b *DefaultVideoRequestBuilder) Build(recipe *ports.VideoRecipe, cut ports.
 		seed = *recipe.MusicRecipe.Seed
 	}
 
+	// Veo API は video（PreviousVideoID による video-to-video 文脈）と referenceImages を
+	// 同時に受け付けない（VideoGenerationRequest のドキュメント参照）。video-to-video の
+	// 文脈引き継ぎを優先し、PreviousVideoID がある場合は referenceImages を組み立てない。
+	var referenceImages []string
+	if previousVideoID == "" {
+		referenceImages = b.buildReferenceImages(cut)
+	}
+
 	return ports.VideoGenerationRequest{
 		Prompt:          b.buildPrompt(recipe, cut),
 		ImageReference:  cut.KeyframeReference,
-		ReferenceImages: b.buildReferenceImages(cut),
+		ReferenceImages: referenceImages,
 		AudioReference:  cut.AudioReference,
 		InputImage:      imageData,
 		PreviousVideoID: previousVideoID,
