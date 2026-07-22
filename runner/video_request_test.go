@@ -55,6 +55,45 @@ func TestVideoRequestBuilderWithCharactersBuildsReferenceImages(t *testing.T) {
 	}
 }
 
+// TestVideoRequestBuilderOmitsReferenceImagesWithPreviousVideo は、video-to-video の文脈
+// （PreviousVideoID）がある場合に referenceImages を組み立てないことを検証します。Veo は
+// video と referenceImages を同時に受け付けないため。
+func TestVideoRequestBuilderOmitsReferenceImagesWithPreviousVideo(t *testing.T) {
+	builder := NewVideoRequestBuilderWithCharacters(newTestCharacters())
+	recipe := &ports.VideoRecipe{ProjectTitle: "test"}
+	cut := ports.Cut{
+		CutIndex:       2,
+		VisualAnchor:   "anchor",
+		CharacterID:    "zundamon",
+		AudioSync:      ports.AudioSync{DurationSec: 8},
+		KeyframeResult: ports.KeyframeResult{KeyframeReference: "gs://bucket/jobs/job-1/images/cut_2.png"},
+	}
+
+	// (a) PreviousVideoID あり → referenceImages は空。
+	withPrev := builder.Build(recipe, cut, nil, "video-1")
+	if withPrev.PreviousVideoID != "video-1" {
+		t.Fatalf("PreviousVideoID = %q, want video-1", withPrev.PreviousVideoID)
+	}
+	if len(withPrev.ReferenceImages) != 0 {
+		t.Fatalf("ReferenceImages = %v, want empty when PreviousVideoID is set", withPrev.ReferenceImages)
+	}
+
+	// (b) PreviousVideoID なし → 同じ cut/recipe で referenceImages が組み立てられる。
+	withoutPrev := builder.Build(recipe, cut, nil, "")
+	want := []string{
+		"gs://bucket/characters/zundamon.png",
+		"gs://bucket/jobs/job-1/images/cut_2.png",
+	}
+	if len(withoutPrev.ReferenceImages) != len(want) {
+		t.Fatalf("ReferenceImages = %v, want %v", withoutPrev.ReferenceImages, want)
+	}
+	for i := range want {
+		if withoutPrev.ReferenceImages[i] != want[i] {
+			t.Fatalf("ReferenceImages[%d] = %q, want %q", i, withoutPrev.ReferenceImages[i], want[i])
+		}
+	}
+}
+
 // TestVideoRequestBuilderReferenceImagesFallsBackWithoutCharacter は、キャラクター未解決や
 // 立ち絵未設定の場合に referenceImages を組み立てず image-to-video に委ねることを検証します。
 func TestVideoRequestBuilderReferenceImagesFallsBackWithoutCharacter(t *testing.T) {

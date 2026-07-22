@@ -110,8 +110,8 @@ func (r *VideoTimelineRunner) prepareKeyframes(ctx context.Context, recipe *port
 	if err != nil {
 		return nil, fmt.Errorf("カットキーフレーム生成に失敗しました: %w", err)
 	}
-	if len(keyframes) != len(recipe.Cuts) {
-		return nil, fmt.Errorf("生成されたキーフレーム数(%d)とカット数(%d)が一致しません", len(keyframes), len(recipe.Cuts))
+	if err := mustMatchCutCount("生成されたキーフレーム数", len(keyframes), len(recipe.Cuts)); err != nil {
+		return nil, err
 	}
 	return keyframes, nil
 }
@@ -139,7 +139,15 @@ func (r *VideoTimelineRunner) runCut(
 		return responseFromCut(*cut), nil
 	}
 
-	req := r.requestBuilder.Build(recipe, *cut, keyframe, lastVideoID)
+	// IsChainStart のカットは video-to-video チェーンの新規起点なので、直前カットの
+	// VideoID を PreviousVideoID として引き継がず、チェーンをここでリセットする
+	// （セクション境界や継続尺の上限到達によるリセット。ports.ChainControl 参照）。
+	previousVideoID := lastVideoID
+	if cut.IsChainStart {
+		previousVideoID = ""
+	}
+
+	req := r.requestBuilder.Build(recipe, *cut, keyframe, previousVideoID)
 	res, err := r.videoRunner.Run(ctx, req)
 	if err != nil {
 		cut.Status = ports.CutStatusFailed

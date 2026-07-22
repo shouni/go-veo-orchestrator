@@ -47,6 +47,7 @@ type manager struct {
 	videoRunner    ports.VideoRunner
 	generationUnit *generationUnit
 	promptDeps     *PromptDeps
+	imageCache     *imageCache
 }
 
 // New は、設定とキャラクター定義を基に新しい Workflows を初期化します。
@@ -74,7 +75,15 @@ func New(args ManagerArgs) (*ports.Workflows, error) {
 	}
 	m.generationUnit = unit
 
-	return m.buildAllRunners()
+	workflows, err := m.buildAllRunners()
+	if err != nil {
+		return nil, err
+	}
+	if m.imageCache != nil {
+		// 画像キャッシュの定期クリーンアップ goroutine を Close で停止できるようにする。
+		workflows.SetCloseFunc(m.imageCache.Stop)
+	}
+	return workflows, nil
 }
 
 // validateArgs は引数のバリデーションを行います。

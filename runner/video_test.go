@@ -231,6 +231,56 @@ func TestVideoTimelineRunner_RunChainsPreviousVideoID(t *testing.T) {
 	}
 }
 
+func TestVideoTimelineRunner_RunResetsChainAtChainStart(t *testing.T) {
+	ctx := context.Background()
+	recipe := &ports.VideoRecipe{
+		ProjectTitle: "chain reset",
+		Cuts: []ports.Cut{
+			{
+				CutIndex:     1,
+				VisualAnchor: "chain head",
+				AudioSync:    ports.AudioSync{DurationSec: 5},
+			},
+			{
+				CutIndex:     2,
+				VisualAnchor: "continues from cut 1",
+				AudioSync:    ports.AudioSync{DurationSec: 5},
+			},
+			{
+				CutIndex:     3,
+				VisualAnchor: "new chain start (section boundary)",
+				AudioSync:    ports.AudioSync{DurationSec: 5},
+				ChainControl: ports.ChainControl{IsChainStart: true},
+			},
+		},
+	}
+	keyframes := &mockCutKeyframeRunner{
+		images: []*imagePorts.ImageResponse{
+			{Data: []byte("image-1"), MimeType: "image/png", UsedSeed: 101},
+			{Data: []byte("image-2"), MimeType: "image/png", UsedSeed: 102},
+			{Data: []byte("image-3"), MimeType: "image/png", UsedSeed: 103},
+		},
+	}
+	video := &mockVideoRunner{}
+	runner := NewVideoTimelineRunner(keyframes, video, nil)
+
+	if _, err := runner.Run(ctx, recipe); err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+	if len(video.requests) != 3 {
+		t.Fatalf("Expected 3 video requests, got %d", len(video.requests))
+	}
+	if video.requests[0].PreviousVideoID != "" {
+		t.Errorf("cut 1 (first cut) should have no previous video ID, got %q", video.requests[0].PreviousVideoID)
+	}
+	if video.requests[1].PreviousVideoID != "video-1" {
+		t.Errorf("cut 2 (non-chain-start) should chain video-1, got %q", video.requests[1].PreviousVideoID)
+	}
+	if video.requests[2].PreviousVideoID != "" {
+		t.Errorf("cut 3 (IsChainStart) should reset the chain, got %q", video.requests[2].PreviousVideoID)
+	}
+}
+
 func TestVideoTimelineRunner_RunUsesSavedKeyframeReferences(t *testing.T) {
 	ctx := context.Background()
 	recipe := &ports.VideoRecipe{

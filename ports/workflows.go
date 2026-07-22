@@ -2,6 +2,7 @@ package ports
 
 import (
 	"context"
+	"sync"
 
 	imagePorts "github.com/shouni/gemini-image-kit/ports"
 )
@@ -12,6 +13,29 @@ type Workflows struct {
 	CutKeyframe CutKeyframeRunner
 	Video       VideoTimelineRunner
 	Publish     VideoPublishRunner
+
+	closeOnce sync.Once
+	onClose   func()
+}
+
+// SetCloseFunc は、Close で一度だけ実行するクリーンアップ処理を登録します。
+// 画像キャッシュのバックグラウンド goroutine など、workflow.New が確保した
+// リソースの解放を接続するために構築側（workflow パッケージ）が使う想定です。
+// ゼロ値や手組みの Workflows には登録がなく、Close は何もしません。
+func (w *Workflows) SetCloseFunc(fn func()) {
+	w.onClose = fn
+}
+
+// Close は、workflow.New で構築した Workflows が確保したバックグラウンド
+// リソース（現状は画像キャッシュの定期クリーンアップ goroutine）を解放します。
+// 複数回呼んでも安全で、2回目以降は何もしません。
+func (w *Workflows) Close() error {
+	w.closeOnce.Do(func() {
+		if w.onClose != nil {
+			w.onClose()
+		}
+	})
+	return nil
 }
 
 // ScriptRunner は、ソース（URLやテキスト）を解析し、Music Recipe を含む動画台本を生成する責務を持ちます。
