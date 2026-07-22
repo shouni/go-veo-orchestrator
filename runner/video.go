@@ -110,8 +110,8 @@ func (r *VideoTimelineRunner) prepareKeyframes(ctx context.Context, recipe *port
 	if err != nil {
 		return nil, fmt.Errorf("カットキーフレーム生成に失敗しました: %w", err)
 	}
-	if len(keyframes) != len(recipe.Cuts) {
-		return nil, fmt.Errorf("生成されたキーフレーム数(%d)とカット数(%d)が一致しません", len(keyframes), len(recipe.Cuts))
+	if err := mustMatchCutCount("生成されたキーフレーム数", len(keyframes), len(recipe.Cuts)); err != nil {
+		return nil, err
 	}
 	return keyframes, nil
 }

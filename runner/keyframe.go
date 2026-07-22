@@ -13,6 +13,17 @@ import (
 	"github.com/shouni/go-veo-orchestrator/ports"
 )
 
+// mustMatchCutCount は、カット単位で生成した成果物（キーフレーム画像など）の数 got が
+// カット数 want と一致することを検証します。一致すれば nil を返します。kind は成果物の
+// 呼称（例: "生成された画像の数" / "生成されたキーフレーム数"）で、エラーメッセージの
+// 文言をそれぞれの呼び出し元と同一に保つためのラベルです。
+func mustMatchCutCount(kind string, got, want int) error {
+	if got == want {
+		return nil
+	}
+	return fmt.Errorf("%s(%d)とカット数(%d)が一致しません", kind, got, want)
+}
+
 const defaultCacheControl = "public, max-age=1800"
 
 // CutKeyframeRunner は、動画レシピを元に並列キーフレーム生成を管理します。
@@ -67,8 +78,8 @@ func (r *CutKeyframeRunner) RunAndSave(ctx context.Context, recipe *ports.VideoR
 		return nil, err
 	}
 
-	if len(images) != len(recipe.Cuts) {
-		return nil, fmt.Errorf("生成された画像の数(%d)とカット数(%d)が一致しません", len(images), len(recipe.Cuts))
+	if err := mustMatchCutCount("生成された画像の数", len(images), len(recipe.Cuts)); err != nil {
+		return nil, err
 	}
 	for i, image := range images {
 		keyframePath, err := r.saveKeyframeImage(ctx, basePath, i+1, image)
