@@ -171,7 +171,7 @@ func (g *Generator) EditCut(ctx context.Context, cut ports.Cut, editPrompt strin
 		return nil, err
 	}
 	if cut.KeyframeReference == "" {
-		return nil, fmt.Errorf("cut %d には編集対象の既存キーフレームがありません", cut.CutIndex)
+		return nil, fmt.Errorf("cut %d: %w", cut.CutIndex, ports.ErrNoKeyframeToEdit)
 	}
 
 	char := g.characterForCut(cut)
@@ -181,16 +181,8 @@ func (g *Generator) EditCut(ctx context.Context, cut ports.Cut, editPrompt strin
 
 	userPrompt, systemPrompt := g.pb.BuildEdit(cut, char, editPrompt)
 	req := imagePorts.SingleImageRequest{
-		GenerationOptions: imagePorts.GenerationOptions{
-			Model:          g.model,
-			Prompt:         userPrompt,
-			SystemPrompt:   systemPrompt,
-			NegativePrompt: negativeKeyframePrompt,
-			AspectRatio:    g.aspectRatio,
-			ImageSize:      ImageSize2K,
-			Seed:           char.Seed,
-		},
-		Image: imagePorts.ImageURI{ReferenceURL: cut.KeyframeReference},
+		GenerationOptions: g.buildGenerationOptions(userPrompt, systemPrompt, char.Seed),
+		Image:             imagePorts.ImageURI{ReferenceURL: cut.KeyframeReference},
 	}
 
 	logger := slog.With(
@@ -217,19 +209,25 @@ func (g *Generator) buildImageRequest(cut ports.Cut, char *characterkit.Characte
 	fileURI := g.composer.GetResourceURI(referenceURL)
 
 	return imagePorts.SingleImageRequest{
-		GenerationOptions: imagePorts.GenerationOptions{
-			Model:          g.model,
-			Prompt:         userPrompt,
-			SystemPrompt:   systemPrompt,
-			NegativePrompt: negativeKeyframePrompt,
-			AspectRatio:    g.aspectRatio,
-			ImageSize:      ImageSize2K,
-			Seed:           char.Seed,
-		},
+		GenerationOptions: g.buildGenerationOptions(userPrompt, systemPrompt, char.Seed),
 		Image: imagePorts.ImageURI{
 			FileAPIURI:   fileURI,
 			ReferenceURL: referenceURL,
 		},
+	}
+}
+
+// buildGenerationOptions builds the GenerationOptions shared by buildImageRequest and EditCut;
+// only the Image field differs between a fresh keyframe generation and an edit of an existing one.
+func (g *Generator) buildGenerationOptions(prompt, systemPrompt string, seed *int64) imagePorts.GenerationOptions {
+	return imagePorts.GenerationOptions{
+		Model:          g.model,
+		Prompt:         prompt,
+		SystemPrompt:   systemPrompt,
+		NegativePrompt: negativeKeyframePrompt,
+		AspectRatio:    g.aspectRatio,
+		ImageSize:      ImageSize2K,
+		Seed:           seed,
 	}
 }
 

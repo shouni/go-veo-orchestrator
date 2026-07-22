@@ -42,10 +42,6 @@ type fakeContentGenerator struct {
 	lastOpts  gemini.GenerateOptions
 }
 
-func (f *fakeContentGenerator) GenerateContent(ctx context.Context, modelName string, prompt string) (*gemini.Response, error) {
-	return f.GenerateWithParts(ctx, modelName, []*genai.Part{{Text: prompt}}, gemini.GenerateOptions{})
-}
-
 func (f *fakeContentGenerator) GenerateWithParts(_ context.Context, modelName string, parts []*genai.Part, opts gemini.GenerateOptions) (*gemini.Response, error) {
 	f.calls++
 	f.lastModel = modelName

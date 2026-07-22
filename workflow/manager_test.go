@@ -68,10 +68,6 @@ func newTestCharacters(list []characterkit.Character) (*characterkit.Characters,
 
 type fakeGenerativeModel struct{}
 
-func (fakeGenerativeModel) GenerateContent(context.Context, string, string) (*gemini.Response, error) {
-	return &gemini.Response{}, nil
-}
-
 func (fakeGenerativeModel) GenerateWithParts(context.Context, string, []*genai.Part, gemini.GenerateOptions) (*gemini.Response, error) {
 	return &gemini.Response{}, nil
 }
@@ -134,14 +130,6 @@ type fakeContentReader struct{}
 
 func (fakeContentReader) Open(context.Context, string) (io.ReadCloser, error) {
 	return io.NopCloser(http.NoBody), nil
-}
-
-func (fakeContentReader) List(context.Context, string, func(string) error) error {
-	return nil
-}
-
-func (fakeContentReader) Exists(context.Context, string) (bool, error) {
-	return true, nil
 }
 
 type fakeWriter struct{}

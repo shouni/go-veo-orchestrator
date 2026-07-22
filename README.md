@@ -160,6 +160,7 @@ result, err := workflows.Video.RunAndSave(ctx, recipe, "video_music_meta.json")
 | `ports.ErrEditingNotSupported` | `EditAndSave` で、設定済みの画像生成エンジンがキーフレーム編集（`EditCut`）を実装していない場合 | 全体再生成（`RunAndSave`）へのフォールバック |
 | `ports.ErrInvalidAIResponse` | AI の応答テキストを `VideoRecipe` の JSON として解析できなかった場合 | ネットワーク/認証エラーと区別したリトライ判断 |
 | `ports.ErrVideoRunnerNotConfigured` | `VideoRunner` 未設定のまま `Workflows.Video` を呼び出した場合 | 動画生成ステップのスキップ、設定不備の通知 |
+| `ports.ErrInputTooLarge` | ソースの入力サイズが許容上限（5MB）を超えた場合 | 入力の分割やソースの見直しを促す |
 
 ---
 
