@@ -8,18 +8,9 @@ import (
 
 // buildAllRunners は、ワークフローの実行に必要なすべてのランナーを構築して返します。
 func (m *manager) buildAllRunners() (*ports.Workflows, error) {
-	sr, err := m.buildScriptRunner()
-	if err != nil {
-		return nil, err
-	}
-	keyframeR, err := m.buildKeyframeRunner()
-	if err != nil {
-		return nil, err
-	}
-	pubR, err := m.buildPublishRunner()
-	if err != nil {
-		return nil, err
-	}
+	sr := m.buildScriptRunner()
+	keyframeR := m.buildKeyframeRunner()
+	pubR := m.buildPublishRunner()
 	videoR := m.buildVideoTimelineRunner(keyframeR, pubR)
 
 	return &ports.Workflows{
@@ -31,12 +22,12 @@ func (m *manager) buildAllRunners() (*ports.Workflows, error) {
 }
 
 // buildScriptRunner は、台本生成を担当する Runner を作成します。
-func (m *manager) buildScriptRunner() (*runner.VideoScriptRunner, error) {
-	return runner.NewVideoScriptRunner(m.promptDeps.ScriptPrompt, m.aiClient, m.reader, m.cfg.GeminiModel, m.promptDeps.Characters), nil
+func (m *manager) buildScriptRunner() *runner.VideoScriptRunner {
+	return runner.NewVideoScriptRunner(m.promptDeps.ScriptPrompt, m.aiClient, m.reader, m.cfg.GeminiModel, m.promptDeps.Characters)
 }
 
 // buildKeyframeRunner は、カットのキーフレーム画像生成を担当する Runner を作成します。
-func (m *manager) buildKeyframeRunner() (*runner.CutKeyframeRunner, error) {
+func (m *manager) buildKeyframeRunner() *runner.CutKeyframeRunner {
 	keyframeGen := keyframe.NewGenerator(
 		m.generationUnit.composer,
 		m.generationUnit.imageGenerator,
@@ -47,12 +38,12 @@ func (m *manager) buildKeyframeRunner() (*runner.CutKeyframeRunner, error) {
 		keyframe.WithAspectRatio(m.cfg.KeyframeAspectRatio),
 	)
 
-	return runner.NewCutKeyframeRunner(keyframeGen, m.writer), nil
+	return runner.NewCutKeyframeRunner(keyframeGen, m.writer)
 }
 
 // buildPublishRunner は、動画メタデータのパブリッシュを担当する Runner を作成します。
-func (m *manager) buildPublishRunner() (*runner.VideoPublisherRunner, error) {
-	return runner.NewVideoPublisherRunner(m.writer), nil
+func (m *manager) buildPublishRunner() *runner.VideoPublisherRunner {
+	return runner.NewVideoPublisherRunner(m.writer)
 }
 
 // buildVideoTimelineRunner は、キーフレーム生成から Veo 生成までをつなぐ Runner を作成します。

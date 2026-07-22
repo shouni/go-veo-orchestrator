@@ -135,7 +135,7 @@ func (r *CutKeyframeRunner) EditAndSave(ctx context.Context, recipe *ports.Video
 	}
 	recipe.Normalize()
 	if len(recipe.Cuts) != 1 {
-		return nil, fmt.Errorf("EditAndSave は単一カットの recipe のみ対応しています（cuts=%d）", len(recipe.Cuts))
+		return nil, fmt.Errorf("%w（cuts=%d）", ports.ErrSingleCutRequired, len(recipe.Cuts))
 	}
 
 	editor, ok := r.generator.(cutImageEditor)
@@ -145,7 +145,7 @@ func (r *CutKeyframeRunner) EditAndSave(ctx context.Context, recipe *ports.Video
 
 	cut := recipe.Cuts[0]
 	if cut.KeyframeReference == "" {
-		return nil, fmt.Errorf("cut %d に編集対象のキーフレームがありません", cut.CutIndex)
+		return nil, fmt.Errorf("cut %d: %w", cut.CutIndex, ports.ErrNoKeyframeToEdit)
 	}
 
 	targetDir, basePath, err := resolveKeyframeBasePath(outputPath)

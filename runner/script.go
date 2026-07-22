@@ -107,6 +107,13 @@ func (r *VideoScriptRunner) Run(ctx context.Context, sourceURL string, mode stri
 	if resp == nil || strings.TrimSpace(resp.Text) == "" {
 		return nil, fmt.Errorf("AIクライアントが空の応答を返しました: %w", ports.ErrInvalidAIResponse)
 	}
+	if resp.Usage != nil {
+		slog.Info("ScriptRunner: トークン使用量",
+			"prompt_tokens", resp.Usage.PromptTokenCount,
+			"candidates_tokens", resp.Usage.CandidatesTokenCount,
+			"total_tokens", resp.Usage.TotalTokenCount,
+		)
+	}
 
 	// 4. AI の応答をパース
 	recipe, err := r.parseResponse(resp.Text)

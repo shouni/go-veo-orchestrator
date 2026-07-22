@@ -61,16 +61,6 @@ func (c *Composer) CharacterForCut(cut ports.Cut) *characterkit.Character {
 	return c.Characters.GetCharacterWithDefault(cut.CharacterID)
 }
 
-// GetCharacterResourceURI はキャラクターの既定参照画像（ReferenceURL）の画像URIを取得します。
-// アスペクト比別の参照画像（ReferenceURLs）を取得するには GetResourceURI を使ってください。
-func (c *Composer) GetCharacterResourceURI(charID string) string {
-	char := c.Characters.GetCharacterWithDefault(charID)
-	if char == nil {
-		return ""
-	}
-	return c.GetResourceURI(char.ReferenceURL)
-}
-
 // GetResourceURI は、指定した参照画像URL（ReferenceURL または ReferenceURLs の値）に対応する
 // File API 上の画像URIを取得します。PrepareCharacterResources で事前アップロード済みである必要が
 // あります（未準備、または Vertex AI + GCS URI でアップロードをバイパスした場合は空文字を返し、

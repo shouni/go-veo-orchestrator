@@ -30,4 +30,13 @@ var (
 	// 返されます。呼び出し側はこれを検知して、解析失敗とは区別した入力側の
 	// 是正（分割やソースの見直し）を促せます。
 	ErrInputTooLarge = errors.New("input source exceeds maximum allowed size")
+
+	// ErrNoKeyframeToEdit は、編集対象のカットにまだ既存のキーフレーム画像
+	// （KeyframeReference）が設定されていない場合に返されます。呼び出し側は
+	// これを検知して、先に RunAndSave 等でキーフレームを生成するよう促せます。
+	ErrNoKeyframeToEdit = errors.New("cut has no existing keyframe to edit")
+
+	// ErrSingleCutRequired は、CutKeyframeRunner.EditAndSave に単一カット以外の
+	// recipe が渡された場合に返されます。
+	ErrSingleCutRequired = errors.New("EditAndSave supports only a single-cut recipe")
 )

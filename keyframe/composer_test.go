@@ -82,10 +82,10 @@ func TestComposer_PrepareCharacterResources(t *testing.T) {
 		t.Fatalf("PrepareCharacterResources failed: %v", err)
 	}
 
-	if uri := mc.GetCharacterResourceURI("zundamon"); uri == "" {
+	if uri := mc.GetResourceURI("gs://bucket/zunda.png"); uri == "" {
 		t.Error("zundamon resource not cached")
 	}
-	if uri := mc.GetCharacterResourceURI("metan"); uri == "" {
+	if uri := mc.GetResourceURI("gs://bucket/metan.png"); uri == "" {
 		t.Error("default character (metan) resource not cached")
 	}
 
