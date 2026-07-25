@@ -164,7 +164,7 @@ func (c *Composer) getOrUploadResource(ctx context.Context, key, referenceURL st
 		}
 
 		// ここで実際に File API (Google AI Studio) へアップロードされる
-		uploadedURI, uploadErr := c.AssetManager.UploadFile(ctx, referenceURL)
+		uploadedURI, uploadErr := c.AssetManager.EnsureUploaded(ctx, referenceURL)
 		if uploadErr != nil {
 			return nil, uploadErr
 		}

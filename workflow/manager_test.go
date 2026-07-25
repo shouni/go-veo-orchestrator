@@ -91,8 +91,8 @@ func (fakeGenerativeModel) IsVertexAI() bool {
 	return false
 }
 
-func (fakeGenerativeModel) UploadFile(context.Context, io.Reader, string, string) (string, string, error) {
-	return "file", "uri", nil
+func (fakeGenerativeModel) UploadFile(context.Context, io.Reader, string, string) (gemini.UploadedFile, error) {
+	return gemini.UploadedFile{URI: "uri", Name: "file"}, nil
 }
 
 func (fakeGenerativeModel) DeleteFile(context.Context, string) error {
@@ -109,8 +109,8 @@ func (fakeHTTPClient) DoRequest(*http.Request) ([]byte, error) {
 	return nil, nil
 }
 
-func (fakeHTTPClient) FetchBytes(context.Context, string) ([]byte, error) {
-	return nil, nil
+func (fakeHTTPClient) FetchBytes(context.Context, string) ([]byte, string, error) {
+	return nil, "", nil
 }
 
 func (fakeHTTPClient) FetchAndDecodeJSON(context.Context, string, any) error {
@@ -133,8 +133,8 @@ func (fakeHTTPClient) GetStream(context.Context, string) (io.ReadCloser, error) 
 	return io.NopCloser(http.NoBody), nil
 }
 
-func (fakeHTTPClient) IsSafeURL(string) (bool, error) {
-	return true, nil
+func (fakeHTTPClient) ValidateURL(context.Context, string) error {
+	return nil
 }
 
 func (fakeHTTPClient) IsSecureServiceURL(string) bool {
