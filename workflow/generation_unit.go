@@ -11,7 +11,7 @@ import (
 )
 
 // buildGenerationUnit は画像生成 core、composer、generator をまとめた内部ユニットを構築します。
-func (m *manager) buildGenerationUnit(client gemini.GenerativeModel, modelName string) (*generationUnit, error) {
+func (m *manager) buildGenerationUnit(client gemini.MultimodalModel, modelName string) (*generationUnit, error) {
 	core, err := m.buildCore(client)
 	if err != nil {
 		return nil, err
@@ -35,17 +35,16 @@ func (m *manager) buildGenerationUnit(client gemini.GenerativeModel, modelName s
 }
 
 // buildCore は GeminiImageCore エンジンを初期化します。
-func (m *manager) buildCore(aiClient gemini.GenerativeModel) (*generator.GeminiImageCore, error) {
+func (m *manager) buildCore(aiClient gemini.MultimodalModel) (*generator.GeminiImageCore, error) {
 	// キャッシュを manager に保持し、Workflows.Close から Stop できるようにする。
 	m.imageCache = newImageCache()
-	core, err := generator.NewGeminiImageCore(
-		aiClient,
-		m.reader,
-		m.httpClient,
-		m.imageCache,
-		defaultTTL,
-		false,
-	)
+	core, err := generator.NewGeminiImageCore(generator.GeminiImageCoreConfig{
+		AIClient:   aiClient,
+		Reader:     m.reader,
+		HTTPClient: m.httpClient,
+		Cache:      m.imageCache,
+		CacheTTL:   defaultTTL,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("画像生成エンジンの初期化に失敗しました: %w", err)
 	}

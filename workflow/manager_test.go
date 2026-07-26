@@ -11,7 +11,6 @@ import (
 	"github.com/shouni/go-gemini-client/gemini"
 	"github.com/shouni/go-remote-io/remoteio"
 	"github.com/shouni/go-veo-orchestrator/ports"
-	"google.golang.org/genai"
 )
 
 func TestNewBuildsWorkflows(t *testing.T) {
@@ -83,7 +82,7 @@ func newTestCharacters(list []characterkit.Character) (*characterkit.Characters,
 
 type fakeGenerativeModel struct{}
 
-func (fakeGenerativeModel) GenerateWithParts(context.Context, string, []*genai.Part, gemini.GenerateOptions) (*gemini.Response, error) {
+func (fakeGenerativeModel) GenerateWithAttachments(context.Context, string, string, []gemini.Attachment, gemini.GenerateOptions) (*gemini.Response, error) {
 	return &gemini.Response{}, nil
 }
 
