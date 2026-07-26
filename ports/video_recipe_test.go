@@ -271,3 +271,58 @@ func TestVideoRecipeNormalizeDoesNotOverwriteExplicitCuts(t *testing.T) {
 		t.Fatalf("VisualAnchor = %q, want explicit cut", recipe.Cuts[0].VisualAnchor)
 	}
 }
+
+// TestVideoRecipeValidateRejectsBrokenStructure は、Normalize では埋めようのない破綻を
+// 弾くことを確認します。JSON Schema は型と必須項目までしか縛れないため、これらは
+// 文法制約をすり抜けて後段（Veo のカット生成）まで到達します。
+func TestVideoRecipeValidateRejectsBrokenStructure(t *testing.T) {
+	tests := map[string]*VideoRecipe{
+		"nil recipe": nil,
+		"no title": {
+			Cuts: Cuts{{CutIndex: 1, VisualAnchor: "a"}},
+		},
+		"no cuts": {
+			ProjectTitle: "Title",
+		},
+		"section index beyond the music recipe": {
+			ProjectTitle: "Title",
+			MusicRecipe:  MusicRecipe{Sections: []Section{{Name: "Verse"}}},
+			Cuts:         Cuts{{CutIndex: 1, SectionIndex: 2, VisualAnchor: "a"}},
+		},
+	}
+
+	for name, recipe := range tests {
+		t.Run(name, func(t *testing.T) {
+			if err := recipe.Validate(); err == nil {
+				t.Error("Validate() error = nil, want an error")
+			}
+		})
+	}
+}
+
+// TestVideoRecipeValidateAcceptsUnassignedSectionIndex は、section_index の 0 を通すことを
+// 確認します。0 は「未割り当て」を表す正当な値で、Normalize が StartSec から補完します。
+func TestVideoRecipeValidateAcceptsUnassignedSectionIndex(t *testing.T) {
+	recipe := &VideoRecipe{
+		ProjectTitle: "Title",
+		MusicRecipe:  MusicRecipe{Sections: []Section{{Name: "Verse"}}},
+		Cuts:         Cuts{{CutIndex: 1, SectionIndex: 0, VisualAnchor: "a"}},
+	}
+
+	if err := recipe.Validate(); err != nil {
+		t.Errorf("Validate() error = %v, want nil", err)
+	}
+}
+
+// TestVideoRecipeValidateAcceptsMusicTitleAsFallback は、project_title が空でも
+// music_recipe 側にタイトルがあれば通ることを確認します。Normalize が補完する関係です。
+func TestVideoRecipeValidateAcceptsMusicTitleAsFallback(t *testing.T) {
+	recipe := &VideoRecipe{
+		MusicRecipe: MusicRecipe{Title: "Song"},
+		Cuts:        Cuts{{CutIndex: 1, VisualAnchor: "a"}},
+	}
+
+	if err := recipe.Validate(); err != nil {
+		t.Errorf("Validate() error = %v, want nil", err)
+	}
+}

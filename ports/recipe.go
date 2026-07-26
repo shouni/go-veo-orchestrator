@@ -1,6 +1,11 @@
 package ports
 
-import "github.com/shouni/go-gemini-client/lyria"
+import (
+	"fmt"
+	"strings"
+
+	"github.com/shouni/go-gemini-client/lyria"
+)
 
 // VideoRecipe は ScriptRunner が生成する動画台本全体の構造です。
 // Lyria の Music Recipe と各カットの Audio Cue / Visual Anchor を同じ JSON に保持し、
@@ -205,4 +210,41 @@ func (c *Cut) Normalize(index int, startSec float64) {
 	if c.EndSec == 0 {
 		c.EndSec = c.StartSec + c.DurationSec
 	}
+}
+
+// Validate は VideoRecipe が後段の処理に耐える状態かを検証します。
+//
+// Normalize が埋められる欠落は Normalize に任せ、ここでは埋めようのない破綻だけを見ます。
+// AI 生成の台本は JSON Schema で型と必須項目までしか縛れず、cuts が空になることや
+// section_index が音楽のセクション数を超えることは文法制約の外側で起こります。
+func (vr *VideoRecipe) Validate() error {
+	if vr == nil {
+		return fmt.Errorf("video recipe is nil")
+	}
+	if strings.TrimSpace(firstNonEmptyString(vr.ProjectTitle, vr.MusicRecipe.Title)) == "" {
+		return fmt.Errorf("video recipe title is required")
+	}
+	if len(vr.Cuts) == 0 {
+		return fmt.Errorf("video recipe requires cuts")
+	}
+
+	numSections := len(vr.MusicRecipe.Sections)
+	for _, cut := range vr.Cuts {
+		// SectionIndex は1始まりで、0は「未割り当て」を意味する正当な値。
+		// 範囲外の非ゼロ値だけを不正とする。
+		if cut.SectionIndex < 0 || cut.SectionIndex > numSections {
+			return fmt.Errorf("cut %d has out-of-range section_index %d (recipe has %d sections)", cut.CutIndex, cut.SectionIndex, numSections)
+		}
+	}
+	return nil
+}
+
+// firstNonEmptyString は、空白を除いて最初に中身のある文字列を返します。
+func firstNonEmptyString(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
 }

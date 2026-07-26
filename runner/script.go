@@ -93,39 +93,66 @@ func (r *VideoScriptRunner) Run(ctx context.Context, sourceURL string, mode stri
 		return nil, fmt.Errorf("プロンプトの構築に失敗しました: %w", err)
 	}
 
-	// 3. Gemini API を呼び出し（構造化出力でJSON文法を強制）
-	slog.Info("ScriptRunner: Gemini APIを呼び出し中", "model", r.aiModel)
+	// 3. Gemini API を呼び出し、使える台本が得られるまで作り直す
+	return r.generateRecipe(ctx, finalPrompt, sourceRecipe)
+}
+
+// maxScriptAttempts は、検証に落ちた台本を作り直す最大回数です。
+//
+// 1 回で諦めると生成のゆらぎがそのままジョブ失敗になり、無制限に粘ると台本生成の課金だけが
+// 積み上がります。数回試して直らないなら、プロンプトかスキーマ側が壊れています。
+const maxScriptAttempts = 3
+
+// generateRecipe は台本を生成し、後段が扱える構造になるまでやり直します。
+//
+// JSON Schema は型と必須項目までしか縛れないため、cuts が空になる、section_index が
+// 音楽のセクション数を超える、といった破綻は素通りします。ここで弾かないと、
+// パイプラインで最も高価な Veo のカット生成まで進んでから失敗します。
+func (r *VideoScriptRunner) generateRecipe(ctx context.Context, finalPrompt string, sourceRecipe *ports.VideoRecipe) (*ports.VideoRecipe, error) {
 	opts := gemini.GenerateOptions{
 		ResponseMIMEType:   "application/json",
 		ResponseJSONSchema: ports.VideoRecipeSchema(r.characterIDs()),
 	}
-	resp, err := r.aiClient.GenerateWithAttachments(ctx, r.aiModel, finalPrompt, nil, opts)
-	if err != nil {
-		return nil, fmt.Errorf("geminiによるコンテンツ生成に失敗しました: %w", err)
-	}
-	if resp == nil || strings.TrimSpace(resp.Text) == "" {
-		return nil, fmt.Errorf("AIクライアントが空の応答を返しました: %w", ports.ErrInvalidAIResponse)
-	}
-	if resp.Usage != nil {
-		slog.Info("ScriptRunner: トークン使用量",
-			"prompt_tokens", resp.Usage.PromptTokenCount,
-			"candidates_tokens", resp.Usage.CandidatesTokenCount,
-			"total_tokens", resp.Usage.TotalTokenCount,
-		)
+
+	var lastErr error
+	for attempt := 1; attempt <= maxScriptAttempts; attempt++ {
+		slog.InfoContext(ctx, "ScriptRunner: Gemini APIを呼び出し中", "model", r.aiModel, "attempt", attempt)
+
+		resp, err := r.aiClient.GenerateWithAttachments(ctx, r.aiModel, finalPrompt, nil, opts)
+		if err != nil {
+			return nil, fmt.Errorf("geminiによるコンテンツ生成に失敗しました: %w", err)
+		}
+		if resp == nil || strings.TrimSpace(resp.Text) == "" {
+			return nil, fmt.Errorf("AIクライアントが空の応答を返しました: %w", ports.ErrInvalidAIResponse)
+		}
+		if resp.Usage != nil {
+			slog.InfoContext(ctx, "ScriptRunner: トークン使用量",
+				"prompt_tokens", resp.Usage.PromptTokenCount,
+				"candidates_tokens", resp.Usage.CandidatesTokenCount,
+				"total_tokens", resp.Usage.TotalTokenCount,
+			)
+		}
+
+		recipe, err := r.parseResponse(resp.Text)
+		if err != nil {
+			// JSON として読めない応答は作り直しても直る見込みが薄いので、そのまま返す。
+			return nil, err
+		}
+
+		// music_recipe はスキーマから意図的に除外している（AIには生成させない）ため、
+		// source 側の値をそのまま引き継ぐ。section_index の検証もこれが揃ってから行う。
+		recipe.MusicRecipe = sourceRecipe.MusicRecipe
+		recipe.Normalize()
+
+		lastErr = recipe.Validate()
+		if lastErr == nil {
+			return recipe, nil
+		}
+		slog.WarnContext(ctx, "ScriptRunner: 生成された台本が不正なため作り直します",
+			"attempt", attempt, "max_attempts", maxScriptAttempts, "err", lastErr)
 	}
 
-	// 4. AI の応答をパース
-	recipe, err := r.parseResponse(resp.Text)
-	if err != nil {
-		return nil, err
-	}
-
-	// music_recipe はスキーマから意図的に除外している（AIには生成させない）ため、
-	// source 側の値をそのまま引き継ぐ。
-	recipe.MusicRecipe = sourceRecipe.MusicRecipe
-	recipe.Normalize()
-
-	return recipe, nil
+	return nil, fmt.Errorf("生成された台本が %d 回とも不正でした: %w", maxScriptAttempts, lastErr)
 }
 
 // readContent は、指定されたソースURLからコンテンツを取得します。

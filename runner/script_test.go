@@ -378,3 +378,58 @@ type staticContentReader struct {
 func (r staticContentReader) Open(context.Context, string) (io.ReadCloser, error) {
 	return io.NopCloser(strings.NewReader(string(r.content))), nil
 }
+
+// sequenceContentGenerator returns canned responses in order so a test can hand back a broken
+// recipe first and a valid one afterwards.
+type sequenceContentGenerator struct {
+	responses []string
+	calls     int
+}
+
+func (g *sequenceContentGenerator) GenerateWithAttachments(_ context.Context, _ string, _ string, _ []gemini.Attachment, _ gemini.GenerateOptions) (*gemini.Response, error) {
+	text := g.responses[min(g.calls, len(g.responses)-1)]
+	g.calls++
+	return &gemini.Response{Text: text}, nil
+}
+
+// TestVideoScriptRunnerRetriesInvalidRecipe verifies a recipe that breaks the structure is
+// regenerated instead of being handed to the pipeline. Cut generation calls Veo, which is the
+// most expensive step, so a broken script has to be caught here.
+func TestVideoScriptRunnerRetriesInvalidRecipe(t *testing.T) {
+	// music_recipe にセクションが 1 つしかないのに section_index が 2 のカット。
+	broken := `{"project_title":"Broken","cuts":[{"cut_index":1,"section_index":2,"visual_anchor":"a"}]}`
+	valid := `{"project_title":"Good","cuts":[{"cut_index":1,"section_index":1,"visual_anchor":"a"}]}`
+	ai := &sequenceContentGenerator{responses: []string{broken, valid}}
+	reader := staticContentReader{content: []byte(`{"title":"music title","sections":[{"name":"Verse","duration_seconds":10}]}`)}
+
+	r := NewVideoScriptRunner(&fakeScriptPrompt{prompt: "p"}, ai, reader, "model", nil)
+	recipe, err := r.Run(context.Background(), "memory://source", "default")
+
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if ai.calls != 2 {
+		t.Errorf("AI calls = %d, want 2 (the first recipe should have been rejected)", ai.calls)
+	}
+	if recipe.ProjectTitle != "Good" {
+		t.Errorf("recipe.ProjectTitle = %q, want the regenerated one", recipe.ProjectTitle)
+	}
+}
+
+// TestVideoScriptRunnerFailsAfterMaxAttempts verifies a script that never validates stops here
+// rather than failing later with a less obvious error.
+func TestVideoScriptRunnerFailsAfterMaxAttempts(t *testing.T) {
+	broken := `{"project_title":"Broken","cuts":[{"cut_index":1,"section_index":9,"visual_anchor":"a"}]}`
+	ai := &sequenceContentGenerator{responses: []string{broken}}
+	reader := staticContentReader{content: []byte(`{"title":"music title","sections":[{"name":"Verse","duration_seconds":10}]}`)}
+
+	r := NewVideoScriptRunner(&fakeScriptPrompt{prompt: "p"}, ai, reader, "model", nil)
+	_, err := r.Run(context.Background(), "memory://source", "default")
+
+	if err == nil {
+		t.Fatal("Run() error = nil, want an error")
+	}
+	if ai.calls != maxScriptAttempts {
+		t.Errorf("AI calls = %d, want %d", ai.calls, maxScriptAttempts)
+	}
+}
