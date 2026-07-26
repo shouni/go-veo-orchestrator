@@ -13,7 +13,6 @@ import (
 	characterkit "github.com/shouni/go-character-kit/character"
 	"github.com/shouni/go-gemini-client/gemini"
 	"github.com/shouni/go-veo-orchestrator/ports"
-	"google.golang.org/genai"
 )
 
 const (
@@ -30,7 +29,7 @@ var jsonBlockRegex = regexp.MustCompile("(?s)```(?:json)?\\s*(.*?\\S)\\s*```")
 // VideoScriptRunner は入力ソースから Music Recipe を読み取り、動画レシピを生成します。
 type VideoScriptRunner struct {
 	promptBuilder ports.ScriptPrompt
-	aiClient      gemini.Generator
+	aiClient      gemini.MultimodalGenerator
 	reader        ports.ContentReader
 	aiModel       string
 	characters    *characterkit.Characters
@@ -42,7 +41,7 @@ type VideoScriptRunner struct {
 // （空文字のみ許容）になります。
 func NewVideoScriptRunner(
 	pb ports.ScriptPrompt,
-	ai gemini.Generator,
+	ai gemini.MultimodalGenerator,
 	r ports.ContentReader,
 	aiModel string,
 	characters *characterkit.Characters,
@@ -97,10 +96,10 @@ func (r *VideoScriptRunner) Run(ctx context.Context, sourceURL string, mode stri
 	// 3. Gemini API を呼び出し（構造化出力でJSON文法を強制）
 	slog.Info("ScriptRunner: Gemini APIを呼び出し中", "model", r.aiModel)
 	opts := gemini.GenerateOptions{
-		ResponseMIMEType: "application/json",
-		ResponseSchema:   ports.VideoRecipeSchema(r.characterIDs()),
+		ResponseMIMEType:   "application/json",
+		ResponseJSONSchema: ports.VideoRecipeSchema(r.characterIDs()),
 	}
-	resp, err := r.aiClient.GenerateWithParts(ctx, r.aiModel, []*genai.Part{{Text: finalPrompt}}, opts)
+	resp, err := r.aiClient.GenerateWithAttachments(ctx, r.aiModel, finalPrompt, nil, opts)
 	if err != nil {
 		return nil, fmt.Errorf("geminiによるコンテンツ生成に失敗しました: %w", err)
 	}

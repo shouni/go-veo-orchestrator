@@ -10,7 +10,6 @@ import (
 	characterkit "github.com/shouni/go-character-kit/character"
 	"github.com/shouni/go-gemini-client/gemini"
 	"github.com/shouni/go-veo-orchestrator/ports"
-	"google.golang.org/genai"
 )
 
 // fakeScriptPrompt implements ports.ScriptPrompt and records the last mode/data it was
@@ -31,30 +30,26 @@ func (f *fakeScriptPrompt) Build(mode string, data *ports.TemplateData) (string,
 	return f.prompt, nil
 }
 
-// fakeContentGenerator implements gemini.Generator and records the model/parts/options it
-// was called with.
+// fakeContentGenerator implements gemini.MultimodalGenerator and records the model/prompt/options
+// it was called with.
 type fakeContentGenerator struct {
-	resp      *gemini.Response
-	err       error
-	calls     int
-	lastModel string
-	lastParts []*genai.Part
-	lastOpts  gemini.GenerateOptions
+	resp       *gemini.Response
+	err        error
+	calls      int
+	lastModel  string
+	lastPrompt string
+	lastOpts   gemini.GenerateOptions
 }
 
-func (f *fakeContentGenerator) GenerateWithParts(_ context.Context, modelName string, parts []*genai.Part, opts gemini.GenerateOptions) (*gemini.Response, error) {
+func (f *fakeContentGenerator) GenerateWithAttachments(_ context.Context, modelName string, prompt string, _ []gemini.Attachment, opts gemini.GenerateOptions) (*gemini.Response, error) {
 	f.calls++
 	f.lastModel = modelName
-	f.lastParts = parts
+	f.lastPrompt = prompt
 	f.lastOpts = opts
 	if f.err != nil {
 		return nil, f.err
 	}
 	return f.resp, nil
-}
-
-func (f *fakeContentGenerator) IsVertexAI() bool {
-	return false
 }
 
 type failingContentReader struct {
@@ -106,8 +101,8 @@ func TestVideoScriptRunner_Run(t *testing.T) {
 		if ai.lastOpts.ResponseMIMEType != "application/json" {
 			t.Errorf("ResponseMIMEType = %q, want application/json", ai.lastOpts.ResponseMIMEType)
 		}
-		if ai.lastOpts.ResponseSchema == nil {
-			t.Error("expected a non-nil ResponseSchema to be passed to the AI client")
+		if ai.lastOpts.ResponseJSONSchema == nil {
+			t.Error("expected a non-nil ResponseJSONSchema to be passed to the AI client")
 		}
 	})
 
@@ -228,12 +223,13 @@ func TestVideoScriptRunner_RunConstrainsCharacterIDEnum(t *testing.T) {
 		t.Fatalf("Run() error = %v", err)
 	}
 
-	schema := ai.lastOpts.ResponseSchema
-	if schema == nil {
-		t.Fatal("expected a non-nil ResponseSchema")
+	schema, ok := ai.lastOpts.ResponseJSONSchema.(map[string]any)
+	if !ok {
+		t.Fatalf("expected a JSON schema, got %T", ai.lastOpts.ResponseJSONSchema)
 	}
-	cutSchema := schema.Properties["cuts"].Items
-	enum := cutSchema.Properties["character_id"].Enum
+	props := schema["properties"].(map[string]any)
+	cutProps := props["cuts"].(map[string]any)["items"].(map[string]any)["properties"].(map[string]any)
+	enum := cutProps["character_id"].(map[string]any)["enum"].([]string)
 	want := map[string]bool{"": true, "zundamon": true, "metan": true}
 	if len(enum) != len(want) {
 		t.Fatalf("character_id enum = %v, want keys %v", enum, want)

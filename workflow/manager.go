@@ -25,7 +25,7 @@ type ManagerArgs struct {
 	HTTPClient  httpkit.HTTPClient
 	Reader      ports.ContentReader
 	Writer      remoteio.Writer
-	AIClient    gemini.GenerativeModel
+	AIClient    gemini.MultimodalModel
 	VideoRunner ports.VideoRunner
 	PromptDeps  *PromptDeps
 }
@@ -43,7 +43,7 @@ type manager struct {
 	httpClient     httpkit.HTTPClient
 	reader         ports.ContentReader
 	writer         remoteio.Writer
-	aiClient       gemini.GenerativeModel
+	aiClient       gemini.MultimodalModel
 	videoRunner    ports.VideoRunner
 	generationUnit *generationUnit
 	promptDeps     *PromptDeps

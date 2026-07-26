@@ -73,5 +73,5 @@ Callers use `errors.Is` against these to branch on specific failure modes rather
 
 - `github.com/shouni/gemini-image-kit` — keyframe/still-image generation core (`generator.GeminiImageCore`, `generator.GeminiGenerator`); this repo's `imagePorts.ImageGenerator`/`AssetManager`/`Backend` types come from here.
 - `github.com/shouni/go-character-kit` — `characterkit.Characters`/`Character` (Seed, ReferenceURL(s)) for cross-cut character consistency.
-- `github.com/shouni/go-gemini-client` — `lyria.MusicRecipe` (aliased as `ports.MusicRecipe`) is the input music/lyrics recipe format; `gemini.GenerativeModel` is the AI client interface used for script generation.
+- `github.com/shouni/go-gemini-client` — `lyria.MusicRecipe` (aliased as `ports.MusicRecipe`) is the input music/lyrics recipe format. AI clients are taken as `gemini.MultimodalGenerator` (script generation) and `gemini.MultimodalModel` (image core), the genai-free interfaces: nothing in this repo imports `google.golang.org/genai`. Structured output uses plain JSON Schema via `GenerateOptions.ResponseJSONSchema` (`ports.VideoRecipeSchema` returns `map[string]any`), not `genai.Schema`.
 - `github.com/shouni/go-remote-io` — `remoteio.Writer` used for persisting `video_music_meta.json` and keyframe outputs.
