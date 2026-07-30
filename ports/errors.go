@@ -39,4 +39,10 @@ var (
 	// ErrSingleCutRequired は、CutKeyframeRunner.EditAndSave に単一カット以外の
 	// recipe が渡された場合に返されます。
 	ErrSingleCutRequired = errors.New("EditAndSave supports only a single-cut recipe")
+
+	// ErrUnsupportedCutDuration は、カットの尺が、そのカットが解決する Veo の生成モードで
+	// 受け付けられない値だった場合に返されます（DurationsForMode 参照）。呼び出し側は
+	// これを検知して、Veo API やネットワークの失敗ではなくレシピ側の尺の計画ミスとして
+	// 扱えます（リトライしても直りません）。
+	ErrUnsupportedCutDuration = errors.New("cut duration is not supported by the resolved Veo generation mode")
 )

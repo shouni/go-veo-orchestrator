@@ -28,7 +28,8 @@ Four packages, strict dependency direction: `ports` is the contract layer everyt
 
 ```
 ports/     Interfaces (VideoRunner, ScriptPrompt, KeyframePrompt, ...), domain models
-           (VideoRecipe, Cut, VideoGenerationRequest), Config, sentinel errors. Everything
+           (VideoRecipe, Cut, VideoGenerationRequest), Veo request classification and
+           duration rules (veo_mode.go, veo_duration.go), Config, sentinel errors. Everything
            else depends on this package; it depends on nothing else in-repo.
 keyframe/  Composer (uploads/caches character reference images to the File API or resolves
            GCS URIs directly under Vertex AI) + Generator (concurrent, rate-limited keyframe
@@ -57,13 +58,23 @@ A cut is skippable/resumable when `Cut.IsGenerated()` — `status == "generated"
 
 `SectionIndex` on a `Cut` is the 1-based position in `MusicRecipe.Sections` it was derived from; when one section splits into multiple cuts (scene_split), all resulting cuts keep the same `SectionIndex`, so callers can determine section membership directly instead of reverse-matching `StartSec` against section time ranges.
 
+### Veo request classification and cut durations (`ports/veo_mode.go`, `ports/veo_duration.go`)
+
+Which Veo feature a request resolves to (`video_extension` / `reference_to_video` / `frames_to_video` / `image_to_video`) is decided in exactly one place: `ports.ClassifyVeoRequest(req, usePreviousVideo, caps)`. Adapter request-body construction, cut-duration planning, and generation-mode-specific prompt selection all consume that one decision — when adding a new Veo input mode, extend the classifier and its capability struct `ports.VeoCapabilities` rather than adding branches at call sites. Model capabilities come from optional interfaces on the `VideoRunner` (`ReferenceImagesSupporter`, `LastFrameSupporter`) via `ports.RunnerCapabilities`; a runner implementing neither reports no optional support and falls back to `image_to_video`.
+
+Veo accepts only discrete cut durations, and which set applies depends on the resolved mode: `reference_to_video` is 8s only, `video_extension` is 7s only, the image-input modes take {4,6,8}. `ports.DurationsForMode` / `IsSupportedDuration` / `SnapDuration` / `ChainDurations` are the shared primitives — do not re-derive these numbers at call sites. Duration *planning* (splitting a long cut, error-diffusing rounding across a timeline) is deliberately the caller's job; the library only supplies the rules and rejects violations. `VideoTimelineRunner.Run` validates each cut against its resolved mode before calling Veo and returns `ports.ErrUnsupportedCutDuration` rather than paying for a long-running operation that Veo will reject.
+
+`ports.CutReferenceImages(cut, characters)` is the single rule for building `referenceImages` (`[character art, keyframe]`, max 3, blanks skipped). `DefaultVideoRequestBuilder` and any caller classifying a cut must both use it, so the duration a cut is rounded to always matches the mode its request actually resolves to.
+
+`DefaultVideoRequestBuilder.Build` takes a `runner.BuildInput` struct (not positional args) and prunes inputs the resolved mode won't use — under `video_extension` it drops all image inputs, under non-`frames_to_video` modes it drops `LastFrameReference`. The built request therefore matches what the adapter sends, so logs never show inputs that were silently ignored.
+
 ### Adapter boundary (`ports.VideoRunner`)
 
 The real Veo/Vertex AI call is entirely external to this repo. An adapter's `Run(ctx, VideoGenerationRequest) (*VideoResponse, error)` is responsible for auth, resolving `ImageReference`/`AudioReference` (preferred) vs. uploading `InputImage`/`InputAudio` (fallback when the reference is empty), submitting to Veo, polling long-running operations, and returning `VideoID` (needed to chain into the next cut's `PreviousVideoID`) and `CloudURL`. `ReferenceImages` (max 3, `characterkit` character art + keyframe) takes priority over `ImageReference`/`InputImage` when both are supplied by `DefaultVideoRequestBuilder`. `LastFrameReference` is only meaningful for image-to-video Veo 2 / Veo 3.1 requests and must be paired with a start frame.
 
 ### Sentinel errors (`ports/errors.go`)
 
-Callers use `errors.Is` against these to branch on specific failure modes rather than treating all errors alike: `ErrRecipeRequired`, `ErrEditingNotSupported` (image generator doesn't implement `EditCut`; caller can fall back to full `RunAndSave` regeneration), `ErrInvalidAIResponse` (AI text didn't parse as VideoRecipe JSON — distinguish from network/auth errors when deciding to retry), `ErrVideoRunnerNotConfigured`, `ErrInputTooLarge`.
+Callers use `errors.Is` against these to branch on specific failure modes rather than treating all errors alike: `ErrRecipeRequired`, `ErrEditingNotSupported` (image generator doesn't implement `EditCut`; caller can fall back to full `RunAndSave` regeneration), `ErrInvalidAIResponse` (AI text didn't parse as VideoRecipe JSON — distinguish from network/auth errors when deciding to retry), `ErrVideoRunnerNotConfigured`, `ErrInputTooLarge`, `ErrUnsupportedCutDuration` (recipe-side duration planning bug — retrying will never fix it), `ErrNoKeyframeToEdit`, `ErrSingleCutRequired`.
 
 ### Concurrency notes
 
