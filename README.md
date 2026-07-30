@@ -150,6 +150,47 @@ result, err := workflows.Video.RunAndSave(ctx, recipe, "video_music_meta.json")
 
 ---
 
+## 🎛️ Veo 生成モードとカット尺 (Generation Modes & Durations)
+
+1つのリクエストが Veo のどの生成機能で解釈されるかは、`ports.ClassifyVeoRequest` **1箇所**で決まります。adapter のリクエスト本文構築、カット尺の計画・検証、生成モードごとのプロンプト選択は、すべてこの同じ判定を共有してください。それぞれが独自に分岐すると「参照画像に合わせろと指示しながら参照画像を送らない」「reference_to_video 前提で8秒に丸めたのに実際は image_to_video だった」といったズレが起きます。
+
+```go
+caps := ports.RunnerCapabilities(videoRunner) // Runner のオプションインターフェースから導出
+mode := ports.ClassifyVeoRequest(req, usePreviousVideo, caps)
+```
+
+判定の優先順位と、各モードで Veo が受け付けるカット尺は以下です。
+
+| 優先 | モード | 条件 | 対応尺（秒） |
+| --- | --- | --- | --- |
+| 1 | `VeoModeVideoExtension` | `usePreviousVideo` かつ `PreviousVideoID` が `gs://` 参照。画像参照はすべて無視されます | 7 固定 |
+| 2 | `VeoModeReferenceToVideo` | 参照画像が1つ以上あり、モデルが `referenceImages` 対応（Veo 3系の非 Fast） | 8 固定 |
+| 3 | `VeoModeFramesToVideo` | 開始フレームと `LastFrameReference` が両方あり、モデルが `lastFrame` 対応（Veo 2 / Veo 3.1系） | 4 / 6 / 8 |
+| 4 | `VeoModeImageToVideo` | 上記以外すべて | 4 / 6 / 8 |
+
+モデルの対応状況は、`VideoRunner` に以下のオプションインターフェースを実装すると `ports.RunnerCapabilities` が自動で拾います（未実装の Runner は両方 false = image_to_video 側へ倒れます）。
+
+```go
+type ReferenceImagesSupporter interface{ SupportsReferenceImages() bool }
+type LastFrameSupporter      interface{ SupportsLastFrame() bool }
+```
+
+カット尺の計画に使うヘルパーは `ports` にあります。Veo は任意長の動画を生成できないため、レシピ側でこれらの値に合わせて尺を割り当ててから実行してください。
+
+| API | 用途 |
+| --- | --- |
+| `ports.DurationsForMode(mode)` | そのモードで受け付けられる尺の一覧 |
+| `ports.IsSupportedDuration(sec, mode)` | 尺が受け付けられるかの判定 |
+| `ports.SnapDuration(sec, candidates)` | 最も近い対応尺へ丸める（同距離なら長い方） |
+| `ports.ChainDurations(bases)` | 1本の継続チェーン（ベース + 7秒 × n）で実現できる合計尺の候補 |
+| `ports.VeoContinuationMaxDurationSec` | チェーンをリセットする累積尺の閾値（24秒） |
+
+`VideoTimelineRunner.Run` は各カットを Veo へ投げる直前にこの尺を検証し、対応外なら `ports.ErrUnsupportedCutDuration` を返してそのカットの生成を行いません。長時間実行 operation を投げて Veo 側に拒否されるまで待つより手前で、どのカットが何秒でどのモードだったかまで示して落とします。
+
+参照画像（`referenceImages`）の組み立て規則は `ports.CutReferenceImages(cut, characters)` に一本化されています。`[キャラクター立ち絵, キーフレーム]` の順に最大3枚で、立ち絵が無いカットはキーフレームだけを参照として使います。
+
+---
+
 ## ⚠️ Sentinel Errors
 
 呼び出し側が `errors.Is` で判定し、汎用エラーとは異なる制御（フォールバックやリトライ）を行えるよう、`ports` パッケージは以下の sentinel error を公開しています。
@@ -161,6 +202,9 @@ result, err := workflows.Video.RunAndSave(ctx, recipe, "video_music_meta.json")
 | `ports.ErrInvalidAIResponse` | AI の応答テキストを `VideoRecipe` の JSON として解析できなかった場合 | ネットワーク/認証エラーと区別したリトライ判断 |
 | `ports.ErrVideoRunnerNotConfigured` | `VideoRunner` 未設定のまま `Workflows.Video` を呼び出した場合 | 動画生成ステップのスキップ、設定不備の通知 |
 | `ports.ErrInputTooLarge` | ソースの入力サイズが許容上限（5MB）を超えた場合 | 入力の分割やソースの見直しを促す |
+| `ports.ErrUnsupportedCutDuration` | カットの尺が、解決した Veo 生成モードで受け付けられない値だった場合 | レシピ側の尺の計画ミス。リトライせず `ports.SnapDuration` 等で尺を割り当て直す |
+| `ports.ErrNoKeyframeToEdit` | `EditAndSave` の対象カットに既存のキーフレームが無い場合 | 先に `RunAndSave` でキーフレームを生成させる |
+| `ports.ErrSingleCutRequired` | `EditAndSave` に単一カット以外のレシピを渡した場合 | 対象カットだけのレシピに絞って呼び直す |
 
 ---
 

@@ -51,11 +51,15 @@ func (r *VideoTimelineRunner) Run(ctx context.Context, recipe *ports.VideoRecipe
 		return nil, err
 	}
 
+	// 使用する VideoRunner が対応している Veo のオプション機能は全カットで共通なので
+	// ループの外で一度だけ導出する。
+	caps := ports.RunnerCapabilities(r.videoRunner)
+
 	responses := make([]*ports.VideoResponse, 0, len(recipe.Cuts))
 	lastVideoID := ""
 
 	for i := range recipe.Cuts {
-		res, err := r.runCut(ctx, recipe, &recipe.Cuts[i], keyframes[i], lastVideoID)
+		res, err := r.runCut(ctx, recipe, i, keyframes[i], lastVideoID, caps)
 		if err != nil {
 			return nil, err
 		}
@@ -131,10 +135,12 @@ func requiresKeyframeGeneration(recipe *ports.VideoRecipe) bool {
 func (r *VideoTimelineRunner) runCut(
 	ctx context.Context,
 	recipe *ports.VideoRecipe,
-	cut *ports.Cut,
+	cutIndex int,
 	keyframe *imagePorts.ImageResponse,
 	lastVideoID string,
+	caps ports.VeoCapabilities,
 ) (*ports.VideoResponse, error) {
+	cut := &recipe.Cuts[cutIndex]
 	if cut.IsGenerated() {
 		return responseFromCut(*cut), nil
 	}
@@ -147,7 +153,19 @@ func (r *VideoTimelineRunner) runCut(
 		previousVideoID = ""
 	}
 
-	req := r.requestBuilder.Build(recipe, *cut, keyframe, previousVideoID)
+	req := r.requestBuilder.Build(BuildInput{
+		Recipe:             recipe,
+		Cut:                *cut,
+		Keyframe:           keyframe,
+		PreviousVideoID:    previousVideoID,
+		LastFrameReference: ports.Cuts(recipe.Cuts).NextLastFrameReference(cutIndex),
+		Capabilities:       caps,
+	})
+	if err := validateCutDuration(req, caps); err != nil {
+		cut.Status = ports.CutStatusFailed
+		return nil, err
+	}
+
 	res, err := r.videoRunner.Run(ctx, req)
 	if err != nil {
 		cut.Status = ports.CutStatusFailed
@@ -159,6 +177,23 @@ func (r *VideoTimelineRunner) runCut(
 
 	applyVideoResponse(cut.CutIndex, &cut.VideoResult, res)
 	return res, nil
+}
+
+// validateCutDuration は、これから Veo へ送るリクエストの尺が、そのリクエストが解決する
+// 生成モードで受け付けられる値かを検証します。
+//
+// Veo は任意長の動画を生成できず、モードごとに離散的な尺しか受け付けません
+// （image_to_video なら {4,6,8}、reference_to_video は8秒固定、video_extension は7秒固定）。
+// 検証せずに送ると Veo 側で拒否されますが、それが分かるのは長時間実行オペレーションを
+// 投げて待った後です。ここで手前に落とすことで、レシピ側の尺の計画ミスをカット生成の
+// 待ち時間と課金の前に、どのカットが何秒でどのモードだったかまで示して報告できます。
+func validateCutDuration(req ports.VideoGenerationRequest, caps ports.VeoCapabilities) error {
+	mode := ports.ClassifyVeoRequest(req, req.PreviousVideoID != "", caps)
+	if ports.IsSupportedDuration(req.DurationSec, mode) {
+		return nil
+	}
+	return fmt.Errorf("cut %d: %.2f秒は %s では生成できません（対応する尺: %v）: %w",
+		req.CutIndex, req.DurationSec, mode, ports.DurationsForMode(mode), ports.ErrUnsupportedCutDuration)
 }
 
 func responseFromCut(cut ports.Cut) *ports.VideoResponse {
