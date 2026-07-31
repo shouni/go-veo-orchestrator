@@ -6,7 +6,7 @@ require (
 	github.com/jellydator/ttlcache/v3 v3.4.1
 	github.com/shouni/gemini-image-kit v1.12.1
 	github.com/shouni/go-character-kit v1.0.11
-	github.com/shouni/go-gemini-client v1.15.2
+	github.com/shouni/go-gemini-client v1.16.3
 	github.com/shouni/go-http-kit v1.7.2
 	github.com/shouni/go-remote-io v1.7.2
 	github.com/shouni/go-utils v1.3.0
