@@ -50,14 +50,14 @@ func (r *CutKeyframeRunner) Run(ctx context.Context, recipe *ports.VideoRecipe) 
 	}
 	recipe.Normalize()
 
-	slog.Info("Starting parallel cut keyframe generation")
+	slog.InfoContext(ctx, "Starting parallel cut keyframe generation", "cuts", len(recipe.Cuts))
 
 	images, err := r.generator.Execute(ctx, recipe.Cuts)
 	if err != nil {
 		return nil, fmt.Errorf("cut keyframe generation failed: %w", err)
 	}
 
-	slog.Info("Successfully generated cut keyframes", "count", len(images))
+	slog.InfoContext(ctx, "Successfully generated cut keyframes", "count", len(images))
 	return images, nil
 }
 

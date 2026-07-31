@@ -48,6 +48,10 @@ type CharacterResourceProvider interface {
 
 type keyframeTask struct {
 	index int
+	// total は今回まとめて生成するキーフレームの総数です。1枚ごとのログに「何枚中の
+	// 何枚目か」を出すために持ちます。生成は逐次にも並列にもなりうる（MaxConcurrency）
+	// うえ、1枚に分単位で掛かることもあるため、総数が無いと進捗が読めません。
+	total int
 	cut   ports.Cut
 }
 
@@ -93,6 +97,7 @@ func (g *Generator) Execute(ctx context.Context, cuts []ports.Cut) ([]*imagePort
 	for i, cut := range cuts {
 		task := keyframeTask{
 			index: i,
+			total: len(cuts),
 			cut:   cut,
 		}
 		eg.Go(func() error {
@@ -124,9 +129,13 @@ func (g *Generator) generateCutKeyframe(ctx context.Context, task keyframeTask) 
 	req := g.buildImageRequest(task.cut, char)
 	logger := newKeyframeLogger(task, char, req.Image.FileAPIURI)
 
+	// 進捗をメッセージ本文にも入れる。属性（keyframe_index / keyframe_total）にも
+	// 同じ値があるが、Cloud Logging の折りたたみ表示ではメッセージしか見えず、
+	// 1枚に分単位かかる処理では「何枚中の何枚目か」が読めないと進捗が判断できない。
+	progress := fmt.Sprintf("(%d/%d)", task.index+1, task.total)
 	return g.runImageGeneration(ctx, req, logger,
-		"Starting keyframe generation", "Keyframe generation completed", "キーフレーム生成",
-		task.index+1, char.ID)
+		"Starting keyframe generation "+progress, "Keyframe generation completed "+progress,
+		"キーフレーム生成", task.index+1, char.ID)
 }
 
 // waitForRateLimit blocks until the keyframe generation rate limiter admits the next call.
@@ -155,7 +164,10 @@ func (g *Generator) runImageGeneration(
 		return nil, fmt.Errorf("cut %d (character_id: %s) の%sに失敗しました: %w", cutIndex, characterID, actionJP, err)
 	}
 
-	logger.Info(completeLog, "duration", time.Since(startTime).Round(time.Second))
+	// 所要時間もメッセージへ入れる（属性だけだと折りたたみ表示で見えないため）。
+	// 生成が遅いときに、1枚ずつの実測が並ぶだけで当たりが付けられる。
+	elapsed := time.Since(startTime).Round(time.Second)
+	logger.Info(fmt.Sprintf("%s %s", completeLog, elapsed), "duration", elapsed)
 
 	return resp, nil
 }
@@ -234,6 +246,7 @@ func (g *Generator) buildGenerationOptions(prompt, systemPrompt string, seed *in
 func newKeyframeLogger(task keyframeTask, char *characterkit.Character, fileURI string) *slog.Logger {
 	return slog.With(
 		"keyframe_index", task.index+1,
+		"keyframe_total", task.total,
 		"character_id", char.ID,
 		"character_name", char.Name,
 		"seed", char.Seed,
