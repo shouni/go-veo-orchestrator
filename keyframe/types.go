@@ -1,7 +1,6 @@
 package keyframe
 
 import (
-	"strings"
 	"time"
 )
 
@@ -18,9 +17,3 @@ const (
 	// defaultRateInterval は、リクエスト間のデフォルトの待機間隔です。
 	defaultRateInterval = 60 * time.Second
 )
-
-// IsGCSURI は、指定されたURIがGCS（Google Cloud Storage）のストレージURIであるかどうかを判定します。
-func IsGCSURI(uri string) bool {
-	const prefixGCS = "gs://"
-	return strings.HasPrefix(uri, prefixGCS)
-}
