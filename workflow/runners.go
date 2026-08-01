@@ -29,7 +29,7 @@ func (m *manager) buildScriptRunner() *runner.VideoScriptRunner {
 // buildKeyframeRunner は、カットのキーフレーム画像生成を担当する Runner を作成します。
 func (m *manager) buildKeyframeRunner() *runner.CutKeyframeRunner {
 	keyframeGen := keyframe.NewGenerator(
-		m.generationUnit.composer,
+		m.promptDeps.Characters,
 		m.generationUnit.imageGenerator,
 		m.promptDeps.KeyframePrompt,
 		m.generationUnit.model,
