@@ -1,3 +1,7 @@
+// Package keyframe は、カット情報とキャラクター定義から動画のキーフレーム画像を
+// 生成するロジックを提供します。参照画像の解決（GCS 直接参照か File API へのアップロードか）は
+// gemini-image-kit が担うため、このパッケージはカットごとの参照元 URL とプロンプトの組み立て、
+// および並列度・レート制限の制御に専念します。
 package keyframe
 
 import (
@@ -19,7 +23,7 @@ const negativeKeyframePrompt = "speech bubble, dialogue balloon, text, alphabet,
 
 // Generator は、キャラクターの一貫性を保ちながら並列で複数カットのキーフレームを生成します。
 type Generator struct {
-	composer       CharacterResourceProvider
+	characters     *characterkit.Characters
 	generator      ImageGenerator
 	pb             ports.KeyframePrompt
 	model          string
@@ -35,17 +39,6 @@ type ImageGenerator interface {
 	GenerateSingleImage(ctx context.Context, req imagePorts.SingleImageRequest) (*imagePorts.ImageResponse, error)
 }
 
-// CharacterResourceProvider は、Generator が Composer に依存している範囲だけを切り出した
-// 契約です。キャラクター参照画像の事前準備・カットからのキャラクター解決・準備済み画像 URI の
-// 参照を提供します。*Composer がこれを実装しますが、Generator を単体テストする際は
-// AssetManager/Backend を伴う本物の Composer を組み立てずに、この interface を満たす軽量な
-// fake を渡せます。
-type CharacterResourceProvider interface {
-	PrepareCharacterResources(ctx context.Context, cuts []ports.Cut) error
-	CharacterForCut(cut ports.Cut) *characterkit.Character
-	GetResourceURI(referenceURL string) string
-}
-
 type keyframeTask struct {
 	index int
 	// total は今回まとめて生成するキーフレームの総数です。1枚ごとのログに「何枚中の
@@ -57,17 +50,17 @@ type keyframeTask struct {
 
 // NewGenerator は Generator の新しいインスタンスを初期化します。
 func NewGenerator(
-	composer CharacterResourceProvider,
+	characters *characterkit.Characters,
 	generator ImageGenerator,
 	pb ports.KeyframePrompt,
 	model string,
 	opts ...Option,
 ) *Generator {
 	g := &Generator{
-		composer:  composer,
-		generator: generator,
-		pb:        pb,
-		model:     model,
+		characters: characters,
+		generator:  generator,
+		pb:         pb,
+		model:      model,
 	}
 
 	applyDefaultOptions(g)
@@ -84,10 +77,6 @@ func NewGenerator(
 func (g *Generator) Execute(ctx context.Context, cuts []ports.Cut) ([]*imagePorts.ImageResponse, error) {
 	if len(cuts) == 0 {
 		return nil, nil
-	}
-
-	if err := g.composer.PrepareCharacterResources(ctx, cuts); err != nil {
-		return nil, fmt.Errorf("キャラクターリソースの準備に失敗しました: %w", err)
 	}
 
 	images := make([]*imagePorts.ImageResponse, len(cuts))
@@ -208,8 +197,10 @@ func (g *Generator) EditCut(ctx context.Context, cut ports.Cut, editPrompt strin
 		cut.CutIndex, char.ID)
 }
 
+// characterForCut はカットに対応するキャラクターを解決します。
+// cut.CharacterID が未設定、または未知の ID の場合はデフォルトキャラクターに落とします。
 func (g *Generator) characterForCut(cut ports.Cut) *characterkit.Character {
-	return g.composer.CharacterForCut(cut)
+	return g.characters.GetCharacterWithDefault(cut.CharacterID)
 }
 
 func (g *Generator) buildImageRequest(cut ports.Cut, char *characterkit.Character) imagePorts.SingleImageRequest {
@@ -218,14 +209,12 @@ func (g *Generator) buildImageRequest(cut ports.Cut, char *characterkit.Characte
 	// キーフレームの参照に使う）だと、色・小物配置・髪型などの細部が生成のたびにブレやすいため、
 	// g.aspectRatio に一致する参照画像（ReferenceURLs）があればそちらを優先します。
 	referenceURL := char.ReferenceURLFor(g.aspectRatio)
-	fileURI := g.composer.GetResourceURI(referenceURL)
 
+	// 参照の解決（Vertex AI + gs:// は直接参照、Gemini API は File API へ1回だけアップロード）は
+	// gemini-image-kit が担う。ここは参照元 URL を渡すだけでよい。
 	return imagePorts.SingleImageRequest{
 		GenerationOptions: g.buildGenerationOptions(userPrompt, systemPrompt, char.Seed),
-		Image: imagePorts.ImageURI{
-			FileAPIURI:   fileURI,
-			ReferenceURL: referenceURL,
-		},
+		Image:             imagePorts.ImageURI{ReferenceURL: referenceURL},
 	}
 }
 

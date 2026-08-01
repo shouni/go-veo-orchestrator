@@ -31,12 +31,13 @@ ports/     Interfaces (VideoRunner, ScriptPrompt, KeyframePrompt, ...), domain m
            (VideoRecipe, Cut, VideoGenerationRequest), Veo request classification and
            duration rules (veo_mode.go, veo_duration.go), Config, sentinel errors. Everything
            else depends on this package; it depends on nothing else in-repo.
-keyframe/  Composer (uploads/caches character reference images to the File API or resolves
-           GCS URIs directly under Vertex AI) + Generator (concurrent, rate-limited keyframe
-           image generation per cut).
+keyframe/  Generator (concurrent, rate-limited keyframe image generation per cut). It holds
+           the character definitions directly and passes each cut's reference URL through;
+           resolving that URL (Vertex + gs:// passes through, Gemini API uploads once to the
+           File API) is gemini-image-kit's job, not this package's.
 runner/    Concrete Runner implementations: VideoScriptRunner, CutKeyframeRunner,
            VideoTimelineRunner (+ VideoRequestBuilder), VideoPublisherRunner.
-workflow/  manager: workflow.New(ManagerArgs) builds the generationUnit (image core/composer/
+workflow/  manager: workflow.New(ManagerArgs) builds the generationUnit (image core +
            generator) and all four Runners, returning *ports.Workflows. This is the one
            package an external caller imports to construct the library; ManagerArgs.VideoRunner
            is the injection point for the real Veo adapter.
@@ -78,7 +79,9 @@ Callers use `errors.Is` against these to branch on specific failure modes rather
 
 ### Concurrency notes
 
-`keyframe.Composer` uses double-checked locking + `singleflight` to dedupe concurrent uploads of the same character reference image, and skips upload entirely under Vertex AI when the reference is already a `gs://` URI. `keyframe.Generator` runs cut keyframe generation concurrently with a configurable `MaxConcurrency` and `RateInterval` (see `keyframe.WithMaxConcurrency`, `keyframe.WithRateInterval` in `workflow/runners.go`). `VideoTimelineRunner.Run`, by contrast, is strictly sequential per cut — the Video-to-Video chain requires each cut's `PreviousVideoID` before the next can start.
+Reference-image resolution used to live here as `keyframe.Composer` — a pre-upload pass with double-checked locking and `singleflight` on top of `AssetManager`. gemini-image-kit v1.12.2 moved that decision into `ports.ReferenceResolver`, with its own cache and singleflight, so the Composer was deleted rather than kept as a second cache in front of it. **Do not reintroduce a pre-upload pass**: this copy had already drifted from go-comic-kit's (it was missing both the re-check inside the write lock and the `DoChan` + `WithoutCancel` fix that keeps one caller's cancel from killing piggybacked uploads), which is exactly what duplicating the logic costs. **One reference image per cut is deliberate.** `Cut.CharacterID` is singular and `keyframe.Generator` attaches exactly one reference (the aspect-ratio-matched variant when the character has one), because multi-subject image generation is not reliable enough at the current model generation to be worth the schema change. The switch point when that changes is small and known: `keyframe.ImageGenerator` moves from `GenerateSingleImage`/`SingleImageRequest` to `GenerateFusedImage`/`ImageFusionRequest` — gemini-image-kit already supports both. The likely first use is not multiple characters but **continuity**: attaching the previous cut's keyframe alongside the character reference for cuts that continue a chain (`ChainControl.IsChainStart` is false), the same trick go-comic-kit uses when composing a page from its panels.
+
+`keyframe.Generator` runs cut keyframe generation concurrently with a configurable `MaxConcurrency` and `RateInterval` (see `keyframe.WithMaxConcurrency`, `keyframe.WithRateInterval` in `workflow/runners.go`). `VideoTimelineRunner.Run`, by contrast, is strictly sequential per cut — the Video-to-Video chain requires each cut's `PreviousVideoID` before the next can start.
 
 ## External dependencies worth knowing
 

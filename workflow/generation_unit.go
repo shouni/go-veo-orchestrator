@@ -4,20 +4,12 @@ import (
 	"fmt"
 
 	"github.com/shouni/gemini-image-kit/generator"
-	characterkit "github.com/shouni/go-character-kit/character"
 	"github.com/shouni/go-gemini-client/gemini"
-
-	"github.com/shouni/go-veo-orchestrator/keyframe"
 )
 
-// buildGenerationUnit は画像生成 core、composer、generator をまとめた内部ユニットを構築します。
+// buildGenerationUnit は画像生成 core と generator をまとめた内部ユニットを構築します。
 func (m *manager) buildGenerationUnit(client gemini.MultimodalModel, modelName string) (*generationUnit, error) {
 	core, err := m.buildCore(client)
-	if err != nil {
-		return nil, err
-	}
-
-	composer, err := m.buildComposer(core, m.promptDeps.Characters)
 	if err != nil {
 		return nil, err
 	}
@@ -29,7 +21,6 @@ func (m *manager) buildGenerationUnit(client gemini.MultimodalModel, modelName s
 
 	return &generationUnit{
 		imageGenerator: gen,
-		composer:       composer,
 		model:          modelName,
 	}, nil
 }
@@ -50,23 +41,6 @@ func (m *manager) buildCore(aiClient gemini.MultimodalModel) (*generator.GeminiI
 	}
 
 	return core, nil
-}
-
-// buildComposer はキャラクターリソースを扱う Composer を初期化します。
-func (m *manager) buildComposer(
-	core *generator.GeminiImageCore,
-	chars *characterkit.Characters,
-) (*keyframe.Composer, error) {
-	composer, err := keyframe.NewComposer(
-		core,
-		core,
-		chars,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("composerの初期化に失敗しました: %w", err)
-	}
-
-	return composer, nil
 }
 
 // buildGenerator は画像生成を実行する GeminiGenerator を初期化します。

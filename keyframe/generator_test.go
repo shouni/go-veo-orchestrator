@@ -18,12 +18,14 @@ import (
 type mockImageGenerator struct {
 	mu            sync.Mutex
 	generateCount int
+	lastReq       imagePorts.SingleImageRequest
 	generateFunc  func(ctx context.Context, req imagePorts.SingleImageRequest) (*imagePorts.ImageResponse, error)
 }
 
 func (m *mockImageGenerator) GenerateSingleImage(ctx context.Context, req imagePorts.SingleImageRequest) (*imagePorts.ImageResponse, error) {
 	m.mu.Lock()
 	m.generateCount++
+	m.lastReq = req
 	m.mu.Unlock()
 	if m.generateFunc != nil {
 		return m.generateFunc(ctx, req)
@@ -51,8 +53,6 @@ func TestGenerator_Execute(t *testing.T) {
 	ctx := context.Background()
 
 	// 1. 依存関係のセットアップ
-	assetMgr := &mockAssetManager{}
-	backend := &mockBackend{isVertex: false}
 
 	// 異なる Seed 値を持つキャラクターを用意
 	zundamonSeed := int64(10001)
@@ -74,14 +74,13 @@ func TestGenerator_Execute(t *testing.T) {
 			IsDefault:    true, // 指定なしの場合のデフォルト
 		},
 	})
-	composer, _ := NewComposer(assetMgr, backend, cm)
 
 	genMock := &mockImageGenerator{}
 	pbMock := &mockImagePrompt{}
 
 	// 2. Generator の作成 (高速化設定)
 	generator := NewGenerator(
-		composer,
+		cm,
 		genMock,
 		pbMock,
 		"gemini-2.0-flash",
@@ -142,23 +141,24 @@ func TestGenerator_Execute(t *testing.T) {
 		}
 	})
 
-	t.Run("Vertex AI Bypass in Keyframe Generation", func(t *testing.T) {
-		// Vertex モードでは File API へのアップロードをスキップして直接生成に回る
-		backend.isVertex = true
+	// 参照の解決方法（Vertex AI + gs:// は直接参照、Gemini API は File API へアップロード）は
+	// gemini-image-kit の責務なので、ここでは「参照元 URL をそのまま渡していること」だけを見る。
+	t.Run("参照は解決せずそのまま渡す", func(t *testing.T) {
 		genMock.generateCount = 0
 
-		cuts := []ports.Cut{{CharacterID: "zundamon"}}
-
-		_, err := generator.Execute(ctx, cuts)
-		if err != nil {
+		if _, err := generator.Execute(ctx, []ports.Cut{{CharacterID: "zundamon"}}); err != nil {
 			t.Fatal(err)
 		}
 
 		if genMock.generateCount != 1 {
 			t.Errorf("Expected 1 generation call, got %d", genMock.generateCount)
 		}
-		// mockAssetManager.uploadCount が増えていないことを確認したいが、
-		// PrepareCharacterResources 内の挙動に依存するためここでは生成が成功することを確認
+		if got := genMock.lastReq.Image.ReferenceURL; got != "gs://bucket/zunda.png" {
+			t.Errorf("ReferenceURL = %q, want the character reference", got)
+		}
+		if got := genMock.lastReq.Image.FileAPIURI; got != "" {
+			t.Errorf("FileAPIURI = %q, want it left to the image kit", got)
+		}
 	})
 }
 
@@ -173,12 +173,9 @@ func TestGenerator_AspectRatio(t *testing.T) {
 	cuts := []ports.Cut{{CharacterID: "zundamon"}}
 
 	newGeneratorWithAspectRatio := func(opts ...Option) (*Generator, *mockImageGenerator) {
-		assetMgr := &mockAssetManager{}
-		backend := &mockBackend{isVertex: false}
-		composer, _ := NewComposer(assetMgr, backend, cm)
 		genMock := &mockImageGenerator{}
 		pbMock := &mockImagePrompt{}
-		g := NewGenerator(composer, genMock, pbMock, "gemini-2.0-flash", opts...)
+		g := NewGenerator(cm, genMock, pbMock, "gemini-2.0-flash", opts...)
 		return g, genMock
 	}
 
@@ -248,12 +245,9 @@ func TestGenerator_ReferenceURLPerAspectRatio(t *testing.T) {
 	cuts := []ports.Cut{{CharacterID: "tsumugi"}}
 
 	newGenerator := func(opts ...Option) (*Generator, *mockImageGenerator) {
-		assetMgr := &mockAssetManager{}
-		backend := &mockBackend{isVertex: false}
-		composer, _ := NewComposer(assetMgr, backend, cm)
 		genMock := &mockImageGenerator{}
 		pbMock := &mockImagePrompt{}
-		g := NewGenerator(composer, genMock, pbMock, "gemini-2.0-flash", opts...)
+		g := NewGenerator(cm, genMock, pbMock, "gemini-2.0-flash", opts...)
 		return g, genMock
 	}
 
@@ -291,16 +285,13 @@ func TestGenerator_ReferenceURLPerAspectRatio(t *testing.T) {
 func TestGenerator_EditCut(t *testing.T) {
 	ctx := context.Background()
 
-	assetMgr := &mockAssetManager{}
-	backend := &mockBackend{isVertex: false}
 	zundamonSeed := int64(10001)
 	cm := mustNewCharacters(t, []characterkit.Character{
 		{ID: "zundamon", Name: "ずんだもん", VisualCues: []string{"green hair"}, Seed: &zundamonSeed, ReferenceURL: "gs://bucket/zunda.png", IsDefault: true},
 	})
-	composer, _ := NewComposer(assetMgr, backend, cm)
 	genMock := &mockImageGenerator{}
 	pbMock := &mockImagePrompt{}
-	generator := NewGenerator(composer, genMock, pbMock, "gemini-2.0-flash",
+	generator := NewGenerator(cm, genMock, pbMock, "gemini-2.0-flash",
 		func(g *Generator) {
 			g.maxConcurrency = 5
 			g.rateInterval = 1 * time.Microsecond
@@ -345,8 +336,7 @@ func TestGenerator_EditCut(t *testing.T) {
 	})
 
 	t.Run("Errors when character is unknown and no default exists", func(t *testing.T) {
-		emptyComposer, _ := NewComposer(assetMgr, backend, mustNewCharacters(t, nil))
-		g := NewGenerator(emptyComposer, genMock, pbMock, "gemini-2.0-flash", func(g *Generator) {
+		g := NewGenerator(mustNewCharacters(t, nil), genMock, pbMock, "gemini-2.0-flash", func(g *Generator) {
 			g.maxConcurrency = 5
 			g.rateInterval = 1 * time.Microsecond
 			g.rateBurst = 100

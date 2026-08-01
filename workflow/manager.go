@@ -8,7 +8,6 @@ import (
 	"github.com/shouni/go-gemini-client/gemini"
 	"github.com/shouni/go-http-kit/httpkit"
 	"github.com/shouni/go-remote-io/remoteio"
-	"github.com/shouni/go-veo-orchestrator/keyframe"
 	"github.com/shouni/go-veo-orchestrator/ports"
 )
 
@@ -33,7 +32,6 @@ type ManagerArgs struct {
 // generationUnit は画像生成とリソース構成をまとめた内部ユニットです。
 type generationUnit struct {
 	imageGenerator imagePorts.ImageGenerator
-	composer       *keyframe.Composer
 	model          string
 }
 
