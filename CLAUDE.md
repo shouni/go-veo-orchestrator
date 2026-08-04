@@ -57,6 +57,8 @@ If `ManagerArgs.VideoRunner` is nil, `Workflows.Video` is **not nil** — it's `
 
 A cut is skippable/resumable when `Cut.IsGenerated()` — `status == "generated"` or both `video_id` and `video_url` are set. `VideoTimelineRunner.Run` uses this to avoid regenerating already-completed cuts and to keep the `PreviousVideoID` chain intact across a resumed run.
 
+Keyframes have the same rule under a different field: `CutKeyframeRunner.RunAndSave` generates only the cuts whose `KeyframeReference` is empty, and writes the metadata either way (a caller that finds jobs by `video_music_meta.json` must still see the job when nothing was generated). The two conditions are deliberately separate — a cut can have its keyframe baked while its video is still pending, which is the normal state between the keyframe stage and video generation. **Clearing `KeyframeReference` is how a caller asks for a re-bake**; there is no "force" flag, because a flag would let a caller regenerate images while still claiming the recipe describes them. Generation is driven off a `[]Cut` subset rather than a sub-`VideoRecipe`, since `VideoRecipe.Normalize()` renumbers `CutIndex` from 1 and would desync a partial batch from the parent recipe; saved filenames use the cut's position in the parent recipe so a partial batch never writes `keyframe_1.png` for cut 5.
+
 `SectionIndex` on a `Cut` is the 1-based position in `MusicRecipe.Sections` it was derived from; when one section splits into multiple cuts (scene_split), all resulting cuts keep the same `SectionIndex`, so callers can determine section membership directly instead of reverse-matching `StartSec` against section time ranges.
 
 ### Veo request classification and cut durations (`ports/veo_mode.go`, `ports/veo_duration.go`)

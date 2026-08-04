@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 	"testing"
 
 	imagePorts "github.com/shouni/gemini-image-kit/ports"
@@ -243,4 +244,136 @@ func TestCutKeyframeRunner_RunAndSave(t *testing.T) {
 			t.Fatalf("expected ErrRecipeRequired, got %v", err)
 		}
 	})
+}
+
+// capturingCutImageGenerator records the cuts it was asked to generate, so tests can assert
+// which cuts RunAndSave decided still needed a keyframe.
+type capturingCutImageGenerator struct {
+	seen  [][]ports.Cut
+	image func(cut ports.Cut) *imagePorts.ImageResponse
+}
+
+func (g *capturingCutImageGenerator) Execute(_ context.Context, cuts []ports.Cut) ([]*imagePorts.ImageResponse, error) {
+	g.seen = append(g.seen, append([]ports.Cut(nil), cuts...))
+	images := make([]*imagePorts.ImageResponse, 0, len(cuts))
+	for _, cut := range cuts {
+		if g.image != nil {
+			images = append(images, g.image(cut))
+			continue
+		}
+		images = append(images, &imagePorts.ImageResponse{Data: []byte("generated"), MimeType: "image/png"})
+	}
+	return images, nil
+}
+
+func keyframeCut(index int, keyframeReference string) ports.Cut {
+	return ports.Cut{
+		CutIndex:       index,
+		VisualAnchor:   fmt.Sprintf("anchor %d", index),
+		AudioSync:      ports.AudioSync{DurationSec: 8},
+		KeyframeResult: ports.KeyframeResult{KeyframeReference: keyframeReference},
+	}
+}
+
+// TestCutKeyframeRunner_RunAndSaveSkipsExistingKeyframes pins the resumability rule: a cut that
+// already has a keyframe is not re-generated. Without it, any caller re-running a saved recipe
+// (to generate video from it, to resume, to regenerate one cut) pays for every image again.
+func TestCutKeyframeRunner_RunAndSaveSkipsExistingKeyframes(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("generates only the cuts missing a keyframe", func(t *testing.T) {
+		generator := &capturingCutImageGenerator{}
+		writer := newFakeWriter()
+		recipe := &ports.VideoRecipe{
+			ProjectTitle: "test",
+			Cuts: []ports.Cut{
+				keyframeCut(1, "gs://bucket/jobs/job-1/images/keyframe_1.png"),
+				keyframeCut(2, ""),
+				keyframeCut(3, "gs://bucket/jobs/job-1/images/keyframe_3.png"),
+			},
+		}
+
+		updated, err := NewCutKeyframeRunner(generator, writer).RunAndSave(ctx, recipe, "gs://bucket/jobs/job-2/")
+		if err != nil {
+			t.Fatalf("RunAndSave() error = %v", err)
+		}
+		if len(generator.seen) != 1 {
+			t.Fatalf("generator called %d times, want 1", len(generator.seen))
+		}
+		if got := generator.seen[0]; len(got) != 1 || got[0].CutIndex != 2 {
+			t.Fatalf("generated cuts = %+v, want only cut 2", got)
+		}
+		// 既存のキーフレームは書き換えない。
+		if updated.Cuts[0].KeyframeReference != "gs://bucket/jobs/job-1/images/keyframe_1.png" {
+			t.Errorf("cut 1 keyframe = %q, want the existing reference untouched", updated.Cuts[0].KeyframeReference)
+		}
+		// 保存名はレシピ内の位置で決まる。詰めて keyframe_1.png にしてはいけない。
+		if want := "keyframe_2"; !containsPathFragment(writer.writes, want) {
+			t.Errorf("saved paths %v, want one containing %q (position-based numbering)", writerPaths(writer), want)
+		}
+		if containsPathFragment(writer.writes, "keyframe_1.png") {
+			t.Errorf("saved paths %v unexpectedly wrote keyframe_1.png for cut 2", writerPaths(writer))
+		}
+	})
+
+	t.Run("skips generation entirely when every cut has a keyframe", func(t *testing.T) {
+		generator := &capturingCutImageGenerator{}
+		writer := newFakeWriter()
+		recipe := &ports.VideoRecipe{
+			ProjectTitle: "test",
+			Cuts: []ports.Cut{
+				keyframeCut(1, "gs://bucket/jobs/job-1/images/keyframe_1.png"),
+				keyframeCut(2, "gs://bucket/jobs/job-1/images/keyframe_2.png"),
+			},
+		}
+
+		if _, err := NewCutKeyframeRunner(generator, writer).RunAndSave(ctx, recipe, "gs://bucket/jobs/job-2/"); err != nil {
+			t.Fatalf("RunAndSave() error = %v", err)
+		}
+		if len(generator.seen) != 0 {
+			t.Errorf("generator was called %d times, want 0", len(generator.seen))
+		}
+		// メタデータは生成をスキップしても必ず書く。呼び出し側はこのファイルを目印に
+		// ジョブを見つけるため、書かないとジョブが存在しないように見える。
+		if !containsPathFragment(writer.writes, "video_music_meta.json") {
+			t.Errorf("saved paths %v, want the metadata to be written even with nothing generated", writerPaths(writer))
+		}
+	})
+
+	t.Run("regenerates a cut whose keyframe reference was cleared", func(t *testing.T) {
+		generator := &capturingCutImageGenerator{}
+		writer := newFakeWriter()
+		recipe := &ports.VideoRecipe{
+			ProjectTitle: "test",
+			Cuts:         []ports.Cut{keyframeCut(1, "")},
+		}
+
+		updated, err := NewCutKeyframeRunner(generator, writer).RunAndSave(ctx, recipe, "gs://bucket/jobs/job-1/")
+		if err != nil {
+			t.Fatalf("RunAndSave() error = %v", err)
+		}
+		if len(generator.seen) != 1 {
+			t.Fatalf("generator called %d times, want 1 (clearing the reference means regenerate)", len(generator.seen))
+		}
+		if updated.Cuts[0].KeyframeReference == "" {
+			t.Error("cut 1 keyframe reference was not set after generation")
+		}
+	})
+}
+
+func writerPaths(w *fakeWriter) []string {
+	paths := make([]string, 0, len(w.writes))
+	for path := range w.writes {
+		paths = append(paths, path)
+	}
+	return paths
+}
+
+func containsPathFragment(writes map[string][]byte, fragment string) bool {
+	for path := range writes {
+		if strings.Contains(path, fragment) {
+			return true
+		}
+	}
+	return false
 }
