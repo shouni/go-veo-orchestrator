@@ -27,6 +27,7 @@
 
 * **🔁 Resumable Video Chain**:
   * 各 `cut` は `status`、`video_id`、`video_url` を保持します。生成済みカットは再生成せず、保持済み `video_id` を次カットの `PreviousVideoID` として使用します。
+  * キーフレームも同じ考え方で、`keyframe_reference` を持つカットは焼き直しません（`CutKeyframeRunner.Run` / `RunAndSave` の両方）。保存済みレシピを起点に処理を再開しても、すでに払った画像生成のコストを二重に払いません。焼き直したいカットは `keyframe_reference` を空にしてから渡します（`Cut.ResetGeneration(false)`）。
 
 * **🧩 Adapter-Oriented Architecture**:
   * Veo への実通信は `ports.VideoRunner` に閉じ込め、オーケストレーション、キーフレーム生成、メタデータ保存を分離しています。
@@ -38,7 +39,7 @@
 | ワークフロー | 担当インターフェース | 内容 |
 | --- | --- | --- |
 | **1. Scripting** | `ScriptRunner` | Music Recipe JSON を読み込み、歌詞・section・楽曲展開から、カット割り・カメラワーク・推定秒数を含む**Video Recipe**を生成。 |
-| **2. Cut Keyframe Gen** | `CutKeyframeRunner` | 各カットのベースとなるキーフレーム画像を、キャラクター Seed と参照画像を使って生成（`RunAndSave`）。既存キーフレームの局所編集にも対応（`EditAndSave`、詳細は後述）。 |
+| **2. Cut Keyframe Gen** | `CutKeyframeRunner` | 各カットのベースとなるキーフレーム画像を、キャラクター Seed と参照画像を使って生成（`RunAndSave`）。**`keyframe_reference` が既にあるカットは生成しません**（`Run` は該当位置に `nil` を返し、呼び出し側は既存の参照をそのまま使います）。既存キーフレームの局所編集にも対応（`EditAndSave`、詳細は後述）。 |
 | **3. Video Gen** | `VideoTimelineRunner` + `VideoRunner` | `VideoRequestBuilder` が `VideoGenerationRequest` を組み立て、Veo adapter に順次投入。 |
 | **4. Metadata Publish** | `VideoPublishRunner` | `video_id` / `video_url` / `status` 更新済みの `video_music_meta.json` を保存。 |
 
@@ -131,7 +132,16 @@ if err != nil {
 	return err
 }
 
-result, err := workflows.Video.RunAndSave(ctx, recipe, "video_music_meta.json")
+videos, err := workflows.Video.Run(ctx, recipe)
+if err != nil {
+	return err
+}
+
+// メタデータの保存は Publish が担当します。動画生成と保存を分けているのは、
+// 呼び出し側が生成と保存の間に処理（チェーンの結合など）を挟めるようにするためです。
+if _, err := workflows.Publish.Run(ctx, recipe, "gs://bucket/jobs/<jobID>/"); err != nil {
+	return err
+}
 ```
 
 `VideoGenerationRequest` の主なフィールドは以下の契約で使われます。
@@ -237,6 +247,28 @@ type LastFrameSupporter      interface{ SupportsLastFrame() bool }
 
 ---
 
+## 💾 生成と保存の責務分担 (Generation vs. Persistence)
+
+書き先は `remoteio.Writer` として注入されるため、このライブラリは GCS も S3 も知りません。
+持っているのは「どこに保存するか」ではなく、**自分のフォーマットと命名規則**です。
+その上で、キーフレームと動画で意図的に扱いを分けています。
+
+| | 生成 | 保存 |
+| --- | --- | --- |
+| キーフレーム | `CutKeyframeRunner.Run` | **同じ Runner が行う**（`RunAndSave` / `EditAndSave`） |
+| 動画 | `VideoTimelineRunner.Run` | **行わない**。呼び出し側が `VideoPublishRunner`（`Workflows.Publish`）を呼びます |
+
+**キーフレームの保存を Runner が持つ理由**: 保存名 `keyframe_<レシピ内の位置>.png` がカットの並びと結びついているためです。
+呼び出し側に出すと、位置→ファイル名の対応と `keyframe_reference` の設定を再実装させることになり、
+部分生成時に `keyframe_1.png` が別のカットを指す事故を招きます。
+
+**動画の保存を持たない理由**: 生成直後に保存すると、生成と保存の間に処理を挟む呼び出し側が困るからです。
+例えば継続チェーンを結合して `final_video_url` を埋めてから保存したい場合、
+タイムライン側が書いたメタデータには必ずその値が欠けます。
+（以前は `VideoTimelineRunner.RunAndSave` がありましたが、この理由でどの呼び出し元も使っておらず、削除しました。）
+
+---
+
 ## 🔧 レシピ・カットの操作 (Recipe helpers)
 
 `VideoRecipe` / `Cut` は、再開・再生成のために状態を読み書きするヘルパーを持ちます。
@@ -245,7 +277,7 @@ type LastFrameSupporter      interface{ SupportsLastFrame() bool }
 | API | 用途 |
 | --- | --- |
 | `Cut.IsGenerated()` / `Cut.Status`（`ports.CutStatus`） | そのカットが生成済みかの判定と状態 |
-| `Cut.ResetGeneration(keepKeyframe)` | 生成結果を捨てて再生成対象に戻す（キーフレームは残せます） |
+| `Cut.ResetGeneration(keepKeyframe)` | 生成結果を捨てて再生成対象に戻す。`keepKeyframe=false` は `keyframe_reference` も消すため、次の `RunAndSave` で画像から焼き直されます |
 | `Cut.EffectiveDurationSec()` | そのカットの実効尺 |
 | `VideoRecipe.Normalize()` | カットの連番・開始秒・`SectionIndex` / `LocationAnchor` の伝播を整えます |
 | `VideoRecipe.Validate()` | レシピの整合性検証 |
@@ -428,16 +460,17 @@ sequenceDiagram
   participant Timeline as runner.VideoTimelineRunner
   participant Builder as runner.VideoRequestBuilder
   participant VeoAPI as Vertex AI (Veo API)
+  participant Publisher as runner.VideoPublisherRunner
   participant Writer as remoteio.Writer
 
   Note over WF,KeyframeGen: 1) GenerationUnit / Keyframe Runner 初期化
   WF->>KeyframeGen: keyframe.NewGenerator(characters, imageGenerator, keyframePrompt, model, opts...)
   KeyframeGen-->>WF: *keyframe.Generator
-  WF->>Timeline: runner.NewVideoTimelineRunner(keyframeRunner, videoRunner, publisher)
+  WF->>Timeline: runner.NewVideoTimelineRunner(keyframeRunner, videoRunner)
   Timeline-->>WF: *runner.VideoTimelineRunner
 
   Note over WF,Timeline: 2) Music Recipeに基づく数珠繋ぎ動画生成
-  WF->>Timeline: Run(ctx, recipe) / RunAndSave(ctx, recipe, outputPath)
+  WF->>Timeline: Run(ctx, recipe)
   Timeline->>KeyframeGen: Execute(ctx, recipe.Cuts)
   KeyframeGen->>ImageKit: GenerateSingleImage(prompt + ImageURI{ReferenceURL})
   Note over KeyframeGen,ImageKit: 参照の解決（Vertex+gs:// は直接参照 / Gemini API は File API へ1回だけアップロード）は画像キット側
@@ -454,10 +487,10 @@ sequenceDiagram
     Timeline->>Timeline: cut.video_id / cut.video_url / cut.status 更新
   end
 
-  opt RunAndSave
-    Timeline->>Writer: Write(ctx, video_music_meta.json, updatedVideoRecipeJSON, remoteio.WithContentType("application/json"), ...)
-    Timeline-->>WF: *ports.VideoPlotResponse
-  end
+  Note over WF,Publisher: 3) メタデータの保存は Publish が担当（生成とは別ステップ）
+  WF->>Publisher: Run(ctx, recipe, outputDir)
+  Publisher->>Writer: Write(ctx, video_music_meta.json, updatedVideoRecipeJSON, remoteio.WithContentType("application/json"), ...)
+  Publisher-->>WF: *ports.PublishResult
 
 ```
 

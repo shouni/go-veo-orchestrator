@@ -11,7 +11,7 @@ func (m *manager) buildAllRunners() (*ports.Workflows, error) {
 	sr := m.buildScriptRunner()
 	keyframeR := m.buildKeyframeRunner()
 	pubR := m.buildPublishRunner()
-	videoR := m.buildVideoTimelineRunner(keyframeR, pubR)
+	videoR := m.buildVideoTimelineRunner(keyframeR)
 
 	return &ports.Workflows{
 		Script:      sr,
@@ -51,11 +51,10 @@ func (m *manager) buildPublishRunner() *runner.VideoPublisherRunner {
 // リクエストビルダーを使います。
 func (m *manager) buildVideoTimelineRunner(
 	keyframeRunner ports.CutKeyframeRunner,
-	publisher ports.VideoPublishRunner,
 ) ports.VideoTimelineRunner {
 	if m.videoRunner == nil {
 		return ports.NewNoopVideoTimelineRunner()
 	}
-	return runner.NewVideoTimelineRunner(keyframeRunner, m.videoRunner, publisher).
+	return runner.NewVideoTimelineRunner(keyframeRunner, m.videoRunner).
 		WithRequestBuilder(runner.NewVideoRequestBuilderWithCharacters(m.promptDeps.Characters))
 }
