@@ -42,25 +42,6 @@ func (m *mockVideoRunner) Run(_ context.Context, req ports.VideoGenerationReques
 	}, nil
 }
 
-// recordingPublishRunner implements ports.VideoPublishRunner and records how it was called.
-type recordingPublishRunner struct {
-	result *ports.PublishResult
-	err    error
-	calls  int
-}
-
-func (p *recordingPublishRunner) Run(_ context.Context, _ *ports.VideoRecipe, _ string) (*ports.PublishResult, error) {
-	p.calls++
-	if p.err != nil {
-		return nil, p.err
-	}
-	return p.result, nil
-}
-
-func (p *recordingPublishRunner) BuildMetadata(_ *ports.VideoRecipe) ([]byte, error) {
-	return nil, nil
-}
-
 // recordingRequestBuilder implements VideoRequestBuilder so tests can assert that
 // WithRequestBuilder actually swaps the runner's builder.
 type recordingRequestBuilder struct{}
@@ -69,77 +50,10 @@ func (recordingRequestBuilder) Build(BuildInput) ports.VideoGenerationRequest {
 	return ports.VideoGenerationRequest{}
 }
 
-func TestVideoTimelineRunner_RunAndSave(t *testing.T) {
-	ctx := context.Background()
-	baseRecipe := func() *ports.VideoRecipe {
-		return &ports.VideoRecipe{Cuts: []ports.Cut{
-			{
-				CutIndex:       1,
-				VisualAnchor:   "a",
-				AudioSync:      ports.AudioSync{DurationSec: 8},
-				KeyframeResult: ports.KeyframeResult{KeyframeReference: "gs://images/cut_1.png"},
-			},
-		}}
-	}
-
-	t.Run("publishes metadata when a publisher is configured", func(t *testing.T) {
-		publisher := &recordingPublishRunner{result: &ports.PublishResult{MetadataPath: "gs://out/meta.json"}}
-		runner := NewVideoTimelineRunner(&mockCutKeyframeRunner{}, &mockVideoRunner{}, publisher)
-
-		got, err := runner.RunAndSave(ctx, baseRecipe(), "gs://out/")
-		if err != nil {
-			t.Fatalf("RunAndSave() error = %v", err)
-		}
-		if got.Metadata == nil || got.Metadata.MetadataPath != "gs://out/meta.json" {
-			t.Fatalf("Metadata = %+v", got.Metadata)
-		}
-		if publisher.calls != 1 {
-			t.Fatalf("publisher calls = %d, want 1", publisher.calls)
-		}
-		if len(got.Videos) != 1 {
-			t.Fatalf("videos = %d, want 1", len(got.Videos))
-		}
-	})
-
-	t.Run("skips publishing when no publisher is configured", func(t *testing.T) {
-		runner := NewVideoTimelineRunner(&mockCutKeyframeRunner{}, &mockVideoRunner{}, nil)
-
-		got, err := runner.RunAndSave(ctx, baseRecipe(), "gs://out/")
-		if err != nil {
-			t.Fatalf("RunAndSave() error = %v", err)
-		}
-		if got.Metadata != nil {
-			t.Fatalf("expected nil Metadata when no publisher is configured, got %+v", got.Metadata)
-		}
-	})
-
-	t.Run("propagates a publisher failure", func(t *testing.T) {
-		publisher := &recordingPublishRunner{err: fmt.Errorf("write failed")}
-		runner := NewVideoTimelineRunner(&mockCutKeyframeRunner{}, &mockVideoRunner{}, publisher)
-
-		if _, err := runner.RunAndSave(ctx, baseRecipe(), "gs://out/"); err == nil {
-			t.Fatal("expected error when publisher fails")
-		}
-	})
-
-	t.Run("propagates a Run failure before publishing is attempted", func(t *testing.T) {
-		publisher := &recordingPublishRunner{}
-		runner := NewVideoTimelineRunner(&mockCutKeyframeRunner{}, &mockVideoRunner{}, publisher)
-
-		_, err := runner.RunAndSave(ctx, nil, "gs://out/")
-		if !errors.Is(err, ports.ErrRecipeRequired) {
-			t.Fatalf("expected ErrRecipeRequired, got %v", err)
-		}
-		if publisher.calls != 0 {
-			t.Fatalf("expected publisher not to be called, calls = %d", publisher.calls)
-		}
-	})
-}
-
 func TestVideoTimelineRunner_WithRequestBuilder(t *testing.T) {
 	t.Run("overrides the default request builder", func(t *testing.T) {
 		custom := recordingRequestBuilder{}
-		runner := NewVideoTimelineRunner(&mockCutKeyframeRunner{}, &mockVideoRunner{}, nil).WithRequestBuilder(custom)
+		runner := NewVideoTimelineRunner(&mockCutKeyframeRunner{}, &mockVideoRunner{}).WithRequestBuilder(custom)
 
 		if runner.requestBuilder != custom {
 			t.Fatal("expected custom builder to be set")
@@ -147,7 +61,7 @@ func TestVideoTimelineRunner_WithRequestBuilder(t *testing.T) {
 	})
 
 	t.Run("nil builder leaves the default in place", func(t *testing.T) {
-		runner := NewVideoTimelineRunner(&mockCutKeyframeRunner{}, &mockVideoRunner{}, nil)
+		runner := NewVideoTimelineRunner(&mockCutKeyframeRunner{}, &mockVideoRunner{})
 		original := runner.requestBuilder
 
 		runner.WithRequestBuilder(nil)
@@ -190,7 +104,7 @@ func TestVideoTimelineRunner_RunChainsPreviousVideoID(t *testing.T) {
 		},
 	}
 	video := &mockVideoRunner{}
-	runner := NewVideoTimelineRunner(keyframes, video, nil)
+	runner := NewVideoTimelineRunner(keyframes, video)
 
 	res, err := runner.Run(ctx, recipe)
 	if err != nil {
@@ -262,7 +176,7 @@ func TestVideoTimelineRunner_RunResetsChainAtChainStart(t *testing.T) {
 		},
 	}
 	video := &mockVideoRunner{}
-	runner := NewVideoTimelineRunner(keyframes, video, nil)
+	runner := NewVideoTimelineRunner(keyframes, video)
 
 	if _, err := runner.Run(ctx, recipe); err != nil {
 		t.Fatalf("Run failed: %v", err)
@@ -302,7 +216,7 @@ func TestVideoTimelineRunner_RunUsesSavedKeyframeReferences(t *testing.T) {
 	}
 	keyframes := &mockCutKeyframeRunner{}
 	video := &mockVideoRunner{}
-	runner := NewVideoTimelineRunner(keyframes, video, nil)
+	runner := NewVideoTimelineRunner(keyframes, video)
 
 	if _, err := runner.Run(ctx, recipe); err != nil {
 		t.Fatalf("Run failed: %v", err)
@@ -350,7 +264,7 @@ func TestVideoTimelineRunner_RunSkipsGeneratedCutAndChainsItsVideoID(t *testing.
 		},
 	}
 	video := &mockVideoRunner{}
-	runner := NewVideoTimelineRunner(keyframes, video, nil)
+	runner := NewVideoTimelineRunner(keyframes, video)
 
 	_, err := runner.Run(ctx, recipe)
 	if err != nil {
@@ -405,7 +319,7 @@ func TestVideoTimelineRunner_RunPassesNextKeyframeAsLastFrame(t *testing.T) {
 		},
 	}
 	video := &lastFrameVideoRunner{}
-	runner := NewVideoTimelineRunner(&mockCutKeyframeRunner{}, video, nil)
+	runner := NewVideoTimelineRunner(&mockCutKeyframeRunner{}, video)
 
 	if _, err := runner.Run(ctx, recipe); err != nil {
 		t.Fatalf("Run failed: %v", err)
@@ -438,7 +352,7 @@ func TestVideoTimelineRunner_RunRejectsUnsupportedDuration(t *testing.T) {
 		},
 	}
 	video := &mockVideoRunner{}
-	runner := NewVideoTimelineRunner(&mockCutKeyframeRunner{}, video, nil)
+	runner := NewVideoTimelineRunner(&mockCutKeyframeRunner{}, video)
 
 	_, err := runner.Run(ctx, recipe)
 	if !errors.Is(err, ports.ErrUnsupportedCutDuration) {

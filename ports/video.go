@@ -52,7 +52,6 @@ type VideoRunner interface {
 // VideoTimelineRunner は Music Recipe のカット列を順次動画化する契約です。
 type VideoTimelineRunner interface {
 	Run(ctx context.Context, recipe *VideoRecipe) ([]*VideoResponse, error)
-	RunAndSave(ctx context.Context, recipe *VideoRecipe, outputPath string) (*VideoPlotResponse, error)
 }
 
 // noopVideoTimelineRunner is a VideoTimelineRunner that always fails with
@@ -69,15 +68,4 @@ func NewNoopVideoTimelineRunner() VideoTimelineRunner {
 
 func (noopVideoTimelineRunner) Run(context.Context, *VideoRecipe) ([]*VideoResponse, error) {
 	return nil, ErrVideoRunnerNotConfigured
-}
-
-func (noopVideoTimelineRunner) RunAndSave(context.Context, *VideoRecipe, string) (*VideoPlotResponse, error) {
-	return nil, ErrVideoRunnerNotConfigured
-}
-
-// VideoPlotResponse は動画生成結果を反映したメタデータです。
-type VideoPlotResponse struct {
-	Recipe   *VideoRecipe
-	Videos   []*VideoResponse
-	Metadata *PublishResult
 }

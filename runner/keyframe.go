@@ -44,21 +44,49 @@ func NewCutKeyframeRunner(
 	}
 }
 
-// Run は、動画レシピを受け取り、カットのキーフレーム画像を生成します。
+// Run は、動画レシピのカットのうち**キーフレーム画像をまだ持たないものだけ**を生成し、
+// カット列と同じ長さ・同じ並びのスライスを返します。すでに KeyframeReference を持つ
+// カットの位置は nil です（呼び出し側はその参照をそのまま使えばよく、焼き直す理由が
+// ないため）。VideoTimelineRunner はこの nil を「既存の参照を使う」として扱います。
+//
+// 判定は RunAndSave と同じ「KeyframeReference が空 = 未生成」です。焼き直したいカットは
+// 呼び出し側が参照を空にしてから渡してください。
 func (r *CutKeyframeRunner) Run(ctx context.Context, recipe *ports.VideoRecipe) ([]*imagePorts.ImageResponse, error) {
 	if recipe == nil {
 		return nil, ports.ErrRecipeRequired
 	}
 	recipe.Normalize()
 
-	slog.InfoContext(ctx, "Starting parallel cut keyframe generation", "cuts", len(recipe.Cuts))
+	images := make([]*imagePorts.ImageResponse, len(recipe.Cuts))
+	pending := pendingKeyframeCutPositions(recipe.Cuts)
+	if len(pending) == 0 {
+		slog.InfoContext(ctx, "全カットにキーフレームがあるため生成をスキップしました",
+			"cuts", len(recipe.Cuts))
+		return images, nil
+	}
 
-	images, err := r.generator.Execute(ctx, recipe.Cuts)
+	targets := make([]ports.Cut, 0, len(pending))
+	for _, i := range pending {
+		targets = append(targets, recipe.Cuts[i])
+	}
+
+	slog.InfoContext(ctx, "Starting parallel cut keyframe generation",
+		"cuts", len(targets), "skipped", len(recipe.Cuts)-len(targets))
+
+	generated, err := r.generator.Execute(ctx, targets)
 	if err != nil {
 		return nil, fmt.Errorf("cut keyframe generation failed: %w", err)
 	}
+	if err := mustMatchCutCount("生成された画像の数", len(generated), len(targets)); err != nil {
+		return nil, err
+	}
+	// 生成対象を絞っても、返すスライスの添字はレシピ内の位置のままにする。詰めると
+	// 呼び出し側（VideoTimelineRunner、RunAndSave の保存名）がカットを取り違える。
+	for n, image := range generated {
+		images[pending[n]] = image
+	}
 
-	slog.InfoContext(ctx, "Successfully generated cut keyframes", "count", len(images))
+	slog.InfoContext(ctx, "Successfully generated cut keyframes", "count", len(generated))
 	return images, nil
 }
 
@@ -84,13 +112,20 @@ func (r *CutKeyframeRunner) RunAndSave(ctx context.Context, recipe *ports.VideoR
 		return nil, err
 	}
 
-	if pending := pendingKeyframeCutPositions(recipe.Cuts); len(pending) > 0 {
-		if err := r.generateKeyframesAt(ctx, recipe, pending, basePath); err != nil {
+	images, err := r.Run(ctx, recipe)
+	if err != nil {
+		return nil, err
+	}
+	for i, image := range images {
+		// nil は「このカットは既存のキーフレームをそのまま使う」を意味する。
+		if image == nil {
+			continue
+		}
+		keyframePath, err := r.saveKeyframeImage(ctx, basePath, i+1, image)
+		if err != nil {
 			return nil, err
 		}
-	} else {
-		slog.InfoContext(ctx, "全カットにキーフレームがあるため生成をスキップしました",
-			"cuts", len(recipe.Cuts))
+		recipe.Cuts[i].KeyframeReference = keyframePath
 	}
 
 	slog.InfoContext(ctx, "更新された動画メタデータを保存しています", "output_dir", targetDir)
@@ -112,44 +147,6 @@ func pendingKeyframeCutPositions(cuts []ports.Cut) []int {
 		}
 	}
 	return pending
-}
-
-// generateKeyframesAt は positions のカットだけを生成し、レシピ内の元の位置に対応する
-// 番号で保存します。
-//
-// 生成対象は recipe ごとではなくカット列で渡します。部分レシピを組んで Run へ回すと
-// VideoRecipe.Normalize が CutIndex を 1 から振り直してしまい、カット番号を見ている
-// プロンプトやログが元のレシピとずれるためです。
-func (r *CutKeyframeRunner) generateKeyframesAt(ctx context.Context, recipe *ports.VideoRecipe, positions []int, basePath string) error {
-	targets := make([]ports.Cut, 0, len(positions))
-	for _, i := range positions {
-		targets = append(targets, recipe.Cuts[i])
-	}
-
-	slog.InfoContext(ctx, "Starting parallel cut keyframe generation",
-		"cuts", len(targets), "skipped", len(recipe.Cuts)-len(targets))
-
-	images, err := r.generator.Execute(ctx, targets)
-	if err != nil {
-		return fmt.Errorf("cut keyframe generation failed: %w", err)
-	}
-	if err := mustMatchCutCount("生成された画像の数", len(images), len(targets)); err != nil {
-		return err
-	}
-
-	for n, image := range images {
-		// 保存名はレシピ内の位置（1始まり）で決めます。生成対象を絞ったときに
-		// 連番を詰めると keyframe_1.png が別のカットの絵を指してしまいます。
-		position := positions[n]
-		keyframePath, err := r.saveKeyframeImage(ctx, basePath, position+1, image)
-		if err != nil {
-			return err
-		}
-		recipe.Cuts[position].KeyframeReference = keyframePath
-	}
-
-	slog.InfoContext(ctx, "Successfully generated cut keyframes", "count", len(images))
-	return nil
 }
 
 // resolveKeyframeBasePath は、RunAndSave / EditAndSave が共通して必要とする保存先ディレクトリと

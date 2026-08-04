@@ -45,6 +45,9 @@ type ScriptRunner interface {
 
 // CutKeyframeRunner は、解析済みの動画データを基に、カットのキーフレーム画像を生成する責務を持ちます。
 type CutKeyframeRunner interface {
+	// Run generates keyframe images only for the cuts that have no KeyframeReference yet and
+	// returns a slice aligned with recipe.Cuts — nil at the positions that already had one.
+	// Callers treat nil as "reuse the cut's existing reference".
 	Run(ctx context.Context, recipe *VideoRecipe) ([]*imagePorts.ImageResponse, error)
 	RunAndSave(ctx context.Context, recipe *VideoRecipe, outputPath string) (*VideoRecipe, error)
 	// EditAndSave edits the existing keyframe image of a single-cut recipe using editPrompt

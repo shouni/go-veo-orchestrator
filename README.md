@@ -131,7 +131,16 @@ if err != nil {
 	return err
 }
 
-result, err := workflows.Video.RunAndSave(ctx, recipe, "video_music_meta.json")
+videos, err := workflows.Video.Run(ctx, recipe)
+if err != nil {
+	return err
+}
+
+// メタデータの保存は Publish が担当します。動画生成と保存を分けているのは、
+// 呼び出し側が生成と保存の間に処理（チェーンの結合など）を挟めるようにするためです。
+if _, err := workflows.Publish.Run(ctx, recipe, "gs://bucket/jobs/<jobID>/"); err != nil {
+	return err
+}
 ```
 
 `VideoGenerationRequest` の主なフィールドは以下の契約で使われます。
@@ -428,16 +437,17 @@ sequenceDiagram
   participant Timeline as runner.VideoTimelineRunner
   participant Builder as runner.VideoRequestBuilder
   participant VeoAPI as Vertex AI (Veo API)
+  participant Publisher as runner.VideoPublisherRunner
   participant Writer as remoteio.Writer
 
   Note over WF,KeyframeGen: 1) GenerationUnit / Keyframe Runner 初期化
   WF->>KeyframeGen: keyframe.NewGenerator(characters, imageGenerator, keyframePrompt, model, opts...)
   KeyframeGen-->>WF: *keyframe.Generator
-  WF->>Timeline: runner.NewVideoTimelineRunner(keyframeRunner, videoRunner, publisher)
+  WF->>Timeline: runner.NewVideoTimelineRunner(keyframeRunner, videoRunner)
   Timeline-->>WF: *runner.VideoTimelineRunner
 
   Note over WF,Timeline: 2) Music Recipeに基づく数珠繋ぎ動画生成
-  WF->>Timeline: Run(ctx, recipe) / RunAndSave(ctx, recipe, outputPath)
+  WF->>Timeline: Run(ctx, recipe)
   Timeline->>KeyframeGen: Execute(ctx, recipe.Cuts)
   KeyframeGen->>ImageKit: GenerateSingleImage(prompt + ImageURI{ReferenceURL})
   Note over KeyframeGen,ImageKit: 参照の解決（Vertex+gs:// は直接参照 / Gemini API は File API へ1回だけアップロード）は画像キット側
@@ -454,10 +464,10 @@ sequenceDiagram
     Timeline->>Timeline: cut.video_id / cut.video_url / cut.status 更新
   end
 
-  opt RunAndSave
-    Timeline->>Writer: Write(ctx, video_music_meta.json, updatedVideoRecipeJSON, remoteio.WithContentType("application/json"), ...)
-    Timeline-->>WF: *ports.VideoPlotResponse
-  end
+  Note over WF,Publisher: 3) メタデータの保存は Publish が担当（生成とは別ステップ）
+  WF->>Publisher: Run(ctx, recipe, outputDir)
+  Publisher->>Writer: Write(ctx, video_music_meta.json, updatedVideoRecipeJSON, remoteio.WithContentType("application/json"), ...)
+  Publisher-->>WF: *ports.PublishResult
 
 ```
 

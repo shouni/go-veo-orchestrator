@@ -152,50 +152,6 @@ func TestCutKeyframeRunner_EditAndSave(t *testing.T) {
 	})
 }
 
-func TestCutKeyframeRunner_Run(t *testing.T) {
-	ctx := context.Background()
-
-	t.Run("returns generated images for the recipe's cuts", func(t *testing.T) {
-		want := []*imagePorts.ImageResponse{
-			{Data: []byte("a"), MimeType: "image/png"},
-			{Data: []byte("b"), MimeType: "image/png"},
-		}
-		gen := &recordingCutImageGenerator{images: want}
-		r := NewCutKeyframeRunner(gen, newFakeWriter())
-		recipe := &ports.VideoRecipe{Cuts: []ports.Cut{{CutIndex: 1}, {CutIndex: 2}}}
-
-		got, err := r.Run(ctx, recipe)
-		if err != nil {
-			t.Fatalf("Run() error = %v", err)
-		}
-		if len(got) != 2 {
-			t.Fatalf("len(got) = %d, want 2", len(got))
-		}
-		if gen.calls != 1 {
-			t.Fatalf("generator calls = %d, want 1", gen.calls)
-		}
-	})
-
-	t.Run("returns ErrRecipeRequired for nil recipe", func(t *testing.T) {
-		r := NewCutKeyframeRunner(&recordingCutImageGenerator{}, newFakeWriter())
-
-		_, err := r.Run(ctx, nil)
-		if !errors.Is(err, ports.ErrRecipeRequired) {
-			t.Fatalf("expected ErrRecipeRequired, got %v", err)
-		}
-	})
-
-	t.Run("wraps generator failure", func(t *testing.T) {
-		gen := &recordingCutImageGenerator{err: fmt.Errorf("upstream failure")}
-		r := NewCutKeyframeRunner(gen, newFakeWriter())
-		recipe := &ports.VideoRecipe{Cuts: []ports.Cut{{CutIndex: 1}}}
-
-		if _, err := r.Run(ctx, recipe); err == nil {
-			t.Fatal("expected error when generator fails")
-		}
-	})
-}
-
 func TestCutKeyframeRunner_RunAndSave(t *testing.T) {
 	ctx := context.Background()
 
@@ -233,6 +189,16 @@ func TestCutKeyframeRunner_RunAndSave(t *testing.T) {
 
 		if _, err := r.RunAndSave(ctx, recipe, "gs://bucket/out/"); err == nil {
 			t.Fatal("expected error for image/cut count mismatch")
+		}
+	})
+
+	t.Run("wraps generator failure", func(t *testing.T) {
+		gen := &recordingCutImageGenerator{err: fmt.Errorf("upstream failure")}
+		r := NewCutKeyframeRunner(gen, newFakeWriter())
+		recipe := &ports.VideoRecipe{Cuts: []ports.Cut{{CutIndex: 1}}}
+
+		if _, err := r.RunAndSave(ctx, recipe, "gs://bucket/out/"); err == nil {
+			t.Fatal("expected error when generator fails")
 		}
 	})
 
@@ -376,4 +342,37 @@ func containsPathFragment(writes map[string][]byte, fragment string) bool {
 		}
 	}
 	return false
+}
+
+// TestCutKeyframeRunner_RunSkipsExistingKeyframes pins the same rule on Run that RunAndSave
+// follows, with the alignment contract VideoTimelineRunner depends on: the returned slice
+// matches recipe.Cuts position for position, and cuts that already had an image come back nil.
+func TestCutKeyframeRunner_RunSkipsExistingKeyframes(t *testing.T) {
+	ctx := context.Background()
+	generator := &capturingCutImageGenerator{}
+	recipe := &ports.VideoRecipe{
+		ProjectTitle: "test",
+		Cuts: []ports.Cut{
+			keyframeCut(1, "gs://bucket/jobs/job-1/images/keyframe_1.png"),
+			keyframeCut(2, ""),
+			keyframeCut(3, "gs://bucket/jobs/job-1/images/keyframe_3.png"),
+		},
+	}
+
+	images, err := NewCutKeyframeRunner(generator, newFakeWriter()).Run(ctx, recipe)
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if len(images) != len(recipe.Cuts) {
+		t.Fatalf("len(images) = %d, want %d (must stay aligned with the cuts)", len(images), len(recipe.Cuts))
+	}
+	if images[0] != nil || images[2] != nil {
+		t.Error("cuts that already had a keyframe should come back nil, not a fresh image")
+	}
+	if images[1] == nil {
+		t.Error("the cut without a keyframe was not generated")
+	}
+	if len(generator.seen) != 1 || len(generator.seen[0]) != 1 || generator.seen[0][0].CutIndex != 2 {
+		t.Errorf("generated cuts = %+v, want only cut 2", generator.seen)
+	}
 }
