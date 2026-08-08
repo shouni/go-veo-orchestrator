@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/shouni/go-gemini-client/lyria"
+	"github.com/shouni/go-gemini-client/music"
 )
 
 // VideoRecipe は ScriptRunner が生成する動画台本全体の構造です。
@@ -22,9 +22,9 @@ type VideoRecipe struct {
 	// without this field, a cut whose own VisualAnchor omits the location (e.g. a tight emotional
 	// close-up) has nothing grounding its background, and the image model is free to hallucinate
 	// an unrelated one.
-	LocationAnchor string            `json:"location_anchor,omitempty"`
-	MusicRecipe    lyria.MusicRecipe `json:"music_recipe"`
-	Cuts           []Cut             `json:"cuts"`
+	LocationAnchor string       `json:"location_anchor,omitempty"`
+	MusicRecipe    music.Recipe `json:"music_recipe"`
+	Cuts           []Cut        `json:"cuts"`
 	// FinalVideoURL は、全チェーンをハードカットで1本に結合した完成動画のURLです。
 	// チェーンの継続生成（video_extension）を使わないジョブでは空のままです。
 	FinalVideoURL string `json:"final_video_url,omitempty"`
@@ -34,14 +34,28 @@ type VideoRecipe struct {
 	AspectRatio string `json:"aspect_ratio,omitempty"`
 }
 
-// MusicRecipe は Lyria の楽曲生成レシピです。
-type MusicRecipe = lyria.MusicRecipe
+// MusicRecipe は楽曲生成レシピです（music.Recipe の別名）。
+type MusicRecipe = music.Recipe
 
-// Section は Lyria の楽曲セクションです。
-type Section = lyria.MusicSection
+// Section は楽曲セクションです（music.Section の別名）。
+type Section = music.Section
 
-// Lyrics は Lyria の歌詞ドラフトです。
-type Lyrics = lyria.LyricsDraft
+// Lyrics は歌詞ドラフトです（music.LyricsDraft の別名）。
+type Lyrics = music.LyricsDraft
+
+// NewVideoRecipeFromMusic は、Music Recipe から動画レシピを組み立てます。
+//
+// タイトルの相互補完とセクション→カット展開は Normalize が行うため、この関数の
+// 仕事は音楽レシピを深いコピーで取り込んで正規化することだけです。以前は消費者側が
+// 「タイトルを写して Normalize を呼ぶだけ」の変換関数を自前で持ち、その際の
+// フィールド単位の手書きコピーが Seed / AudioModel / ComposeMode を静かに
+// 取り落としていました。深いコピー（music.Recipe.Clone）を使うことで、音楽側に
+// フィールドが増えても取りこぼしが構造的に起こりません。
+func NewVideoRecipeFromMusic(musicRecipe music.Recipe) *VideoRecipe {
+	vr := &VideoRecipe{MusicRecipe: *musicRecipe.Clone()}
+	vr.Normalize()
+	return vr
+}
 
 // AudioSync は、カットを楽曲のタイムラインに同期させるための情報を保持します。
 type AudioSync struct {
@@ -155,7 +169,7 @@ func (vr *VideoRecipe) Normalize() {
 	}
 }
 
-func cutsFromSections(sections []lyria.MusicSection) []Cut {
+func cutsFromSections(sections []music.Section) []Cut {
 	cuts := make([]Cut, 0, len(sections))
 	for i, section := range sections {
 		duration := float64(section.Duration)
@@ -180,7 +194,7 @@ func cutsFromSections(sections []lyria.MusicSection) []Cut {
 // フォールバックとしてのみ使われ、明示的に設定された SectionIndex を上書きしません。
 // 一致するセクションが複数ありうる境界値では、startSec 以下で最大の StartSeconds を持つ
 // セクションを採用します（EndSeconds との間の丸め誤差に頑健にするため）。
-func sectionIndexForStartSec(sections []lyria.MusicSection, startSec float64) int {
+func sectionIndexForStartSec(sections []music.Section, startSec float64) int {
 	bestIndex := -1
 	bestStart := -1.0
 	for i, s := range sections {
@@ -219,13 +233,13 @@ func (c *Cut) Normalize(index int, startSec float64) {
 // section_index が音楽のセクション数を超えることは文法制約の外側で起こります。
 func (vr *VideoRecipe) Validate() error {
 	if vr == nil {
-		return fmt.Errorf("video recipe is nil")
+		return fmt.Errorf("%w: video recipe is nil", ErrRecipeInvalid)
 	}
 	if strings.TrimSpace(firstNonEmptyString(vr.ProjectTitle, vr.MusicRecipe.Title)) == "" {
-		return fmt.Errorf("video recipe title is required")
+		return fmt.Errorf("%w: video recipe title is required", ErrRecipeInvalid)
 	}
 	if len(vr.Cuts) == 0 {
-		return fmt.Errorf("video recipe requires cuts")
+		return fmt.Errorf("%w: video recipe requires cuts", ErrRecipeInvalid)
 	}
 
 	numSections := len(vr.MusicRecipe.Sections)
@@ -233,7 +247,7 @@ func (vr *VideoRecipe) Validate() error {
 		// SectionIndex は1始まりで、0は「未割り当て」を意味する正当な値。
 		// 範囲外の非ゼロ値だけを不正とする。
 		if cut.SectionIndex < 0 || cut.SectionIndex > numSections {
-			return fmt.Errorf("cut %d has out-of-range section_index %d (recipe has %d sections)", cut.CutIndex, cut.SectionIndex, numSections)
+			return fmt.Errorf("%w: cut %d has out-of-range section_index %d (recipe has %d sections)", ErrRecipeInvalid, cut.CutIndex, cut.SectionIndex, numSections)
 		}
 	}
 	return nil

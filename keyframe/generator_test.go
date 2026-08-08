@@ -4,7 +4,6 @@ import (
 	"context"
 	"sync"
 	"testing"
-	"time"
 
 	imagePorts "github.com/shouni/gemini-image-kit/ports"
 	characterkit "github.com/shouni/go-character-kit/character"
@@ -13,16 +12,16 @@ import (
 
 // --- Mocks ---
 
-// mockImageGenerator は Generator.Execute からの並行呼び出しを受けるため、
-// generateCount への読み書きを mu で保護しています。
+// mockImageGenerator は gemini-image-kit の ImageGenerator を模したテストダブルです。
+// mu は将来の並行利用に備えた保護です（現在の Execute は逐次実行）。
 type mockImageGenerator struct {
 	mu            sync.Mutex
 	generateCount int
-	lastReq       imagePorts.SingleImageRequest
-	generateFunc  func(ctx context.Context, req imagePorts.SingleImageRequest) (*imagePorts.ImageResponse, error)
+	lastReq       imagePorts.ImageRequest
+	generateFunc  func(ctx context.Context, req imagePorts.ImageRequest) (*imagePorts.ImageResponse, error)
 }
 
-func (m *mockImageGenerator) GenerateSingleImage(ctx context.Context, req imagePorts.SingleImageRequest) (*imagePorts.ImageResponse, error) {
+func (m *mockImageGenerator) Generate(ctx context.Context, req imagePorts.ImageRequest) (*imagePorts.ImageResponse, error) {
 	m.mu.Lock()
 	m.generateCount++
 	m.lastReq = req
@@ -84,14 +83,9 @@ func TestGenerator_Execute(t *testing.T) {
 		genMock,
 		pbMock,
 		"gemini-2.0-flash",
-		func(g *Generator) {
-			g.maxConcurrency = 5
-			g.rateInterval = 1 * time.Microsecond
-			g.rateBurst = 100
-		},
 	)
 
-	t.Run("Parallel Generation and Individual Seeds", func(t *testing.T) {
+	t.Run("Sequential Generation and Individual Seeds", func(t *testing.T) {
 		cuts := []ports.Cut{
 			{CharacterID: "zundamon", Dialogue: "こんにちはなのだ！"},
 			{CharacterID: "metan", Dialogue: "ごきげんよう。"},
@@ -100,9 +94,7 @@ func TestGenerator_Execute(t *testing.T) {
 
 		// リクエストされた Seed を記録するためのスライス
 		capturedSeeds := make([]int64, len(cuts))
-		genMock.generateFunc = func(_ context.Context, req imagePorts.SingleImageRequest) (*imagePorts.ImageResponse, error) {
-			// どのパネルのリクエストか特定するのが難しいため、
-			// 呼ばれた順ではなく最終的な Seed 値を検証
+		genMock.generateFunc = func(_ context.Context, req imagePorts.ImageRequest) (*imagePorts.ImageResponse, error) {
 			return &imagePorts.ImageResponse{UsedSeed: *req.Seed}, nil
 		}
 
@@ -153,10 +145,10 @@ func TestGenerator_Execute(t *testing.T) {
 		if genMock.generateCount != 1 {
 			t.Errorf("Expected 1 generation call, got %d", genMock.generateCount)
 		}
-		if got := genMock.lastReq.Image.ReferenceURL; got != "gs://bucket/zunda.png" {
+		if got := genMock.lastReq.Images[0].ReferenceURL; got != "gs://bucket/zunda.png" {
 			t.Errorf("ReferenceURL = %q, want the character reference", got)
 		}
-		if got := genMock.lastReq.Image.FileAPIURI; got != "" {
+		if got := genMock.lastReq.Images[0].FileAPIURI; got != "" {
 			t.Errorf("FileAPIURI = %q, want it left to the image kit", got)
 		}
 	})
@@ -182,7 +174,7 @@ func TestGenerator_AspectRatio(t *testing.T) {
 	t.Run("defaults to CutAspectRatio when not set", func(t *testing.T) {
 		g, genMock := newGeneratorWithAspectRatio()
 		var captured string
-		genMock.generateFunc = func(_ context.Context, req imagePorts.SingleImageRequest) (*imagePorts.ImageResponse, error) {
+		genMock.generateFunc = func(_ context.Context, req imagePorts.ImageRequest) (*imagePorts.ImageResponse, error) {
 			captured = req.AspectRatio
 			return &imagePorts.ImageResponse{}, nil
 		}
@@ -197,7 +189,7 @@ func TestGenerator_AspectRatio(t *testing.T) {
 	t.Run("explicit value overrides default", func(t *testing.T) {
 		g, genMock := newGeneratorWithAspectRatio(WithAspectRatio("9:16"))
 		var captured string
-		genMock.generateFunc = func(_ context.Context, req imagePorts.SingleImageRequest) (*imagePorts.ImageResponse, error) {
+		genMock.generateFunc = func(_ context.Context, req imagePorts.ImageRequest) (*imagePorts.ImageResponse, error) {
 			captured = req.AspectRatio
 			return &imagePorts.ImageResponse{}, nil
 		}
@@ -212,7 +204,7 @@ func TestGenerator_AspectRatio(t *testing.T) {
 	t.Run("empty value does not override default", func(t *testing.T) {
 		g, genMock := newGeneratorWithAspectRatio(WithAspectRatio(""))
 		var captured string
-		genMock.generateFunc = func(_ context.Context, req imagePorts.SingleImageRequest) (*imagePorts.ImageResponse, error) {
+		genMock.generateFunc = func(_ context.Context, req imagePorts.ImageRequest) (*imagePorts.ImageResponse, error) {
 			captured = req.AspectRatio
 			return &imagePorts.ImageResponse{}, nil
 		}
@@ -254,8 +246,8 @@ func TestGenerator_ReferenceURLPerAspectRatio(t *testing.T) {
 	t.Run("uses aspect-ratio-specific entry when present", func(t *testing.T) {
 		g, genMock := newGenerator(WithAspectRatio("9:16"))
 		var captured string
-		genMock.generateFunc = func(_ context.Context, req imagePorts.SingleImageRequest) (*imagePorts.ImageResponse, error) {
-			captured = req.Image.ReferenceURL
+		genMock.generateFunc = func(_ context.Context, req imagePorts.ImageRequest) (*imagePorts.ImageResponse, error) {
+			captured = req.Images[0].ReferenceURL
 			return &imagePorts.ImageResponse{}, nil
 		}
 		if _, err := g.Execute(ctx, cuts); err != nil {
@@ -269,8 +261,8 @@ func TestGenerator_ReferenceURLPerAspectRatio(t *testing.T) {
 	t.Run("falls back to ReferenceURL when aspect ratio has no entry", func(t *testing.T) {
 		g, genMock := newGenerator(WithAspectRatio("16:9"))
 		var captured string
-		genMock.generateFunc = func(_ context.Context, req imagePorts.SingleImageRequest) (*imagePorts.ImageResponse, error) {
-			captured = req.Image.ReferenceURL
+		genMock.generateFunc = func(_ context.Context, req imagePorts.ImageRequest) (*imagePorts.ImageResponse, error) {
+			captured = req.Images[0].ReferenceURL
 			return &imagePorts.ImageResponse{}, nil
 		}
 		if _, err := g.Execute(ctx, cuts); err != nil {
@@ -291,17 +283,11 @@ func TestGenerator_EditCut(t *testing.T) {
 	})
 	genMock := &mockImageGenerator{}
 	pbMock := &mockImagePrompt{}
-	generator := NewGenerator(cm, genMock, pbMock, "gemini-2.0-flash",
-		func(g *Generator) {
-			g.maxConcurrency = 5
-			g.rateInterval = 1 * time.Microsecond
-			g.rateBurst = 100
-		},
-	)
+	generator := NewGenerator(cm, genMock, pbMock, "gemini-2.0-flash")
 
 	t.Run("Uses existing keyframe as source, generation model, and character seed", func(t *testing.T) {
-		var captured imagePorts.SingleImageRequest
-		genMock.generateFunc = func(_ context.Context, req imagePorts.SingleImageRequest) (*imagePorts.ImageResponse, error) {
+		var captured imagePorts.ImageRequest
+		genMock.generateFunc = func(_ context.Context, req imagePorts.ImageRequest) (*imagePorts.ImageResponse, error) {
 			captured = req
 			return &imagePorts.ImageResponse{Data: []byte("edited"), UsedSeed: *req.Seed}, nil
 		}
@@ -314,8 +300,8 @@ func TestGenerator_EditCut(t *testing.T) {
 		if string(resp.Data) != "edited" {
 			t.Errorf("unexpected response data: %q", resp.Data)
 		}
-		if captured.Image.ReferenceURL != cut.KeyframeReference {
-			t.Errorf("edit request image = %q, want %q", captured.Image.ReferenceURL, cut.KeyframeReference)
+		if captured.Images[0].ReferenceURL != cut.KeyframeReference {
+			t.Errorf("edit request image = %q, want %q", captured.Images[0].ReferenceURL, cut.KeyframeReference)
 		}
 		if captured.Prompt != "腕には絆創膏を1〜2枚のみにしてください" {
 			t.Errorf("edit request prompt = %q", captured.Prompt)
@@ -336,11 +322,7 @@ func TestGenerator_EditCut(t *testing.T) {
 	})
 
 	t.Run("Errors when character is unknown and no default exists", func(t *testing.T) {
-		g := NewGenerator(mustNewCharacters(t, nil), genMock, pbMock, "gemini-2.0-flash", func(g *Generator) {
-			g.maxConcurrency = 5
-			g.rateInterval = 1 * time.Microsecond
-			g.rateBurst = 100
-		})
+		g := NewGenerator(mustNewCharacters(t, nil), genMock, pbMock, "gemini-2.0-flash")
 		cut := ports.Cut{CutIndex: 1, CharacterID: "no-such-character", KeyframeResult: ports.KeyframeResult{KeyframeReference: "gs://bucket/keyframe.png"}}
 		if _, err := g.EditCut(ctx, cut, "edit"); err == nil {
 			t.Fatal("expected error for unknown character with no default")

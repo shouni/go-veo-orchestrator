@@ -29,7 +29,7 @@ var jsonBlockRegex = regexp.MustCompile("(?s)```(?:json)?\\s*(.*?\\S)\\s*```")
 // VideoScriptRunner は入力ソースから Music Recipe を読み取り、動画レシピを生成します。
 type VideoScriptRunner struct {
 	promptBuilder ports.ScriptPrompt
-	aiClient      gemini.MultimodalGenerator
+	aiClient      gemini.Generator
 	reader        ports.ContentReader
 	aiModel       string
 	characters    *characterkit.Characters
@@ -41,7 +41,7 @@ type VideoScriptRunner struct {
 // （空文字のみ許容）になります。
 func NewVideoScriptRunner(
 	pb ports.ScriptPrompt,
-	ai gemini.MultimodalGenerator,
+	ai gemini.Generator,
 	r ports.ContentReader,
 	aiModel string,
 	characters *characterkit.Characters,
@@ -69,7 +69,7 @@ func (r *VideoScriptRunner) characterIDs() []string {
 
 // Run は Music Recipe JSON を読み込み、Gemini を用いて動画台本 JSON を生成します。
 func (r *VideoScriptRunner) Run(ctx context.Context, sourceURL string, mode string) (*ports.VideoRecipe, error) {
-	slog.Info("ScriptRunner: 処理を開始", "url", sanitizeURL(sourceURL))
+	slog.InfoContext(ctx, "ScriptRunner: 処理を開始", "url", sanitizeURL(sourceURL))
 
 	// 1. ソースからテキストを取得
 	inputText, err := r.readContent(ctx, sourceURL)
@@ -133,7 +133,7 @@ func (r *VideoScriptRunner) generateRecipe(ctx context.Context, finalPrompt stri
 			)
 		}
 
-		recipe, err := r.parseResponse(resp.Text)
+		recipe, err := r.parseResponse(ctx, resp.Text)
 		if err != nil {
 			// JSON として読めない応答は作り直しても直る見込みが薄いので、そのまま返す。
 			return nil, err
@@ -189,10 +189,10 @@ func (r *VideoScriptRunner) readContent(ctx context.Context, sourceURL string) (
 
 // parseResponse は AI の応答から JSON 候補を抽出し、動画レシピとして内容を持つ
 // 最初の候補を採用します。説明用の JSON ブロックが混在する応答にも対応します。
-func (r *VideoScriptRunner) parseResponse(raw string) (*ports.VideoRecipe, error) {
+func (r *VideoScriptRunner) parseResponse(ctx context.Context, raw string) (*ports.VideoRecipe, error) {
 	candidates := extractJSONCandidates(raw)
 	if len(candidates) == 0 {
-		slog.Warn("AIの応答からJSONを抽出できませんでした。応答全体を対象にパースを試みます。",
+		slog.WarnContext(ctx, "AIの応答からJSONを抽出できませんでした。応答全体を対象にパースを試みます。",
 			"response_snippet", truncateString(raw, 100))
 		candidates = []string{raw}
 	}

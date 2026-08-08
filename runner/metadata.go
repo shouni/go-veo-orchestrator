@@ -41,7 +41,7 @@ func writeRecipeMetadata(ctx context.Context, writer remoteio.Writer, outputDir 
 
 	if err := writer.Write(ctx, metadataPath, bytes.NewReader(metadata),
 		remoteio.WithContentType(metadataContentType),
-		remoteio.WithCacheControl(defaultCacheControl),
+		remoteio.WithCacheControl(DefaultKeyframeCacheControl),
 	); err != nil {
 		return "", fmt.Errorf("動画メタデータの保存に失敗しました: %w", err)
 	}

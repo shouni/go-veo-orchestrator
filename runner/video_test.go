@@ -7,16 +7,15 @@ import (
 	"strings"
 	"testing"
 
-	imagePorts "github.com/shouni/gemini-image-kit/ports"
 	"github.com/shouni/go-veo-orchestrator/ports"
 )
 
 type mockCutKeyframeRunner struct {
-	images []*imagePorts.ImageResponse
+	images []*ports.KeyframeImage
 	calls  int
 }
 
-func (m *mockCutKeyframeRunner) Run(_ context.Context, _ *ports.VideoRecipe) ([]*imagePorts.ImageResponse, error) {
+func (m *mockCutKeyframeRunner) Run(_ context.Context, _ *ports.VideoRecipe) ([]*ports.KeyframeImage, error) {
 	m.calls++
 	return m.images, nil
 }
@@ -25,7 +24,7 @@ func (m *mockCutKeyframeRunner) RunAndSave(_ context.Context, recipe *ports.Vide
 	return recipe, nil
 }
 
-func (m *mockCutKeyframeRunner) EditAndSave(_ context.Context, recipe *ports.VideoRecipe, _ string, _ string) (*ports.VideoRecipe, error) {
+func (m *mockCutKeyframeRunner) EditAndSave(_ context.Context, recipe *ports.VideoRecipe, _ int, _ string, _ string) (*ports.VideoRecipe, error) {
 	return recipe, nil
 }
 
@@ -37,7 +36,7 @@ func (m *mockVideoRunner) Run(_ context.Context, req ports.VideoGenerationReques
 	m.requests = append(m.requests, req)
 	return &ports.VideoResponse{
 		CloudURL: fmt.Sprintf("gs://videos/cut_%d.mp4", req.CutIndex),
-		VideoID:  fmt.Sprintf("video-%d", req.CutIndex),
+		VideoID:  fmt.Sprintf("gs://bucket/video-%d.mp4", req.CutIndex),
 		CutIndex: req.CutIndex,
 	}, nil
 }
@@ -72,7 +71,7 @@ func TestVideoTimelineRunner_WithRequestBuilder(t *testing.T) {
 	})
 }
 
-func TestVideoTimelineRunner_RunChainsPreviousVideoID(t *testing.T) {
+func TestVideoTimelineRunner_RunChainsPreviousVideoURI(t *testing.T) {
 	ctx := context.Background()
 	recipe := &ports.VideoRecipe{
 		ProjectTitle: "test",
@@ -91,14 +90,15 @@ func TestVideoTimelineRunner_RunChainsPreviousVideoID(t *testing.T) {
 				CutIndex:     2,
 				VisualAnchor: "fast orbit camera",
 				AudioSync: ports.AudioSync{
-					DurationSec: 8,
+					// gs:// チェーン文脈があるため video_extension（7秒固定）になる。
+					DurationSec: 7,
 					AudioCue:    "heavy chorus",
 				},
 			},
 		},
 	}
 	keyframes := &mockCutKeyframeRunner{
-		images: []*imagePorts.ImageResponse{
+		images: []*ports.KeyframeImage{
 			{Data: []byte("image-1"), MimeType: "image/png", UsedSeed: 101},
 			{Data: []byte("image-2"), MimeType: "image/png", UsedSeed: 102},
 		},
@@ -116,11 +116,11 @@ func TestVideoTimelineRunner_RunChainsPreviousVideoID(t *testing.T) {
 	if len(video.requests) != 2 {
 		t.Fatalf("Expected 2 video requests, got %d", len(video.requests))
 	}
-	if video.requests[0].PreviousVideoID != "" {
-		t.Errorf("Expected first request to have no previous video ID, got %q", video.requests[0].PreviousVideoID)
+	if video.requests[0].PreviousVideoURI != "" {
+		t.Errorf("Expected first request to have no previous video ID, got %q", video.requests[0].PreviousVideoURI)
 	}
-	if video.requests[1].PreviousVideoID != "video-1" {
-		t.Errorf("Expected second request to chain video-1, got %q", video.requests[1].PreviousVideoID)
+	if video.requests[1].PreviousVideoURI != "gs://bucket/video-1.mp4" {
+		t.Errorf("Expected second request to chain gs://bucket/video-1.mp4, got %q", video.requests[1].PreviousVideoURI)
 	}
 	if string(video.requests[0].InputImage) != "image-1" {
 		t.Errorf("Expected first input image data, got %q", string(video.requests[0].InputImage))
@@ -140,7 +140,7 @@ func TestVideoTimelineRunner_RunChainsPreviousVideoID(t *testing.T) {
 	if recipe.Cuts[1].VideoURL != "gs://videos/cut_2.mp4" {
 		t.Errorf("Expected recipe to be updated with video URL, got %q", recipe.Cuts[1].VideoURL)
 	}
-	if recipe.Cuts[1].VideoID != "video-2" {
+	if recipe.Cuts[1].VideoID != "gs://bucket/video-2.mp4" {
 		t.Errorf("Expected recipe to be updated with video ID, got %q", recipe.Cuts[1].VideoID)
 	}
 }
@@ -158,7 +158,8 @@ func TestVideoTimelineRunner_RunResetsChainAtChainStart(t *testing.T) {
 			{
 				CutIndex:     2,
 				VisualAnchor: "continues from cut 1",
-				AudioSync:    ports.AudioSync{DurationSec: 8},
+				// gs:// チェーン文脈があるため video_extension（7秒固定）になる。
+				AudioSync: ports.AudioSync{DurationSec: 7},
 			},
 			{
 				CutIndex:     3,
@@ -169,7 +170,7 @@ func TestVideoTimelineRunner_RunResetsChainAtChainStart(t *testing.T) {
 		},
 	}
 	keyframes := &mockCutKeyframeRunner{
-		images: []*imagePorts.ImageResponse{
+		images: []*ports.KeyframeImage{
 			{Data: []byte("image-1"), MimeType: "image/png", UsedSeed: 101},
 			{Data: []byte("image-2"), MimeType: "image/png", UsedSeed: 102},
 			{Data: []byte("image-3"), MimeType: "image/png", UsedSeed: 103},
@@ -184,14 +185,14 @@ func TestVideoTimelineRunner_RunResetsChainAtChainStart(t *testing.T) {
 	if len(video.requests) != 3 {
 		t.Fatalf("Expected 3 video requests, got %d", len(video.requests))
 	}
-	if video.requests[0].PreviousVideoID != "" {
-		t.Errorf("cut 1 (first cut) should have no previous video ID, got %q", video.requests[0].PreviousVideoID)
+	if video.requests[0].PreviousVideoURI != "" {
+		t.Errorf("cut 1 (first cut) should have no previous video ID, got %q", video.requests[0].PreviousVideoURI)
 	}
-	if video.requests[1].PreviousVideoID != "video-1" {
-		t.Errorf("cut 2 (non-chain-start) should chain video-1, got %q", video.requests[1].PreviousVideoID)
+	if video.requests[1].PreviousVideoURI != "gs://bucket/video-1.mp4" {
+		t.Errorf("cut 2 (non-chain-start) should chain video-1, got %q", video.requests[1].PreviousVideoURI)
 	}
-	if video.requests[2].PreviousVideoID != "" {
-		t.Errorf("cut 3 (IsChainStart) should reset the chain, got %q", video.requests[2].PreviousVideoID)
+	if video.requests[2].PreviousVideoURI != "" {
+		t.Errorf("cut 3 (IsChainStart) should reset the chain, got %q", video.requests[2].PreviousVideoURI)
 	}
 }
 
@@ -207,9 +208,10 @@ func TestVideoTimelineRunner_RunUsesSavedKeyframeReferences(t *testing.T) {
 				KeyframeResult: ports.KeyframeResult{KeyframeReference: "gs://images/cut_1.png"},
 			},
 			{
-				CutIndex:       2,
-				VisualAnchor:   "second saved keyframe",
-				AudioSync:      ports.AudioSync{DurationSec: 8},
+				CutIndex:     2,
+				VisualAnchor: "second saved keyframe",
+				// gs:// チェーン文脈があるため video_extension（7秒固定）になる。
+				AudioSync:      ports.AudioSync{DurationSec: 7},
 				KeyframeResult: ports.KeyframeResult{KeyframeReference: "gs://images/cut_2.png"},
 			},
 		},
@@ -245,7 +247,7 @@ func TestVideoTimelineRunner_RunSkipsGeneratedCutAndChainsItsVideoID(t *testing.
 				VisualAnchor: "resume from existing context",
 				AudioSync:    ports.AudioSync{DurationSec: 8},
 				VideoResult: ports.VideoResult{
-					VideoID:  "existing-video-1",
+					VideoID:  "gs://bucket/existing-video-1.mp4",
 					VideoURL: "gs://videos/cut_1.mp4",
 					Status:   ports.CutStatusGenerated,
 				},
@@ -253,12 +255,13 @@ func TestVideoTimelineRunner_RunSkipsGeneratedCutAndChainsItsVideoID(t *testing.
 			{
 				CutIndex:     2,
 				VisualAnchor: "continue from existing context",
-				AudioSync:    ports.AudioSync{DurationSec: 8},
+				// gs:// のチェーン文脈があるため video_extension（7秒固定）になる。
+				AudioSync: ports.AudioSync{DurationSec: 7},
 			},
 		},
 	}
 	keyframes := &mockCutKeyframeRunner{
-		images: []*imagePorts.ImageResponse{
+		images: []*ports.KeyframeImage{
 			{Data: []byte("image-1"), MimeType: "image/png", UsedSeed: 101},
 			{Data: []byte("image-2"), MimeType: "image/png", UsedSeed: 102},
 		},
@@ -273,8 +276,48 @@ func TestVideoTimelineRunner_RunSkipsGeneratedCutAndChainsItsVideoID(t *testing.
 	if len(video.requests) != 1 {
 		t.Fatalf("Expected only pending cut to be requested, got %d", len(video.requests))
 	}
-	if video.requests[0].PreviousVideoID != "existing-video-1" {
-		t.Errorf("Expected generated cut video ID as previous context, got %q", video.requests[0].PreviousVideoID)
+	if video.requests[0].PreviousVideoURI != "gs://bucket/existing-video-1.mp4" {
+		t.Errorf("Expected generated cut video ID as previous context, got %q", video.requests[0].PreviousVideoURI)
+	}
+}
+
+// TestVideoTimelineRunner_RunRejectsUnsupportedExtensionDuration は、gs:// のチェーン文脈を
+// 持つカット（video_extension、7秒固定）に 8 秒が計画されていた場合に、送信前に
+// ErrUnsupportedCutDuration で拒否されることを検証します。これは本番のチェーン経路の
+// 検証で、以前は video_extension 側の validateCutDuration を通すテストがありませんでした。
+func TestVideoTimelineRunner_RunRejectsUnsupportedExtensionDuration(t *testing.T) {
+	ctx := context.Background()
+	recipe := &ports.VideoRecipe{
+		ProjectTitle: "bad extension duration",
+		Cuts: []ports.Cut{
+			{
+				CutIndex:  1,
+				AudioSync: ports.AudioSync{DurationSec: 8},
+				VideoResult: ports.VideoResult{
+					VideoID:  "gs://bucket/existing-video-1.mp4",
+					VideoURL: "gs://videos/cut_1.mp4",
+					Status:   ports.CutStatusGenerated,
+				},
+			},
+			{
+				CutIndex:       2,
+				AudioSync:      ports.AudioSync{DurationSec: 8}, // video_extension は7秒固定なので拒否される
+				KeyframeResult: ports.KeyframeResult{KeyframeReference: "gs://images/cut_2.png"},
+			},
+		},
+	}
+	video := &mockVideoRunner{}
+	runner := NewVideoTimelineRunner(&mockCutKeyframeRunner{}, video)
+
+	_, err := runner.Run(ctx, recipe)
+	if !errors.Is(err, ports.ErrUnsupportedCutDuration) {
+		t.Fatalf("error = %v, want ErrUnsupportedCutDuration", err)
+	}
+	if len(video.requests) != 0 {
+		t.Fatalf("Veo リクエストは送られないべきですが %d 件送られました", len(video.requests))
+	}
+	if recipe.Cuts[1].Status != ports.CutStatusFailed {
+		t.Errorf("cut status = %q, want failed", recipe.Cuts[1].Status)
 	}
 }
 
@@ -307,6 +350,8 @@ func TestVideoTimelineRunner_RunPassesNextKeyframeAsLastFrame(t *testing.T) {
 				CharacterID:    "zundamon",
 				AudioSync:      ports.AudioSync{DurationSec: 8},
 				KeyframeResult: ports.KeyframeResult{KeyframeReference: "gs://images/cut_2.png"},
+				// チェーン文脈を持ち込まない（lastFrame は image 入力とセットのときだけ有効）。
+				ChainControl: ports.ChainControl{IsChainStart: true},
 			},
 			{
 				CutIndex:       3,

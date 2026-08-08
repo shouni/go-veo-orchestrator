@@ -12,7 +12,8 @@ const (
 	DefaultGeminiModel    = "gemini-3-flash-preview"
 	DefaultImageModel     = "gemini-3-pro-image-preview"
 	DefaultMaxConcurrency = 1
-	DefaultStyleSuffix    = "Japanese anime style, official art, cel-shaded, clean line art, expressive eyes, cinematic lighting, consistent character design, high resolution"
+	// DefaultRateBurst は、キーフレーム生成レート制限の既定バースト数です。
+	DefaultRateBurst = 1
 )
 
 // Config は Go Veo Orchestrator の各 Runner を動作させるための基本設定です。
@@ -24,7 +25,8 @@ type Config struct {
 	// --- Generation Settings ---
 	MaxConcurrency int
 	RateInterval   time.Duration
-	StyleSuffix    string
+	// RateBurst はキーフレーム生成レート制限のバースト許容数です（0 以下は既定値 1）。
+	RateBurst int
 	// KeyframeAspectRatio はキーフレーム画像生成のアスペクト比です（例: "16:9", "9:16"）。
 	// 空文字の場合は keyframe.CutAspectRatio（既定値）が使われます。
 	KeyframeAspectRatio string
@@ -41,8 +43,8 @@ func (c *Config) ApplyDefaults() {
 	if c.MaxConcurrency <= 0 {
 		c.MaxConcurrency = DefaultMaxConcurrency
 	}
-	if c.StyleSuffix == "" {
-		c.StyleSuffix = DefaultStyleSuffix
+	if c.RateBurst <= 0 {
+		c.RateBurst = DefaultRateBurst
 	}
 }
 

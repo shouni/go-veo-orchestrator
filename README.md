@@ -215,15 +215,15 @@ type LastFrameSupporter      interface{ SupportsLastFrame() bool }
 | `GeminiModel` | 台本生成に使うテキストモデル（既定は `ports.DefaultGeminiModel`） |
 | `ImageModel` | キーフレーム画像生成に使うモデル |
 | `MaxConcurrency` | キーフレーム生成の最大並列数（動画生成は Video-to-Video 連鎖のため常に逐次です） |
-| `RateInterval` | AI 呼び出しの発射間隔の下限 |
-| `StyleSuffix` | キーフレーム画像に付与する画風指定 |
+| `RateInterval` | キーフレーム生成の発射間隔の下限 |
+| `RateBurst` | キーフレーム生成レート制限のバースト許容数（既定 1） |
 | `KeyframeAspectRatio` | キーフレームのアスペクト比。空なら `keyframe.CutAspectRatio` |
 
 `ports.WithModels(gemini, image)` / `ports.WithAspectRatio(ratio)` で `Config` を部分的に上書きできます。
 
 | `ManagerArgs` | 役割 |
 | --- | --- |
-| `AIClient` | `gemini.MultimodalModel`（台本生成・キーフレーム生成） |
+| `AIClient` | `gemini.Model`（台本生成・キーフレーム生成） |
 | `Reader` / `Writer` | `ports.ContentReader` / `remoteio.Writer`（レシピの読み込み・成果物の保存） |
 | `HTTPClient` | 参照画像の取得に使う HTTP クライアント |
 | `VideoRunner` | Veo API アダプタ。未設定なら `ErrVideoRunnerNotConfigured` を返すダミーになります |
@@ -238,12 +238,15 @@ type LastFrameSupporter      interface{ SupportsLastFrame() bool }
 | `KeyframePrompt` | `ports.KeyframePrompt` | カットのキーフレーム生成・編集のプロンプト（`BuildCut` / `BuildEdit`） |
 
 キーフレーム生成の細部は `keyframe.Option` で調整します（`workflow` が `Config` から組み立てます）。
+並列数・レート制限は注入する画像ジェネレータ（gemini-image-kit の `WithMaxConcurrency` /
+`WithRateLimit`）側の設定で、`workflow` は `Config.MaxConcurrency` / `RateInterval` / `RateBurst`
+をそちらへ配線します。
 
 | オプション | 役割 |
 | --- | --- |
-| `keyframe.WithMaxConcurrency` | 並列数 |
-| `keyframe.WithRateInterval` / `WithRateBurst` | 発射間隔とバースト |
 | `keyframe.WithAspectRatio` | アスペクト比（キャラクターに一致する参照画像があればそれを優先します） |
+| `keyframe.WithImageSize` | 解像度（既定 "2K"） |
+| `keyframe.WithNegativePrompt` | ネガティブプロンプトの差し替え（既定は文字・フキダシ排除の定型文） |
 
 ---
 
@@ -281,13 +284,26 @@ type LastFrameSupporter      interface{ SupportsLastFrame() bool }
 | `Cut.EffectiveDurationSec()` | そのカットの実効尺 |
 | `VideoRecipe.Normalize()` | カットの連番・開始秒・`SectionIndex` / `LocationAnchor` の伝播を整えます |
 | `VideoRecipe.Validate()` | レシピの整合性検証 |
-| `VideoRecipe.UsesModels()` / `Cuts.UniqueCharacterIDs()` | 使用モデル・登場キャラクターの集合 |
-| `ports.NextLastFrameReference(cuts, i)` | frames_to_video で次カットの `lastFrame` に使う参照の解決 |
-| `ports.VideoRecipeSchema()` | 台本生成の構造化出力スキーマ（JSON Schema） |
+| `Config.UsesModels(gemini, image)` / `Cuts.UniqueCharacterIDs()` | 使用モデルの一致判定・登場キャラクターの集合 |
+| `Cuts.NextLastFrameReference(i)` | frames_to_video で次カットの `lastFrame` に使う参照の解決 |
+| `ports.VideoRecipeSchema(characterIDs)` | 台本生成の構造化出力スキーマ（`character_id` を enum で制約した JSON Schema） |
+| `Cuts.FillAudioReference(url)` / `Cuts.FillCharacterID(id)` | 未設定カットへの音源・キャラクターの一括補完 |
+| `Cuts.IndexOf(cutIndex)` | cut_index からレシピ内の位置を引く |
+| `ports.NewVideoRecipeFromMusic(music.Recipe)` | Music Recipe から動画レシピを組み立て（深いコピー + Normalize） |
+| `ports.ExpandCutsToSupportedDurations(...)` | カット尺を Veo のサポート値へ正規化する尺プランナー（分割・チェーン形成・セクション境界リセット） |
+| `ports.CapCutsTotalDuration(cuts, maxSec)` / `ports.ChainTailEnd(cuts, i, usePrev)` | 合計尺の切り詰め・チェーン再生成範囲の解決 |
+| `ports.VeoModelCapabilities(model)` | モデル名から referenceImages / lastFrame 対応を導出 |
 
 `workflow.New` が返す `*ports.Workflows` は、使い終わったら **`Close()`** を呼んでください
 （画像キャッシュのバックグラウンド goroutine を停止します。複数回呼んでも安全です）。
-公開・保存の入出力は `ports.PublishOptions` / `ports.PublishResult` です。
+公開・保存の出力は `ports.PublishResult` です。
+
+`VideoTimelineRunner.Run` は**エラー時も完了済みカットの部分結果を返します**。
+`WithCutObserver` でカット完了ごとのフック（メタデータ保存や実行時間予算の確認）を差し込め、
+フックがエラーを返すとそこで停止して部分結果を返します。時間制限のあるジョブ基盤で
+「一旦保存して次の実行で再開」する運用が、自前のカットループなしで組めます。
+同様に `CutKeyframeRunner.RunAndSave` も、生成が途中で失敗した場合に**成功した分の画像と
+メタデータを保存してから**エラーを返します。
 
 ---
 
@@ -389,7 +405,7 @@ type LastFrameSupporter      interface{ SupportsLastFrame() bool }
 
 Veo に渡る prompt は `cuts[].visual_anchor`、`cuts[].audio_cue`、`music_recipe.mood`、タイムライン情報から構築されます。`music_recipe.lyrics` はメタデータとして保持されますが、動画化したい歌詞の内容は `cuts` へ変換しておく必要があります。
 
-`cuts` が空の場合は、`music_recipe.sections` からカット列を自動生成します。`music_recipe` は `github.com/shouni/go-gemini-client/lyria.MusicRecipe` をそのまま保持するため、楽曲生成側の JSON は `music_recipe` 配下へ入れます。
+`cuts` が空の場合は、`music_recipe.sections` からカット列を自動生成します。`music_recipe` は `github.com/shouni/go-gemini-client/music.Recipe` をそのまま保持するため、楽曲生成側の JSON は `music_recipe` 配下へ入れます。
 
 各 `cut` は `section_index`（1始まり）で、由来となった `music_recipe.sections` の位置を保持します。1セクションが `scene_split` 等で複数カットに分割されても、分割後の全カットが同じ `section_index` を引き継ぐため、呼び出し側は `start_sec` とセクションの時間範囲を突き合わせて逆算せずに、カットの所属セクションを直接判定できます。明示的に設定されていないカットは、`Normalize()` が `start_sec` から自動的に補完します。
 
