@@ -1,46 +1,16 @@
 package keyframe
 
-import (
-	"time"
-
-	"github.com/shouni/go-veo-orchestrator/ports"
-)
-
 // Option は Generator の設定を適用する関数型です。
+//
+// 並列度・レート制限・リクエストタイムアウトのオプションはここにはありません。
+// それらは注入される画像ジェネレータ（gemini-image-kit の WithRateLimit /
+// WithMaxConcurrency / WithRequestTimeout）が受け持ちます。
 type Option func(*Generator)
 
 func applyDefaultOptions(g *Generator) {
-	g.maxConcurrency = ports.DefaultMaxConcurrency
-	g.rateInterval = defaultRateInterval
-	g.rateBurst = defaultRateBurst
 	g.aspectRatio = CutAspectRatio
-}
-
-// WithMaxConcurrency は、キーフレーム生成の最大並列数を設定します。
-func WithMaxConcurrency(value int) Option {
-	return func(g *Generator) {
-		if value > 0 {
-			g.maxConcurrency = value
-		}
-	}
-}
-
-// WithRateInterval は、キーフレーム生成のレートリミット間隔を設定します。
-func WithRateInterval(d time.Duration) Option {
-	return func(g *Generator) {
-		if d > 0 {
-			g.rateInterval = d
-		}
-	}
-}
-
-// WithRateBurst は、キーフレーム生成のバースト許容数を設定します。
-func WithRateBurst(value int) Option {
-	return func(g *Generator) {
-		if value > 0 {
-			g.rateBurst = value
-		}
-	}
+	g.imageSize = ImageSize2K
+	g.negativePrompt = defaultNegativeKeyframePrompt
 }
 
 // WithAspectRatio は、生成するキーフレーム画像のアスペクト比を設定します
@@ -50,5 +20,24 @@ func WithAspectRatio(value string) Option {
 		if value != "" {
 			g.aspectRatio = value
 		}
+	}
+}
+
+// WithImageSize は、生成するキーフレーム画像の解像度を設定します（例: "1K", "2K"）。
+// 空文字の場合は既定値（ImageSize2K）のまま変更しません。
+func WithImageSize(value string) Option {
+	return func(g *Generator) {
+		if value != "" {
+			g.imageSize = value
+		}
+	}
+}
+
+// WithNegativePrompt は、キーフレーム生成のネガティブプロンプトを差し替えます。
+// 既定値は文字・フキダシ・低品質などを排除する定型文です。空文字を渡すと
+// ネガティブプロンプトなしで生成します。
+func WithNegativePrompt(value string) Option {
+	return func(g *Generator) {
+		g.negativePrompt = value
 	}
 }

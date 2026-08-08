@@ -3,8 +3,6 @@ package ports
 import (
 	"context"
 	"sync"
-
-	imagePorts "github.com/shouni/gemini-image-kit/ports"
 )
 
 // Workflows は、構築済みの各 Runner を保持します。
@@ -48,15 +46,14 @@ type CutKeyframeRunner interface {
 	// Run generates keyframe images only for the cuts that have no KeyframeReference yet and
 	// returns a slice aligned with recipe.Cuts — nil at the positions that already had one.
 	// Callers treat nil as "reuse the cut's existing reference".
-	Run(ctx context.Context, recipe *VideoRecipe) ([]*imagePorts.ImageResponse, error)
+	Run(ctx context.Context, recipe *VideoRecipe) ([]*KeyframeImage, error)
 	RunAndSave(ctx context.Context, recipe *VideoRecipe, outputPath string) (*VideoRecipe, error)
-	// EditAndSave edits the existing keyframe image of a single-cut recipe using editPrompt
-	// (preserving composition/pose rather than regenerating from scratch), saves the result
-	// the same way RunAndSave does, and returns the recipe with the updated KeyframeReference.
-	// recipe must contain exactly one cut, and that cut's KeyframeReference must already point
-	// at the image to edit. Returns an error if the configured image generator does not support
-	// editing.
-	EditAndSave(ctx context.Context, recipe *VideoRecipe, editPrompt string, outputPath string) (*VideoRecipe, error)
+	// EditAndSave edits the existing keyframe image of recipe.Cuts[cutPosition] using
+	// editPrompt (preserving composition/pose rather than regenerating from scratch), saves
+	// the result the same way RunAndSave does, and returns the recipe with the updated
+	// KeyframeReference. The target cut's KeyframeReference must already point at the image
+	// to edit. Returns an error if the configured image generator does not support editing.
+	EditAndSave(ctx context.Context, recipe *VideoRecipe, cutPosition int, editPrompt string, outputPath string) (*VideoRecipe, error)
 }
 
 // VideoPublishRunner は、動画レシピと生成済みカットのメタデータを JSON として出力する責務を持ちます。

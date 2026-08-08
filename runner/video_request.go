@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"strings"
 
-	imagePorts "github.com/shouni/gemini-image-kit/ports"
 	characterkit "github.com/shouni/go-character-kit/character"
 	"github.com/shouni/go-veo-orchestrator/ports"
 )
@@ -19,10 +18,10 @@ type BuildInput struct {
 	// Cut は生成対象のカットです。
 	Cut ports.Cut
 	// Keyframe はこのカットのキーフレーム生成結果です。未生成なら nil で構いません。
-	Keyframe *imagePorts.ImageResponse
-	// PreviousVideoID は video-to-video 継続の文脈として引き継ぐ前カットの動画IDです。
-	// 空文字はチェーンの起点（継続しない）を意味します。
-	PreviousVideoID string
+	Keyframe *ports.KeyframeImage
+	// PreviousVideoURI は video-to-video 継続の文脈として引き継ぐ前カット動画の
+	// gs:// URI です。空文字はチェーンの起点（継続しない）を意味します。
+	PreviousVideoURI string
 	// LastFrameReference は frames_to_video 補間の終了フレームです
 	// （通常は Cuts.NextLastFrameReference の戻り値）。
 	LastFrameReference string
@@ -75,21 +74,29 @@ func (b *DefaultVideoRequestBuilder) Build(in BuildInput) ports.VideoGenerationR
 		seed = fallbackSeed(in.Recipe, cut, b.characters)
 	}
 
+	// PreviousVideoURI は gs:// の動画参照だけが意味を持つ。オペレーション名などが
+	// 紛れ込むと、分類は image_to_video に倒れるのにフィールドだけが残り、adapter が
+	// 独自判定で video_extension を組んでしまう余地が生まれるため、ここで除去する。
+	previousVideoURI := strings.TrimSpace(in.PreviousVideoURI)
+	if !strings.HasPrefix(previousVideoURI, "gs://") {
+		previousVideoURI = ""
+	}
+
 	req := ports.VideoGenerationRequest{
 		ImageReference:     cut.KeyframeReference,
 		ReferenceImages:    ports.CutReferenceImages(cut, b.characters),
 		AudioReference:     cut.AudioReference,
 		InputImage:         imageData,
-		PreviousVideoID:    in.PreviousVideoID,
+		PreviousVideoURI:   previousVideoURI,
 		LastFrameReference: in.LastFrameReference,
 		Seed:               seed,
 		CutIndex:           cut.CutIndex,
 		DurationSec:        cut.DurationSec,
 	}
 
-	// PreviousVideoID が空 = 「このカットはチェーンの起点なので継続しない」という
+	// PreviousVideoURI が空 = 「このカットはチェーンの起点なので継続しない」という
 	// 呼び出し側の意思表示。空でないときだけ video_extension の候補になる。
-	usePreviousVideo := strings.TrimSpace(in.PreviousVideoID) != ""
+	usePreviousVideo := previousVideoURI != ""
 	pruneUnusedInputs(&req, ports.ClassifyVeoRequest(req, usePreviousVideo, in.Capabilities))
 	req.Prompt = b.buildPrompt(in.Recipe, cut)
 
@@ -109,11 +116,14 @@ func pruneUnusedInputs(req *ports.VideoGenerationRequest, mode ports.VeoGenerati
 		req.LastFrameReference = ""
 	case ports.VeoModeReferenceToVideo:
 		req.LastFrameReference = ""
+		req.PreviousVideoURI = ""
 	case ports.VeoModeFramesToVideo:
 		req.ReferenceImages = nil
+		req.PreviousVideoURI = ""
 	case ports.VeoModeImageToVideo:
 		req.ReferenceImages = nil
 		req.LastFrameReference = ""
+		req.PreviousVideoURI = ""
 	}
 }
 

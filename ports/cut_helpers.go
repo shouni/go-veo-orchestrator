@@ -109,3 +109,44 @@ func (cs Cuts) NextLastFrameReference(i int) string {
 	}
 	return ref
 }
+
+// FillAudioReference は、AudioReference が未設定のカットへ audioURL を補います。
+// タスクで与えられた音源をレシピの全カットに紐づける用途で、カット側に既に
+// 明示された参照は上書きしません。空の audioURL は何もしません。
+func (cs Cuts) FillAudioReference(audioURL string) {
+	audioURL = strings.TrimSpace(audioURL)
+	if audioURL == "" {
+		return
+	}
+	for i := range cs {
+		if strings.TrimSpace(cs[i].AudioReference) == "" {
+			cs[i].AudioReference = audioURL
+		}
+	}
+}
+
+// FillCharacterID は、CharacterID が未設定のカットへ characterID を補います。
+// カット側に既に明示されたキャラクターは上書きしません。空の characterID は
+// 何もしません。
+func (cs Cuts) FillCharacterID(characterID string) {
+	characterID = strings.TrimSpace(characterID)
+	if characterID == "" {
+		return
+	}
+	for i := range cs {
+		if strings.TrimSpace(cs[i].CharacterID) == "" {
+			cs[i].CharacterID = characterID
+		}
+	}
+}
+
+// IndexOf は、cut_index（レシピ上の1始まりの番号）を持つカットの位置（0始まり）を
+// 返します。見つからない場合は -1 です。
+func (cs Cuts) IndexOf(cutIndex int) int {
+	for i := range cs {
+		if cs[i].CutIndex == cutIndex {
+			return i
+		}
+	}
+	return -1
+}

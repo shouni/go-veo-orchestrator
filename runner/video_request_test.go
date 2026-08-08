@@ -92,7 +92,7 @@ func TestVideoRequestBuilderReferenceImagesNeedsModelSupport(t *testing.T) {
 }
 
 // TestVideoRequestBuilderOmitsImageInputsWithPreviousVideo は、video-to-video の文脈
-// （gs:// の PreviousVideoID）がある場合に画像入力を一切送らないことを検証します。
+// （gs:// の PreviousVideoURI）がある場合に画像入力を一切送らないことを検証します。
 // Veo は video と referenceImages / image を同時に受け付けません。
 func TestVideoRequestBuilderOmitsImageInputsWithPreviousVideo(t *testing.T) {
 	builder := NewVideoRequestBuilderWithCharacters(newTestCharacters())
@@ -105,21 +105,21 @@ func TestVideoRequestBuilderOmitsImageInputsWithPreviousVideo(t *testing.T) {
 		KeyframeResult: ports.KeyframeResult{KeyframeReference: "gs://bucket/jobs/job-1/images/cut_2.png"},
 	}
 
-	// (a) gs:// の PreviousVideoID あり → video_extension なので画像入力は落ちる。
+	// (a) gs:// の PreviousVideoURI あり → video_extension なので画像入力は落ちる。
 	withPrev := builder.Build(BuildInput{
-		Recipe:          recipe,
-		Cut:             cut,
-		PreviousVideoID: "gs://bucket/videos/cut_1.mp4",
-		Capabilities:    refCaps,
+		Recipe:           recipe,
+		Cut:              cut,
+		PreviousVideoURI: "gs://bucket/videos/cut_1.mp4",
+		Capabilities:     refCaps,
 	})
-	if withPrev.PreviousVideoID != "gs://bucket/videos/cut_1.mp4" {
-		t.Fatalf("PreviousVideoID = %q", withPrev.PreviousVideoID)
+	if withPrev.PreviousVideoURI != "gs://bucket/videos/cut_1.mp4" {
+		t.Fatalf("PreviousVideoURI = %q", withPrev.PreviousVideoURI)
 	}
 	if len(withPrev.ReferenceImages) != 0 || withPrev.ImageReference != "" {
 		t.Fatalf("image inputs = %v / %q, want none for video_extension", withPrev.ReferenceImages, withPrev.ImageReference)
 	}
 
-	// (b) PreviousVideoID なし → 同じ cut/recipe で referenceImages が組み立てられる。
+	// (b) PreviousVideoURI なし → 同じ cut/recipe で referenceImages が組み立てられる。
 	withoutPrev := builder.Build(BuildInput{Recipe: recipe, Cut: cut, Capabilities: refCaps})
 	assertStrings(t, "ReferenceImages", withoutPrev.ReferenceImages, []string{
 		"gs://bucket/characters/zundamon.png",

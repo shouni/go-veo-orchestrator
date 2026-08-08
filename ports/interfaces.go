@@ -3,7 +3,6 @@ package ports
 import (
 	"context"
 
-	imagePorts "github.com/shouni/gemini-image-kit/ports"
 	characterkit "github.com/shouni/go-character-kit/character"
 )
 
@@ -26,7 +25,11 @@ type KeyframePrompt interface {
 	BuildEdit(cut Cut, char *characterkit.Character, editPrompt string) (userPrompt string, systemPrompt string)
 }
 
-// CutImageGenerator は、一連のカットのキーフレーム画像レスポンスを生成します。
+// CutImageGenerator は、一連のカットのキーフレーム画像を生成します。
+//
+// 戻り値は cuts と同じ長さ・並びで、エラー時も生成できた位置には結果が入ります
+// （キーフレーム 1 枚ごとに生成コストが掛かるため、1 件の失敗で支払い済みの
+// 画像を捨てない）。呼び出し側は結果とエラーの両方を見てください。
 type CutImageGenerator interface {
-	Execute(ctx context.Context, cuts []Cut) ([]*imagePorts.ImageResponse, error)
+	Execute(ctx context.Context, cuts []Cut) ([]*KeyframeImage, error)
 }

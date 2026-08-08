@@ -30,7 +30,7 @@ func (f *fakeScriptPrompt) Build(mode string, data *ports.TemplateData) (string,
 	return f.prompt, nil
 }
 
-// fakeContentGenerator implements gemini.MultimodalGenerator and records the model/prompt/options
+// fakeContentGenerator implements gemini.Generator and records the model/prompt/options
 // it was called with.
 type fakeContentGenerator struct {
 	resp       *gemini.Response

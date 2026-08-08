@@ -8,7 +8,6 @@ import (
 	"strings"
 	"testing"
 
-	imagePorts "github.com/shouni/gemini-image-kit/ports"
 	"github.com/shouni/go-remote-io/remoteio"
 	"github.com/shouni/go-veo-orchestrator/ports"
 )
@@ -34,37 +33,37 @@ func (w *fakeWriter) Write(_ context.Context, path string, contentReader io.Read
 // fakeCutImageGenerator implements both ports.CutImageGenerator and cutImageEditor so tests
 // can control EditAndSave's behavior independently of the real keyframe.Generator.
 type fakeCutImageGenerator struct {
-	editFunc func(ctx context.Context, cut ports.Cut, editPrompt string) (*imagePorts.ImageResponse, error)
+	editFunc func(ctx context.Context, cut ports.Cut, editPrompt string) (*ports.KeyframeImage, error)
 }
 
-func (f *fakeCutImageGenerator) Execute(_ context.Context, _ []ports.Cut) ([]*imagePorts.ImageResponse, error) {
+func (f *fakeCutImageGenerator) Execute(_ context.Context, _ []ports.Cut) ([]*ports.KeyframeImage, error) {
 	return nil, fmt.Errorf("not implemented")
 }
 
-func (f *fakeCutImageGenerator) EditCut(ctx context.Context, cut ports.Cut, editPrompt string) (*imagePorts.ImageResponse, error) {
+func (f *fakeCutImageGenerator) EditCut(ctx context.Context, cut ports.Cut, editPrompt string) (*ports.KeyframeImage, error) {
 	if f.editFunc != nil {
 		return f.editFunc(ctx, cut, editPrompt)
 	}
-	return &imagePorts.ImageResponse{Data: []byte("edited"), MimeType: "image/png"}, nil
+	return &ports.KeyframeImage{Data: []byte("edited"), MimeType: "image/png"}, nil
 }
 
 // nonEditingCutImageGenerator implements ports.CutImageGenerator only, to exercise the
 // "generator does not support editing" error path.
 type nonEditingCutImageGenerator struct{}
 
-func (nonEditingCutImageGenerator) Execute(_ context.Context, _ []ports.Cut) ([]*imagePorts.ImageResponse, error) {
+func (nonEditingCutImageGenerator) Execute(_ context.Context, _ []ports.Cut) ([]*ports.KeyframeImage, error) {
 	return nil, fmt.Errorf("not implemented")
 }
 
 // recordingCutImageGenerator implements ports.CutImageGenerator and records how many times
 // Execute was called, so tests can drive Run/RunAndSave independently of EditAndSave.
 type recordingCutImageGenerator struct {
-	images []*imagePorts.ImageResponse
+	images []*ports.KeyframeImage
 	err    error
 	calls  int
 }
 
-func (g *recordingCutImageGenerator) Execute(_ context.Context, _ []ports.Cut) ([]*imagePorts.ImageResponse, error) {
+func (g *recordingCutImageGenerator) Execute(_ context.Context, _ []ports.Cut) ([]*ports.KeyframeImage, error) {
 	g.calls++
 	if g.err != nil {
 		return nil, g.err
@@ -81,10 +80,10 @@ func TestCutKeyframeRunner_EditAndSave(t *testing.T) {
 			editPrompt string
 		}
 		gen := &fakeCutImageGenerator{
-			editFunc: func(_ context.Context, cut ports.Cut, editPrompt string) (*imagePorts.ImageResponse, error) {
+			editFunc: func(_ context.Context, cut ports.Cut, editPrompt string) (*ports.KeyframeImage, error) {
 				captured.cut = cut
 				captured.editPrompt = editPrompt
-				return &imagePorts.ImageResponse{Data: []byte("edited-bytes"), MimeType: "image/png"}, nil
+				return &ports.KeyframeImage{Data: []byte("edited-bytes"), MimeType: "image/png"}, nil
 			},
 		}
 		writer := newFakeWriter()
@@ -96,7 +95,7 @@ func TestCutKeyframeRunner_EditAndSave(t *testing.T) {
 			},
 		}
 
-		got, err := r.EditAndSave(ctx, recipe, "腕には絆創膏を1〜2枚のみ", "gs://bucket/jobs/regen-1/regens/cut-2/")
+		got, err := r.EditAndSave(ctx, recipe, 0, "腕には絆創膏を1〜2枚のみ", "gs://bucket/jobs/regen-1/regens/cut-2/")
 		if err != nil {
 			t.Fatalf("EditAndSave failed: %v", err)
 		}
@@ -114,12 +113,37 @@ func TestCutKeyframeRunner_EditAndSave(t *testing.T) {
 		}
 	})
 
-	t.Run("errors when recipe has more than one cut", func(t *testing.T) {
-		r := NewCutKeyframeRunner(&fakeCutImageGenerator{}, newFakeWriter())
-		recipe := &ports.VideoRecipe{Cuts: []ports.Cut{{CutIndex: 1}, {CutIndex: 2}}}
+	t.Run("edits the targeted cut of a multi-cut recipe", func(t *testing.T) {
+		var captured ports.Cut
+		gen := &fakeCutImageGenerator{
+			editFunc: func(_ context.Context, cut ports.Cut, _ string) (*ports.KeyframeImage, error) {
+				captured = cut
+				return &ports.KeyframeImage{Data: []byte("edited"), MimeType: "image/png"}, nil
+			},
+		}
+		r := NewCutKeyframeRunner(gen, newFakeWriter())
+		recipe := &ports.VideoRecipe{Cuts: []ports.Cut{
+			{CutIndex: 1, KeyframeResult: ports.KeyframeResult{KeyframeReference: "gs://bucket/k1.png"}},
+			{CutIndex: 2, KeyframeResult: ports.KeyframeResult{KeyframeReference: "gs://bucket/k2.png"}},
+		}}
 
-		if _, err := r.EditAndSave(ctx, recipe, "edit", "gs://bucket/out/"); err == nil {
-			t.Fatal("expected error for multi-cut recipe")
+		if _, err := r.EditAndSave(ctx, recipe, 1, "edit", "gs://bucket/out/"); err != nil {
+			t.Fatalf("EditAndSave failed: %v", err)
+		}
+		if captured.CutIndex != 2 {
+			t.Errorf("edited cut = %d, want the cut at position 1", captured.CutIndex)
+		}
+		if recipe.Cuts[0].KeyframeReference != "gs://bucket/k1.png" {
+			t.Error("untouched cut's keyframe reference must not change")
+		}
+	})
+
+	t.Run("errors when cut position is out of range", func(t *testing.T) {
+		r := NewCutKeyframeRunner(&fakeCutImageGenerator{}, newFakeWriter())
+		recipe := &ports.VideoRecipe{Cuts: []ports.Cut{{CutIndex: 1}}}
+
+		if _, err := r.EditAndSave(ctx, recipe, 5, "edit", "gs://bucket/out/"); err == nil {
+			t.Fatal("expected error for out-of-range cut position")
 		}
 	})
 
@@ -127,7 +151,7 @@ func TestCutKeyframeRunner_EditAndSave(t *testing.T) {
 		r := NewCutKeyframeRunner(&fakeCutImageGenerator{}, newFakeWriter())
 		recipe := &ports.VideoRecipe{Cuts: []ports.Cut{{CutIndex: 1}}}
 
-		if _, err := r.EditAndSave(ctx, recipe, "edit", "gs://bucket/out/"); err == nil {
+		if _, err := r.EditAndSave(ctx, recipe, 0, "edit", "gs://bucket/out/"); err == nil {
 			t.Fatal("expected error for cut with no KeyframeReference")
 		}
 	})
@@ -136,7 +160,7 @@ func TestCutKeyframeRunner_EditAndSave(t *testing.T) {
 		r := NewCutKeyframeRunner(nonEditingCutImageGenerator{}, newFakeWriter())
 		recipe := &ports.VideoRecipe{Cuts: []ports.Cut{{CutIndex: 1, KeyframeResult: ports.KeyframeResult{KeyframeReference: "gs://bucket/k.png"}}}}
 
-		_, err := r.EditAndSave(ctx, recipe, "edit", "gs://bucket/out/")
+		_, err := r.EditAndSave(ctx, recipe, 0, "edit", "gs://bucket/out/")
 		if !errors.Is(err, ports.ErrEditingNotSupported) {
 			t.Fatalf("expected ErrEditingNotSupported, got %v", err)
 		}
@@ -145,7 +169,7 @@ func TestCutKeyframeRunner_EditAndSave(t *testing.T) {
 	t.Run("returns ErrRecipeRequired for nil recipe", func(t *testing.T) {
 		r := NewCutKeyframeRunner(&fakeCutImageGenerator{}, newFakeWriter())
 
-		_, err := r.EditAndSave(ctx, nil, "edit", "gs://bucket/out/")
+		_, err := r.EditAndSave(ctx, nil, 0, "edit", "gs://bucket/out/")
 		if !errors.Is(err, ports.ErrRecipeRequired) {
 			t.Fatalf("expected ErrRecipeRequired, got %v", err)
 		}
@@ -156,7 +180,7 @@ func TestCutKeyframeRunner_RunAndSave(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("saves indexed keyframes and updated metadata", func(t *testing.T) {
-		images := []*imagePorts.ImageResponse{
+		images := []*ports.KeyframeImage{
 			{Data: []byte("img-1"), MimeType: "image/png"},
 			{Data: []byte("img-2"), MimeType: "image/png"},
 		}
@@ -182,7 +206,7 @@ func TestCutKeyframeRunner_RunAndSave(t *testing.T) {
 
 	t.Run("errors when image count does not match cut count", func(t *testing.T) {
 		gen := &recordingCutImageGenerator{
-			images: []*imagePorts.ImageResponse{{Data: []byte("only-one"), MimeType: "image/png"}},
+			images: []*ports.KeyframeImage{{Data: []byte("only-one"), MimeType: "image/png"}},
 		}
 		r := NewCutKeyframeRunner(gen, newFakeWriter())
 		recipe := &ports.VideoRecipe{Cuts: []ports.Cut{{CutIndex: 1}, {CutIndex: 2}}}
@@ -216,18 +240,18 @@ func TestCutKeyframeRunner_RunAndSave(t *testing.T) {
 // which cuts RunAndSave decided still needed a keyframe.
 type capturingCutImageGenerator struct {
 	seen  [][]ports.Cut
-	image func(cut ports.Cut) *imagePorts.ImageResponse
+	image func(cut ports.Cut) *ports.KeyframeImage
 }
 
-func (g *capturingCutImageGenerator) Execute(_ context.Context, cuts []ports.Cut) ([]*imagePorts.ImageResponse, error) {
+func (g *capturingCutImageGenerator) Execute(_ context.Context, cuts []ports.Cut) ([]*ports.KeyframeImage, error) {
 	g.seen = append(g.seen, append([]ports.Cut(nil), cuts...))
-	images := make([]*imagePorts.ImageResponse, 0, len(cuts))
+	images := make([]*ports.KeyframeImage, 0, len(cuts))
 	for _, cut := range cuts {
 		if g.image != nil {
 			images = append(images, g.image(cut))
 			continue
 		}
-		images = append(images, &imagePorts.ImageResponse{Data: []byte("generated"), MimeType: "image/png"})
+		images = append(images, &ports.KeyframeImage{Data: []byte("generated"), MimeType: "image/png"})
 	}
 	return images, nil
 }

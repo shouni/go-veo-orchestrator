@@ -77,7 +77,7 @@ func RunnerCapabilities(runner VideoRunner) VeoCapabilities {
 // adapter のリクエスト本文構築と、呼び出し側のプロンプト・尺選択が同じ判定を共有する
 // ための唯一の分岐点で、優先順位は次のとおりです:
 //
-//  1. video_extension — usePreviousVideo が有効で、PreviousVideoID が gs:// 参照のとき。
+//  1. video_extension — usePreviousVideo が有効で、PreviousVideoURI が gs:// 参照のとき。
 //     Veo は video と referenceImages / image を併用できないため、以降の画像参照は
 //     すべて無視されます。
 //  2. reference_to_video — 参照画像 URI が1つ以上あり、モデルが referenceImages に
@@ -87,7 +87,7 @@ func RunnerCapabilities(runner VideoRunner) VeoCapabilities {
 //     （Veo の lastFrame は image とセットでのみ有効）。
 //  4. image_to_video — それ以外すべて。
 func ClassifyVeoRequest(req VideoGenerationRequest, usePreviousVideo bool, caps VeoCapabilities) VeoGenerationMode {
-	if usePreviousVideo && strings.HasPrefix(strings.TrimSpace(req.PreviousVideoID), "gs://") {
+	if usePreviousVideo && strings.HasPrefix(strings.TrimSpace(req.PreviousVideoURI), "gs://") {
 		return VeoModeVideoExtension
 	}
 	if caps.ReferenceImages && hasAnyReferenceImage(req.ReferenceImages) {
@@ -114,4 +114,19 @@ func hasAnyReferenceImage(refs []string) bool {
 // あるかを返します。
 func hasStartImage(req VideoGenerationRequest) bool {
 	return strings.TrimSpace(req.ImageReference) != "" || len(req.InputImage) > 0
+}
+
+// VeoModelCapabilities は、Veo のモデル名からオプション機能への対応を導出します。
+// モデル名→対応機能の規則はこの関数が唯一の定義元です（以前は adapter 側が文字列
+// 前方一致で再導出しており、「ルールはライブラリが持つ」という原則が破れていました）。
+//
+//   - referenceImages（reference_to_video、8秒固定）: Veo 3 系のみ。Fast は非対応。
+//   - lastFrame（first/last frame 補間）: veo-2.0 / veo-3.1 系（Fast も対応）。
+//     Veo 3.0 系は非対応。
+func VeoModelCapabilities(model string) VeoCapabilities {
+	m := strings.ToLower(strings.TrimSpace(model))
+	return VeoCapabilities{
+		ReferenceImages: strings.HasPrefix(m, "veo-3") && !strings.Contains(m, "fast"),
+		LastFrame:       strings.HasPrefix(m, "veo-2") || strings.HasPrefix(m, "veo-3.1"),
+	}
 }

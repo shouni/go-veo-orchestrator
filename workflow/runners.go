@@ -33,8 +33,6 @@ func (m *manager) buildKeyframeRunner() *runner.CutKeyframeRunner {
 		m.generationUnit.imageGenerator,
 		m.promptDeps.KeyframePrompt,
 		m.generationUnit.model,
-		keyframe.WithMaxConcurrency(m.cfg.MaxConcurrency),
-		keyframe.WithRateInterval(m.cfg.RateInterval),
 		keyframe.WithAspectRatio(m.cfg.KeyframeAspectRatio),
 	)
 
