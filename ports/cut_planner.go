@@ -56,7 +56,7 @@ func ExpandCutsToSupportedDurations(cuts []Cut, usePreviousVideo bool, character
 		if usePreviousVideo && cut.IsChainStart && !cut.IsGenerated() {
 			subCuts = splitChainCutIntoSupportedDurations(cut, AllowedCutDurations(cut, characters, referenceImagesSupported))
 		} else {
-			subCuts = splitCutBySupportedDurations(cut, AllowedCutDurations(cut, characters, referenceImagesSupported))
+			subCuts = SplitCutBySupportedDurations(cut, AllowedCutDurations(cut, characters, referenceImagesSupported))
 		}
 		expanded = append(expanded, subCuts...)
 	}
@@ -142,11 +142,13 @@ func CutUsesReferenceImages(cut Cut, characters *characterkit.Characters, refere
 	return ClassifyVeoRequest(req, false, caps) == VeoModeReferenceToVideo
 }
 
-// splitCutBySupportedDurations は1カットをサポート尺のサブカット列へ分割します。
+// SplitCutBySupportedDurations は1カットをサポート尺のサブカット列へ分割します。
 // 生成済みカットは実動画の尺と metadata がずれないよう、そのまま返します。
 // allowedDurations は使用する尺の候補リストで、AllowedCutDurations が呼び出し元で
 // 事前に決定します（reference_to_videoなら{8}、image_to_videoなら{4,6,8}）。
-func splitCutBySupportedDurations(cut Cut, allowedDurations []float64) []Cut {
+// CutIndex の振り直しは行いません（シーン分割など、呼び出し側が自前の採番を持つ
+// 経路から使うため。全体の正規化には ExpandCutsToSupportedDurations を使ってください）。
+func SplitCutBySupportedDurations(cut Cut, allowedDurations []float64) []Cut {
 	if cut.IsGenerated() {
 		return []Cut{cut}
 	}
