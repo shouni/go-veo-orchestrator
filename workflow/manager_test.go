@@ -36,6 +36,23 @@ func TestNewBuildsWorkflows(t *testing.T) {
 	}
 }
 
+func TestNewRejectsMissingModels(t *testing.T) {
+	cases := map[string]func(*ports.Config){
+		"GeminiModel": func(c *ports.Config) { c.GeminiModel = "" },
+		"ImageModel":  func(c *ports.Config) { c.ImageModel = "  " },
+	}
+	for name, mutate := range cases {
+		t.Run(name, func(t *testing.T) {
+			args := testManagerArgs()
+			mutate(&args.Config)
+			_, err := New(args)
+			if !errors.Is(err, ports.ErrConfigInvalid) {
+				t.Errorf("New() without %s: err = %v, want ErrConfigInvalid", name, err)
+			}
+		})
+	}
+}
+
 func TestWorkflowsCloseStopsImageCache(t *testing.T) {
 	workflows, err := New(testManagerArgs())
 	if err != nil {

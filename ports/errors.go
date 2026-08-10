@@ -59,4 +59,8 @@ var (
 
 	// ErrWriterRequired は、成果物の保存先 Writer が注入されていない場合に返されます。
 	ErrWriterRequired = errors.New("writer is required")
+
+	// ErrConfigInvalid は、Config.Validate が必須項目（モデル名）の欠落を検出したことを
+	// 表します。実行時の失敗ではなく組み立ての誤りなので、workflow.New の時点で返ります。
+	ErrConfigInvalid = errors.New("config is invalid")
 )
