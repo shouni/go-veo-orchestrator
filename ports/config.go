@@ -3,14 +3,13 @@
 package ports
 
 import (
+	"fmt"
 	"strings"
 	"time"
 )
 
-// DefaultGeminiModel などは Config に適用するデフォルト値です。
+// DefaultMaxConcurrency などは Config に適用するデフォルト値です。
 const (
-	DefaultGeminiModel    = "gemini-3-flash-preview"
-	DefaultImageModel     = "gemini-3-pro-image-preview"
 	DefaultMaxConcurrency = 1
 	// DefaultRateBurst は、キーフレーム生成レート制限の既定バースト数です。
 	DefaultRateBurst = 1
@@ -19,6 +18,7 @@ const (
 // Config は Go Veo Orchestrator の各 Runner を動作させるための基本設定です。
 type Config struct {
 	// --- AI Model Settings (Common) ---
+	// どちらも必須です（Validate 参照）。
 	GeminiModel string
 	ImageModel  string
 
@@ -34,12 +34,6 @@ type Config struct {
 
 // ApplyDefaults は未設定（ゼロ値）の項目にデフォルト値を適用します。
 func (c *Config) ApplyDefaults() {
-	if c.GeminiModel == "" {
-		c.GeminiModel = DefaultGeminiModel
-	}
-	if c.ImageModel == "" {
-		c.ImageModel = DefaultImageModel
-	}
 	if c.MaxConcurrency <= 0 {
 		c.MaxConcurrency = DefaultMaxConcurrency
 	}
@@ -48,8 +42,22 @@ func (c *Config) ApplyDefaults() {
 	}
 }
 
+// Validate はモデル名が指定されていることを検証します。
+func (c *Config) Validate() error {
+	missing := make([]string, 0, 2)
+	if strings.TrimSpace(c.GeminiModel) == "" {
+		missing = append(missing, "GeminiModel")
+	}
+	if strings.TrimSpace(c.ImageModel) == "" {
+		missing = append(missing, "ImageModel")
+	}
+	if len(missing) > 0 {
+		return fmt.Errorf("%w: %s must be set (this library has no default model names)", ErrConfigInvalid, strings.Join(missing, ", "))
+	}
+	return nil
+}
+
 // WithModels は、指定されたモデル名で上書きした Config のコピーを返します。
-// 空文字は「変更なし」として扱い、返却前にデフォルト値を適用します。
 func (c Config) WithModels(geminiModel, imageModel string) Config {
 	if geminiModel = strings.TrimSpace(geminiModel); geminiModel != "" {
 		c.GeminiModel = geminiModel

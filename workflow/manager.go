@@ -56,6 +56,9 @@ func New(args ManagerArgs) (*ports.Workflows, error) {
 
 	cfg := args.Config
 	cfg.ApplyDefaults()
+	if err := cfg.Validate(); err != nil {
+		return nil, err
+	}
 
 	m := &manager{
 		cfg:         cfg,

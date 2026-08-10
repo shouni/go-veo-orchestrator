@@ -7,11 +7,11 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Go Reference](https://pkg.go.dev/badge/github.com/shouni/go-veo-orchestrator.svg)](https://pkg.go.dev/github.com/shouni/go-veo-orchestrator)
 
-## 🚀 概要 (About) - Music Recipe Driven Veo Orchestrator
+## 🚀 概要 (About)
 
 **Go Veo Orchestrator** は、**Music Recipe（音楽レシピ / 楽曲構成書）** から動画カット列を構造化し、Google の動画生成 AI **Veo (Vertex AI / Gemini API)** へ渡すためのバックエンドオーケストレーターです。
 
-[Gemini Image Kit](https://github.com/shouni/gemini-image-kit) を使ってカットごとのキーフレームを生成し、`VideoRunner` adapter を通じて Veo に **Prompt / Keyframe / Audio / PreviousVideoURI / Seed** を渡します。Veo API の具体実装は `ports.VideoRunner` として差し替える設計です。
+[Gemini Image Kit](https://github.com/shouni/gemini-image-kit) を使ってカットごとのキーフレームを生成し、`VideoRunner` adapter を通じて Veo に **Prompt / Keyframe / Audio / PreviousVideoURI / Seed** を渡します。**Veo API の具体実装はこのリポジトリに含まれず**、`ports.VideoRunner` として差し替える設計です。
 
 `video_id` を次カットの `PreviousVideoURI` として引き継ぐことで、Video-to-Video の文脈を保った連続カット生成を行います。生成済みカットは `status=generated` と `video_id` / `video_url` を使ってスキップできるため、途中失敗後の再開にも対応しやすい構造です。
 
@@ -19,18 +19,18 @@
 
 ## ✨ コア・コンセプト (Core Concepts)
 
-* **🧬 Consistency Control**:
-  * **キャラクター固有 Seed**、**キーフレーム画像**、**動きのプロンプト**、**前カットの VideoID** を 1 つの `VideoGenerationRequest` にまとめ、カット間の見た目と文脈を維持します。
+* **🧬 Consistency Control**
+  **キャラクター固有 Seed**、**キーフレーム画像**、**動きのプロンプト**、**前カットの VideoID** を 1 つの `VideoGenerationRequest` にまとめ、カット間の見た目と文脈を維持します。
 
-* **⏳ Audio-Driven Timeline Logic (音楽主導のタイムライン管理)**:
-  * `music_recipe.sections` または `cuts` から `duration_sec`、`start_sec`、`end_sec` を補完し、`audio_cue` を Veo 用プロンプトへ注入します。
+* **⏳ Audio-Driven Timeline Logic（音楽主導のタイムライン管理）**
+  `music_recipe.sections` または `cuts` から `duration_sec`、`start_sec`、`end_sec` を補完し、`audio_cue` を Veo 用プロンプトへ注入します。
 
-* **🔁 Resumable Video Chain**:
-  * 各 `cut` は `status`、`video_id`、`video_url` を保持します。生成済みカットは再生成せず、保持済み `video_id` を次カットの `PreviousVideoURI` として使用します。
-  * キーフレームも同じ考え方で、`keyframe_reference` を持つカットは焼き直しません（`CutKeyframeRunner.Run` / `RunAndSave` の両方）。保存済みレシピを起点に処理を再開しても、すでに払った画像生成のコストを二重に払いません。焼き直したいカットは `keyframe_reference` を空にしてから渡します（`Cut.ResetGeneration(false)`）。
+* **🔁 Resumable Video Chain**
+  各 `cut` は `status`、`video_id`、`video_url` を保持します。生成済みカットは再生成せず、保持済み `video_id` を次カットの `PreviousVideoURI` として使用します。
+  キーフレームも同じ考え方で、`keyframe_reference` を持つカットは焼き直しません（`CutKeyframeRunner.Run` / `RunAndSave` の両方）。焼き直したいカットは `keyframe_reference` を空にしてから渡します（`Cut.ResetGeneration(false)`）。
 
-* **🧩 Adapter-Oriented Architecture**:
-  * Veo への実通信は `ports.VideoRunner` に閉じ込め、オーケストレーション、キーフレーム生成、メタデータ保存を分離しています。
+* **🧩 Adapter-Oriented Architecture**
+  Veo への実通信は `ports.VideoRunner` に閉じ込め、オーケストレーション、キーフレーム生成、メタデータ保存を分離しています。
 
 ---
 
@@ -38,191 +38,34 @@
 
 | ワークフロー | 担当インターフェース | 内容 |
 | --- | --- | --- |
-| **1. Scripting** | `ScriptRunner` | Music Recipe JSON を読み込み、歌詞・section・楽曲展開から、カット割り・カメラワーク・推定秒数を含む**Video Recipe**を生成。 |
-| **2. Cut Keyframe Gen** | `CutKeyframeRunner` | 各カットのベースとなるキーフレーム画像を、キャラクター Seed と参照画像を使って生成（`RunAndSave`）。**`keyframe_reference` が既にあるカットは生成しません**（`Run` は該当位置に `nil` を返し、呼び出し側は既存の参照をそのまま使います）。既存キーフレームの局所編集にも対応（`EditAndSave`、詳細は後述）。 |
+| **1. Scripting** | `ScriptRunner` | Music Recipe JSON を読み込み、歌詞・section・楽曲展開から、カット割り・カメラワーク・推定秒数を含む **Video Recipe** を生成。 |
+| **2. Cut Keyframe Gen** | `CutKeyframeRunner` | 各カットのベースとなるキーフレーム画像を、キャラクター Seed と参照画像を使って生成（`RunAndSave`）。**`keyframe_reference` が既にあるカットは生成しません**（`Run` は該当位置に `nil` を返し、呼び出し側は既存の参照をそのまま使います）。既存キーフレームの局所編集にも対応（`EditAndSave`）。 |
 | **3. Video Gen** | `VideoTimelineRunner` + `VideoRunner` | `VideoRequestBuilder` が `VideoGenerationRequest` を組み立て、Veo adapter に順次投入。 |
 | **4. Metadata Publish** | `VideoPublishRunner` | `video_id` / `video_url` / `status` 更新済みの `video_music_meta.json` を保存。 |
 
 ---
 
-## 🧾 Music Recipe JSON
+## ⚡ クイックスタート
 
-`ScriptRunner` は `sourceURL` の Music Recipe JSON を `VideoRecipe` として解釈し、prompt builder へ parsed object を渡します。prompt builder は `music_recipe.lyrics` / `music_recipe.sections` から、BGM の拍子・感情・盛り上がりを含む動画台本 JSON を生成します。
-
-歌詞本文は `music_recipe.lyrics` に保存されますが、Veo prompt へ直接は注入されません。歌詞や section の意味は、script generation stage の prompt builder が `cuts[].audio_cue` と `cuts[].visual_anchor` に展開します。
-
-各 `cut` は `duration_sec` と `audio_cue` を持つため、Veo へのプロンプトには `(synchronized with the heavy bass drop at 0:10)` のような同期指示を自動注入できます。アプリ側の責務は、生成された `cuts` を表示・編集し、キーフレーム生成または動画生成フォームへ渡すことです。
-
-```json
-{
-  "project_title": "AIマルチモーダル解説動画",
-  "music_recipe": {
-    "title": "AIマルチモーダル解説動画",
-    "theme": "AIマルチモーダル解説",
-    "mood": "90s retro mech synthwave",
-    "tempo": 120,
-    "lyrics": {
-      "title": "AIマルチモーダル解説動画",
-      "theme": "AIマルチモーダル解説",
-      "hook": "未来の映像制作をひらく",
-      "lyrics": "[Verse] 画面の奥で光が走る\n[Chorus] 未来のカットが動き出す",
-      "keywords": [
-        "AI",
-        "video",
-        "orchestration"
-      ],
-      "mood": "90s retro mech synthwave",
-      "narrative": "AI が映像制作の工程をつなぐ物語"
-    },
-    "instruments": [
-      "analog synth",
-      "electronic drums"
-    ],
-    "sections": [
-      {
-        "name": "Intro",
-        "duration_seconds": 5,
-        "prompt": "quiet synth pad and clock tick"
-      },
-      {
-        "name": "Verse",
-        "duration_seconds": 5,
-        "prompt": "drum beat starts and tempo lifts"
-      },
-      {
-        "name": "Chorus",
-        "duration_seconds": 5,
-        "prompt": "bright synth lead and impact effects"
-      }
-    ]
-  },
-  "cuts": [
-    {
-      "cut_index": 1,
-      "duration_sec": 5,
-      "audio_cue": "イントロ：静かなシンセのパッド音、秒針の音 (mp3_segment_1)",
-      "visual_anchor": "暗闇の中にキャラクターの瞳が光る。カメラがゆっくりと引いていく",
-      "character_id": "zundamon"
-    },
-    {
-      "cut_index": 2,
-      "duration_sec": 5,
-      "audio_cue": "Aメロ：歌詞の導入に合わせてドラムのビートが刻まれ始める。テンポアップ (mp3_segment_2)",
-      "visual_anchor": "歌詞の「画面の奥で光が走る」を、ずんだもんの背後に走る光のラインとして映像化する",
-      "character_id": "zundamon"
-    },
-    {
-      "cut_index": 3,
-      "duration_sec": 5,
-      "audio_cue": "サビ：歌詞の hook に合わせて激しいシンセのメロディとエフェクト音が入る (mp3_segment_3)",
-      "visual_anchor": "歌詞の「未来のカットが動き出す」を、カメラが高速旋回しながらサイバー空間へ切り替わる動きで表現する",
-      "character_id": "zundamon_metan"
-    }
-  ]
-}
-```
-
-この JSON は `Normalize()` により `start_sec` / `end_sec` / `status` が補完されます。生成後は `keyframe_reference`、`video_id`、`video_url` が追記された `video_music_meta.json` として保存されます。
-
-Veo に渡る prompt は `cuts[].visual_anchor`、`cuts[].audio_cue`、`music_recipe.mood`、タイムライン情報から構築されます。`music_recipe.lyrics` はメタデータとして保持されますが、動画化したい歌詞の内容は `cuts` へ変換しておく必要があります。
-
-`cuts` が空の場合は、`music_recipe.sections` からカット列を自動生成します。`music_recipe` は `github.com/shouni/go-gemini-client/music.Recipe` をそのまま保持するため、楽曲生成側の JSON は `music_recipe` 配下へ入れます。
-
-各 `cut` は `section_index`（1始まり）で、由来となった `music_recipe.sections` の位置を保持します。1セクションが `scene_split` 等で複数カットに分割されても、分割後の全カットが同じ `section_index` を引き継ぐため、呼び出し側は `start_sec` とセクションの時間範囲を突き合わせて逆算せずに、カットの所属セクションを直接判定できます。明示的に設定されていないカットは、`Normalize()` が `start_sec` から自動的に補完します。
-
-> **⚠️ `ports.Cut` の内部構造について**: `Cut` の JSON はフラットな構造のままですが、Go の構造体としては `AudioSync` / `KeyframeResult` / `VideoResult` / `ChainControl` へ分割され、匿名フィールドとして埋め込まれています。`cut.VideoID` のようなフィールドアクセスは変わりませんが、`ports.Cut{DurationSec: 5, KeyframeReference: "..."}` のようなフラットなコンポジットリテラルは、`ports.Cut{AudioSync: ports.AudioSync{DurationSec: 5}, KeyframeResult: ports.KeyframeResult{KeyframeReference: "..."}}` のようにグループ単位で書き直す必要があります。
-
-```json
-{
-  "project_title": "AIマルチモーダル解説動画",
-  "music_recipe": {
-    "title": "AIマルチモーダル解説動画",
-    "theme": "AIマルチモーダル解説",
-    "mood": "upbeat electronic documentary score",
-    "tempo": 120,
-    "instruments": [
-      "analog synth",
-      "electronic drums",
-      "soft piano"
-    ],
-    "sections": [
-      {
-        "name": "Verse",
-        "duration_seconds": 40,
-        "prompt": "quiet opening with restrained melody and gradual rhythmic build"
-      },
-      {
-        "name": "Chorus",
-        "duration_seconds": 45,
-        "prompt": "emotional peak with fuller instrumentation and stronger accents"
-      }
-    ],
-    "AudioModel": "lyria-3-pro-preview",
-    "ComposeMode": "game_fantasy",
-    "Seed": 10
-  },
-  "cuts": []
-}
-```
-
----
-
-## 🔌 Adapter Boundary
-
-このリポジトリは Veo API クライアントではなく、Veo に渡すための **ドメインモデル、キーフレーム生成、リクエスト構築、Video-to-Video 連鎖、メタデータ保存** を担当する orchestration ライブラリです。
-
-Veo API への実通信は `ports.VideoRunner` の実装として、利用側アプリケーションまたは別パッケージから差し込みます。このリポジトリ内には本番用 Veo adapter は含めず、実行環境ごとの差分を adapter 側に閉じ込めます。
-
-`VideoRunner` 実装が担う責務は以下です。
-
-* Google Cloud / Vertex AI / Gemini API などの認証
-* `ImageReference` / `AudioReference` の解決
-* `InputImage` / `InputAudio` を使う場合のアップロードと参照 URI 化
-* Veo API への動画生成リクエスト送信
-* 長時間 operation のポーリング、タイムアウト、リトライ
-* 生成動画の保存先管理
-* 次カットへ引き継ぐための `VideoResponse.VideoID` 返却
-* 参照可能な `VideoResponse.CloudURL` 返却
-
-adapter 実装では `VideoGenerationRequest.ImageReference` を優先し、空の場合だけ `InputImage` をアップロードして参照 URI を作る想定です。`AudioReference` も同様に、参照 URI がある場合はそれを優先し、必要に応じて `InputAudio` をアップロードします。
-
-キーフレーム生成の実体は `ports.CutImageGenerator`（`Execute` / 任意で `EditCut`）です。
-`EditCut` を実装していないエンジンで `EditAndSave` を呼ぶと `ErrEditingNotSupported` になります。
-
-`VideoRunner` を指定しない場合、`workflow.New` が返す `Workflows.Video` は `nil` ではなく、呼び出すと常に `ports.ErrVideoRunnerNotConfigured` を返すダミー実装（`ports.NewNoopVideoTimelineRunner()`）になります。Script / CutKeyframe / Publish だけを使う構成ではそのまま利用できますが、動画生成まで実行する場合は `ManagerArgs.VideoRunner` に実装を渡してください。呼び出し側で未設定を検知したい場合は `errors.Is(err, ports.ErrVideoRunnerNotConfigured)` で判定できます（`Workflows.Video == nil` によるチェックは機能しません）。
+`workflow.New` に依存を渡して `*ports.Workflows` を組み立て、各 Runner を呼びます。`VideoRunner` が Veo API アダプタの差し込み口です（[実装ガイド](docs/adapter.md)）。
 
 ```go
-type VeoRunner struct {
-	// client, bucket, model, location など、実行環境に必要な依存を保持します。
-}
-
-func (r *VeoRunner) Run(ctx context.Context, req ports.VideoGenerationRequest) (*ports.VideoResponse, error) {
-	// 1. req.ImageReference / req.AudioReference を優先して参照を解決
-	// 2. 必要なら req.InputImage / req.InputAudio をアップロード
-	// 3. req.Prompt, req.PreviousVideoURI, req.Seed, req.DurationSec を Veo API に渡す
-	// 4. operation を poll して完了を待つ
-	// 5. CloudURL と VideoID を返す
-	return &ports.VideoResponse{
-		CloudURL:    "gs://example-bucket/videos/cut_001.mp4",
-		VideoID:     "veo-video-id",
-		CutIndex:    req.CutIndex,
-		DurationSec: req.DurationSec,
-		MimeType:    "video/mp4",
-	}, nil
-}
-
 workflows, err := workflow.New(workflow.ManagerArgs{
-	Config:      cfg,
+	Config: ports.Config{
+		GeminiModel: "gemini-3.6-flash",        // 必須
+		ImageModel:  "gemini-3.1-flash-image",  // 必須
+	},
 	HTTPClient:  httpClient,
 	Reader:      reader,
 	Writer:      writer,
 	AIClient:    geminiModel,
-	VideoRunner: &VeoRunner{},
+	VideoRunner: &VeoRunner{}, // 自前の Veo アダプタ
 	PromptDeps:  promptDeps,
 })
 if err != nil {
 	return err
 }
+defer workflows.Close() // 画像キャッシュの goroutine を止める
 
 videos, err := workflows.Video.Run(ctx, recipe)
 if err != nil {
@@ -236,302 +79,23 @@ if _, err := workflows.Publish.Run(ctx, recipe, "gs://bucket/jobs/<jobID>/"); er
 }
 ```
 
-`VideoGenerationRequest` の主なフィールドは以下の契約で使われます。
+---
 
-| フィールド | adapter 側の扱い |
+## 📚 ドキュメント
+
+| ドキュメント | 内容 |
 | --- | --- |
-| `Prompt` | Veo に渡す最終プロンプト。カット内容、カメラワーク、音楽同期指示を含みます。 |
-| `ImageReference` | 既に参照可能なキーフレーム画像 URI。存在する場合は `InputImage` より優先します。 |
-| `InputImage` | `ImageReference` が空の場合に adapter 側でアップロードして使う画像バイト列です。 |
-| `AudioReference` | 既に参照可能な音声セグメント URI。 |
-| `InputAudio` | `AudioReference` が空の場合に adapter 側でアップロードして使う音声バイト列です。 |
-| `PreviousVideoURI` | 前カットの文脈を引き継ぐための ID。空の場合はチェーンなしで生成します。 |
-| `LastFrameReference` | 終了フレームとして使う画像 URI（Veo の first/last frame 補間）。Veo API では開始フレーム画像との併用が必須のため、image 入力（image_to_video）のときだけ `lastFrame` として送ります。対応モデルは Veo 2 / Veo 3.1 系のみです。 |
-| `Seed` | キャラクター Seed を優先し、未指定時は `music_recipe.Seed` を使います。 |
-| `CutIndex` | レスポンスやエラー表示で使うカット番号です。 |
-| `DurationSec` | カットの目標秒数です。 |
-
-`VideoResponse.VideoID` が空の場合、そのカットの生成結果は保存できますが、次カットへの `PreviousVideoURI` 連鎖は更新されません。連続カットの一貫性を重視する adapter では、可能な限り Veo 側の動画 ID を返してください。
+| [Music Recipe JSON](docs/music-recipe.md) | 入力フォーマット、`cuts` の自動生成、`section_index`、`ports.Cut` の構造 |
+| [設定と差し替え (Config / DI)](docs/configuration.md) | `ports.Config` / `ManagerArgs` / `PromptDeps`、キーフレーム生成オプション |
+| [Adapter Boundary](docs/adapter.md) | `ports.VideoRunner` の実装ガイドと `VideoGenerationRequest` の契約 |
+| [Veo 生成モードとカット尺](docs/veo-modes.md) | `ClassifyVeoRequest` による分類、モード別の対応尺、尺プランナー |
+| [レシピ・カットの操作](docs/recipe-api.md) | 再開・再生成のヘルパー、部分結果、単一カットのキーフレーム編集 |
+| [Sentinel Errors](docs/errors.md) | `errors.Is` で分岐するためのエラー一覧 |
+| [アーキテクチャ](docs/architecture.md) | パッケージ構成、生成と保存の責務分担、シーケンス図 |
 
 ---
 
-## 🎛️ Veo 生成モードとカット尺 (Generation Modes & Durations)
-
-1つのリクエストが Veo のどの生成機能で解釈されるかは、`ports.ClassifyVeoRequest` **1箇所**で決まります。adapter のリクエスト本文構築、カット尺の計画・検証、生成モードごとのプロンプト選択は、すべてこの同じ判定を共有してください。それぞれが独自に分岐すると「参照画像に合わせろと指示しながら参照画像を送らない」「reference_to_video 前提で8秒に丸めたのに実際は image_to_video だった」といったズレが起きます。
-
-```go
-caps := ports.RunnerCapabilities(videoRunner) // Runner のオプションインターフェースから導出
-mode := ports.ClassifyVeoRequest(req, usePreviousVideo, caps)
-```
-
-判定の優先順位と、各モードで Veo が受け付けるカット尺は以下です（モードは `ports.VeoGenerationMode`、
-モデルの対応状況は `ports.VeoCapabilities`。尺の一覧は `ports.ImageToVideoDurationsSec` /
-`ports.ReferenceToVideoDurationsSec` として公開しています）。
-
-| 優先 | モード | 条件 | 対応尺（秒） |
-| --- | --- | --- | --- |
-| 1 | `VeoModeVideoExtension` | `usePreviousVideo` かつ `PreviousVideoURI` が `gs://` 参照。画像参照はすべて無視されます | 7 固定 |
-| 2 | `VeoModeReferenceToVideo` | 参照画像が1つ以上あり、モデルが `referenceImages` 対応（Veo 3系の非 Fast） | 8 固定 |
-| 3 | `VeoModeFramesToVideo` | 開始フレームと `LastFrameReference` が両方あり、モデルが `lastFrame` 対応（Veo 2 / Veo 3.1系） | 4 / 6 / 8 |
-| 4 | `VeoModeImageToVideo` | 上記以外すべて | 4 / 6 / 8 |
-
-モデルの対応状況は、`VideoRunner` に以下のオプションインターフェースを実装すると `ports.RunnerCapabilities` が自動で拾います（未実装の Runner は両方 false = image_to_video 側へ倒れます）。
-
-```go
-type ReferenceImagesSupporter interface{ SupportsReferenceImages() bool }
-type LastFrameSupporter      interface{ SupportsLastFrame() bool }
-```
-
-カット尺の計画に使うヘルパーは `ports` にあります。Veo は任意長の動画を生成できないため、レシピ側でこれらの値に合わせて尺を割り当ててから実行してください。
-
-| API | 用途 |
-| --- | --- |
-| `ports.DurationsForMode(mode)` | そのモードで受け付けられる尺の一覧 |
-| `ports.IsSupportedDuration(sec, mode)` | 尺が受け付けられるかの判定 |
-| `ports.SnapDuration(sec, candidates)` | 最も近い対応尺へ丸める（同距離なら長い方） |
-| `ports.ChainDurations(bases)` | 1本の継続チェーン（ベース + 7秒 × n）で実現できる合計尺の候補 |
-| `ports.VeoContinuationMaxDurationSec` | チェーンをリセットする累積尺の閾値（24秒） |
-
-`VideoTimelineRunner.Run` は各カットを Veo へ投げる直前にこの尺を検証し、対応外なら `ports.ErrUnsupportedCutDuration` を返してそのカットの生成を行いません。長時間実行 operation を投げて Veo 側に拒否されるまで待つより手前で、どのカットが何秒でどのモードだったかまで示して落とします。
-
-参照画像（`referenceImages`）の組み立て規則は `ports.CutReferenceImages(cut, characters)` に一本化されています。`[キャラクター立ち絵, キーフレーム]` の順に最大3枚で、立ち絵が無いカットはキーフレームだけを参照として使います。
-
----
-
-## ⚙️ 設定と差し替え (Config / DI)
-
-`workflow.New(ManagerArgs)` に渡す設定と依存です。`ports.Config` はゼロ値で構いません（`ApplyDefaults` が補完します）。
-
-| `ports.Config` | 役割 |
-| --- | --- |
-| `GeminiModel` | 台本生成に使うテキストモデル（既定は `ports.DefaultGeminiModel`） |
-| `ImageModel` | キーフレーム画像生成に使うモデル |
-| `MaxConcurrency` | キーフレーム生成の最大並列数（動画生成は Video-to-Video 連鎖のため常に逐次です） |
-| `RateInterval` | キーフレーム生成の発射間隔の下限 |
-| `RateBurst` | キーフレーム生成レート制限のバースト許容数（既定 1） |
-| `KeyframeAspectRatio` | キーフレームのアスペクト比。空なら `keyframe.CutAspectRatio` |
-
-`ports.WithModels(gemini, image)` / `ports.WithAspectRatio(ratio)` で `Config` を部分的に上書きできます。
-
-| `ManagerArgs` | 役割 |
-| --- | --- |
-| `AIClient` | `gemini.Model`（台本生成・キーフレーム生成） |
-| `Reader` / `Writer` | `ports.ContentReader` / `remoteio.Writer`（レシピの読み込み・成果物の保存） |
-| `HTTPClient` | 参照画像の取得に使う HTTP クライアント |
-| `VideoRunner` | Veo API アダプタ。未設定なら `ErrVideoRunnerNotConfigured` を返すダミーになります |
-| `PromptDeps` | キャラクター定義とプロンプト実装（下記） |
-
-プロンプトはこのライブラリに含めず、`PromptDeps` から注入します。
-
-| `PromptDeps` | インターフェース | 役割 |
-| --- | --- | --- |
-| `Characters` | `*characterkit.Characters` | キャラクター定義。カットの `CharacterID` から解決し、未知IDは既定キャラクターへ落とします |
-| `ScriptPrompt` | `ports.ScriptPrompt` | Music Recipe から動画台本を生成するプロンプト（`Build(mode, *TemplateData)`） |
-| `KeyframePrompt` | `ports.KeyframePrompt` | カットのキーフレーム生成・編集のプロンプト（`BuildCut` / `BuildEdit`） |
-
-キーフレーム生成の細部は `keyframe.Option` で調整します（`workflow` が `Config` から組み立てます）。
-並列数・レート制限は注入する画像ジェネレータ（gemini-image-kit の `WithMaxConcurrency` /
-`WithRateLimit`）側の設定で、`workflow` は `Config.MaxConcurrency` / `RateInterval` / `RateBurst`
-をそちらへ配線します。
-
-| オプション | 役割 |
-| --- | --- |
-| `keyframe.WithAspectRatio` | アスペクト比（キャラクターに一致する参照画像があればそれを優先します） |
-| `keyframe.WithImageSize` | 解像度（既定 "2K"） |
-| `keyframe.WithNegativePrompt` | ネガティブプロンプトの差し替え（既定は文字・フキダシ排除の定型文） |
-
-保存側は `runner.NewCutKeyframeRunner` の `runner.WithCacheControl` で、キーフレーム画像に
-付ける `Cache-Control` を差し替えられます（既定は `DefaultKeyframeCacheControl` =
-`public, max-age=1800`。生成物を公開したくないデプロイでは `private` などを指定してください）。
-
-キーフレームの生成結果はライブラリ自身の型 `ports.KeyframeImage`（`Data` / `MimeType` /
-`UsedSeed` / `Model` / `Prompt`）で返ります。gemini-image-kit の型を公開面に出さないための
-境界で、利用側は画像キットを import せずに済みます。
-
----
-
-## 💾 生成と保存の責務分担 (Generation vs. Persistence)
-
-書き先は `remoteio.Writer` として注入されるため、このライブラリは GCS も S3 も知りません。
-持っているのは「どこに保存するか」ではなく、**自分のフォーマットと命名規則**です。
-その上で、キーフレームと動画で意図的に扱いを分けています。
-
-| | 生成 | 保存 |
-| --- | --- | --- |
-| キーフレーム | `CutKeyframeRunner.Run` | **同じ Runner が行う**（`RunAndSave` / `EditAndSave`） |
-| 動画 | `VideoTimelineRunner.Run` | **行わない**。呼び出し側が `VideoPublishRunner`（`Workflows.Publish`）を呼びます |
-
-**キーフレームの保存を Runner が持つ理由**: 保存名 `keyframe_<レシピ内の位置>.png` がカットの並びと結びついているためです。
-呼び出し側に出すと、位置→ファイル名の対応と `keyframe_reference` の設定を再実装させることになり、
-部分生成時に `keyframe_1.png` が別のカットを指す事故を招きます。
-
-**動画の保存を持たない理由**: 生成直後に保存すると、生成と保存の間に処理を挟む呼び出し側が困るからです。
-例えば継続チェーンを結合して `final_video_url` を埋めてから保存したい場合、
-タイムライン側が書いたメタデータには必ずその値が欠けます。
-（以前は `VideoTimelineRunner.RunAndSave` がありましたが、この理由でどの呼び出し元も使っておらず、削除しました。）
-
----
-
-## 🔧 レシピ・カットの操作 (Recipe helpers)
-
-`VideoRecipe` / `Cut` は、再開・再生成のために状態を読み書きするヘルパーを持ちます。
-一括生成を途中から再開する処理は、これらを使って「どのカットがまだか」を判断します。
-
-| API | 用途 |
-| --- | --- |
-| `Cut.IsGenerated()` / `Cut.Status`（`ports.CutStatus`） | そのカットが生成済みかの判定と状態 |
-| `Cut.ResetGeneration(keepKeyframe)` | 生成結果を捨てて再生成対象に戻す。`keepKeyframe=false` は `keyframe_reference` も消すため、次の `RunAndSave` で画像から焼き直されます |
-| `Cut.EffectiveDurationSec()` | そのカットの実効尺 |
-| `VideoRecipe.Normalize()` | カットの連番・開始秒・`SectionIndex` / `LocationAnchor` の伝播を整えます |
-| `VideoRecipe.Validate()` | レシピの整合性検証 |
-| `Config.UsesModels(gemini, image)` / `Cuts.UniqueCharacterIDs()` | 使用モデルの一致判定・登場キャラクターの集合 |
-| `Cuts.NextLastFrameReference(i)` | frames_to_video で次カットの `lastFrame` に使う参照の解決 |
-| `ports.VideoRecipeSchema(characterIDs)` | 台本生成の構造化出力スキーマ（`character_id` を enum で制約した JSON Schema） |
-| `Cuts.FillAudioReference(url)` / `Cuts.FillCharacterID(id)` | 未設定カットへの音源・キャラクターの一括補完 |
-| `Cuts.IndexOf(cutIndex)` | cut_index からレシピ内の位置を引く |
-| `ports.NewVideoRecipeFromMusic(music.Recipe)` | Music Recipe から動画レシピを組み立て（深いコピー + Normalize） |
-| `ports.ExpandCutsToSupportedDurations(...)` | カット尺を Veo のサポート値へ正規化する尺プランナー（分割・チェーン形成・セクション境界リセット） |
-| `ports.CapCutsTotalDuration(cuts, maxSec)` / `ports.ChainTailEnd(cuts, i, usePrev)` | 合計尺の切り詰め・チェーン再生成範囲の解決 |
-| `ports.SplitCutBySupportedDurations(cut, totalSec)` / `ports.AllowedCutDurations(usesRefs)` | 1 カットの分割と、参照画像の有無で変わる許容尺の取得 |
-| `ports.CutUsesReferenceImages(cut, characters)` | そのカットが reference_to_video 経路（＝8 秒固定）になるかの判定 |
-| `ports.SplitDialogueLines(dialogue)` / `ports.DistributeLines(lines, n)` | 台詞の行分割と、分割後カットへの割り当て |
-| `ports.VeoModelCapabilities(model)` | モデル名から referenceImages / lastFrame 対応を導出 |
-
-`workflow.New` が返す `*ports.Workflows` は、使い終わったら **`Close()`** を呼んでください
-（画像キャッシュのバックグラウンド goroutine を停止します。複数回呼んでも安全です）。
-公開・保存の出力は `ports.PublishResult` です。
-
-`VideoTimelineRunner.Run` は**エラー時も完了済みカットの部分結果を返します**。
-`WithCutObserver` でカット完了ごとのフック（メタデータ保存や実行時間予算の確認）を差し込め、
-フックがエラーを返すとそこで停止して部分結果を返します。時間制限のあるジョブ基盤で
-「一旦保存して次の実行で再開」する運用が、自前のカットループなしで組めます。
-同様に `CutKeyframeRunner.RunAndSave` も、生成が途中で失敗した場合に**成功した分の画像と
-メタデータを保存してから**エラーを返します。
-
----
-
-## 🩹 単一カットのキーフレーム編集 (EditAndSave)
-
-`CutKeyframeRunner.RunAndSave` はプロンプトから画像を作り直す「フル生成」ですが、`EditAndSave` は既存のキーフレーム画像を編集元として、テキスト指示で局所的な修正だけを反映します。構図・ポーズ・背景は保たれるため、同じキャラクターの他カットとの一貫性を保ったまま「小物の数を減らす」「色味を揃える」といった軽微な修正に向いています。
-
-レシピ全体と、その中の対象カットの位置（0 始まり）を渡します。対象カットの
-`KeyframeReference` は、編集元となる既存のキーフレーム画像を指している必要があります。
-
-```go
-// recipe は完全なレシピのままで構いません。編集するカットは位置で指定します。
-const cutPosition = 1 // recipe.Cuts[1] を編集する
-
-updated, err := workflows.CutKeyframe.EditAndSave(ctx, recipe, cutPosition,
-	"腕には絆創膏を1〜2枚のみにしてください", "gs://bucket/jobs/j1/regens/cut-2/")
-if err != nil {
-	return err
-}
-// updated.Cuts[cutPosition].KeyframeReference が編集後の画像パスに更新されています。
-```
-
-対象カットだけの使い捨てレシピを組む必要はありません（v1.11 より前はそれが必須で、
-カットごとにループする呼び出し側がレシピを組み直していました）。保存されるメタデータも
-常に完全なレシピになります。
-
-内部的には [gemini-image-kit](https://github.com/shouni/gemini-image-kit) の
-`ImageGenerator.Generate` に既存キーフレーム画像を入力として渡し、`editPrompt` を
-プロンプトとして呼び出します。`RunAndSave`（通常のキーフレーム生成）と同じ会話型
-マルチモーダル画像モデル（`Config.ImageModel`、Gemini の「Nano Banana」系）をそのまま
-再利用するため、編集専用のモデルやAPIは不要です。
-
-> Vertex AI Imagen のマスクベース編集/カスタマイズ API（`imagen-3.0-capability-001` 系）は2026年6月30日に廃止され、後継の「capability」モデルも用意されていません。そのため `EditAndSave` はマスク指定には対応せず、自由記述の編集指示のみをサポートします。
-
-* `cutPosition` が `recipe.Cuts` の範囲外の場合はエラー
-* 対象カットの `KeyframeReference` が空の場合（＝編集元画像がない）は `ports.ErrNoKeyframeToEdit`
-* キャラクターの Seed は `RunAndSave` と同様、`char.Seed` がそのまま編集リクエストに使われます
-
----
-
-## ⚠️ Sentinel Errors
-
-呼び出し側が `errors.Is` で判定し、汎用エラーとは異なる制御（フォールバックやリトライ）を行えるよう、`ports` パッケージは以下の sentinel error を公開しています。
-
-| エラー | 発生条件 | 想定される呼び出し側の対応 |
-| --- | --- | --- |
-| `ports.ErrRecipeRequired` | `VideoRecipe` が必須の処理に `nil` を渡した場合 | 呼び出し側の実装不備。基本的に発生させない |
-| `ports.ErrEditingNotSupported` | `EditAndSave` で、設定済みの画像生成エンジンがキーフレーム編集（`EditCut`）を実装していない場合 | 全体再生成（`RunAndSave`）へのフォールバック |
-| `ports.ErrInvalidAIResponse` | AI の応答テキストを `VideoRecipe` の JSON として解析できなかった場合 | ネットワーク/認証エラーと区別したリトライ判断 |
-| `ports.ErrVideoRunnerNotConfigured` | `VideoRunner` 未設定のまま `Workflows.Video` を呼び出した場合 | 動画生成ステップのスキップ、設定不備の通知 |
-| `ports.ErrInputTooLarge` | ソースの入力サイズが許容上限（5MB）を超えた場合 | 入力の分割やソースの見直しを促す |
-| `ports.ErrUnsupportedCutDuration` | カットの尺が、解決した Veo 生成モードで受け付けられない値だった場合 | レシピ側の尺の計画ミス。リトライせず `ports.SnapDuration` 等で尺を割り当て直す |
-| `ports.ErrNoKeyframeToEdit` | `EditAndSave` の対象カットに既存のキーフレームが無い場合 | 先に `RunAndSave` でキーフレームを生成させる |
-| `ports.ErrRecipeInvalid` | `VideoRecipe.Validate` が構造上の問題（タイトル欠落・カット無し・範囲外の `section_index`）を検出した場合 | AI 生成なら再生成、手入力なら入力の是正 |
-| `ports.ErrKeyframeRunnerRequired` / `ErrVideoRunnerRequired` / `ErrWriterRequired` | Runner や Writer が注入されないまま実行された場合 | 構築（DI）の誤り。設定不備の通知 |
-
----
-
-## 📂 プロジェクト構造 (Project Structure)
-
-本アーキテクチャは **ports による抽象化（Hexagonal Architecture）** を境界線としており、Veo API のエンドポイント変更や動画合成エンジンの差し替えを容易に行える設計を採用しています。
-
-```text
-go-veo-orchestrator/
-├── workflow/    # 【統合管理】各工程を組み合わせ、Workflows インターフェースを実装。
-├── runner/      # 【実行実体】NewVideoScriptRunner / NewCutKeyframeRunner / NewVideoTimelineRunner /
-│              #   NewVideoPublisherRunner。Veo リクエストの組み立ては NewVideoRequestBuilder
-│              #   （キャラクター参照を含める場合は NewVideoRequestBuilderWithCharacters、
-│              #   差し替えは WithRequestBuilder。既定は DefaultVideoRequestBuilder）。
-├── keyframe/    # 【キーフレーム生成戦略】カット列からの静止画生成（並列度・レート制限つき）。参照画像の解決は gemini-image-kit。
-└── ports/       # 【契約・定義】Interface（VideoRunner等）、共通モデル、動作設定(Config)。全ての起点。
-
-```
-
----
-
-## 🔄 シーケンスフロー (Sequence Flow)
-
-### Video Orchestration Flow (`NewVideoTimelineRunner`)
-
-```mermaid
-sequenceDiagram
-  participant WF as workflow.manager
-  participant KeyframeGen as keyframe.Generator
-  participant ImageKit as gemini-image-kit
-  participant Timeline as runner.VideoTimelineRunner
-  participant Builder as runner.VideoRequestBuilder
-  participant VeoAPI as Vertex AI (Veo API)
-  participant Publisher as runner.VideoPublisherRunner
-  participant Writer as remoteio.Writer
-
-  Note over WF,KeyframeGen: 1) GenerationUnit / Keyframe Runner 初期化
-  WF->>KeyframeGen: keyframe.NewGenerator(characters, imageGenerator, keyframePrompt, model, opts...)
-  KeyframeGen-->>WF: *keyframe.Generator
-  WF->>Timeline: runner.NewVideoTimelineRunner(keyframeRunner, videoRunner)
-  Timeline-->>WF: *runner.VideoTimelineRunner
-
-  Note over WF,Timeline: 2) Music Recipeに基づく数珠繋ぎ動画生成
-  WF->>Timeline: Run(ctx, recipe)
-  Timeline->>KeyframeGen: Execute(ctx, recipe.Cuts)
-  KeyframeGen->>ImageKit: GenerateSingleImage(prompt + ImageURI{ReferenceURL})
-  Note over KeyframeGen,ImageKit: 参照の解決（Vertex+gs:// は直接参照 / Gemini API は File API へ1回だけアップロード）は画像キット側
-  ImageKit-->>KeyframeGen: キーフレーム画像
-
-  Note over Timeline,VeoAPI: Loop内の Video-to-Video で前カットのコンテキスト(lastVideoID)を連鎖
-  Note over Timeline: generated cut は video_id を使ってスキップ可能
-
-  loop cuts / sequential Video-to-Video chain
-    Timeline->>Builder: Build(recipe, cut, keyframe, lastVideoID)
-    Builder-->>Timeline: VideoGenerationRequest
-    Timeline->>VeoAPI: GenerateVideo(Prompt + KeyframeReference/InputImage + AudioReference + PreviousVideoURI + Seed)
-    VeoAPI-->>Timeline: VideoResponse (CloudURL + VideoID)
-    Timeline->>Timeline: cut.video_id / cut.video_url / cut.status 更新
-  end
-
-  Note over WF,Publisher: 3) メタデータの保存は Publish が担当（生成とは別ステップ）
-  WF->>Publisher: Run(ctx, recipe, outputDir)
-  Publisher->>Writer: Write(ctx, video_music_meta.json, updatedVideoRecipeJSON, remoteio.WithContentType("application/json"), ...)
-  Publisher-->>WF: *ports.PublishResult
-
-```
-
----
-
-### 🤝 依存関係 (Dependencies)
+## 🤝 依存関係 (Dependencies)
 
 * [shouni/gemini-image-kit](https://github.com/shouni/gemini-image-kit) - 静止画・キーフレーム生成コア基盤（参照画像の解決もここが担います）
 * [shouni/go-gemini-client](https://github.com/shouni/go-gemini-client) - Gemini API / Vertex AI クライアント（台本生成の構造化出力に使用）
@@ -540,6 +104,6 @@ sequenceDiagram
 * [shouni/go-http-kit](https://github.com/shouni/go-http-kit) - HTTP クライアント抽象化
 * [shouni/go-utils](https://github.com/shouni/go-utils) - 共通ユーティリティ
 
-### 📜 ライセンス (License)
+## 📜 ライセンス (License)
 
 このプロジェクトは [MIT License](https://opensource.org/licenses/MIT) の下で公開されています。
