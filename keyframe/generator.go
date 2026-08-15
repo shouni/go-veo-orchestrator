@@ -1,7 +1,7 @@
 // Package keyframe は、カット情報とキャラクター定義から動画のキーフレーム画像を
-// 生成するロジックを提供します。参照画像の解決（GCS 直接参照か File API へのアップロードか）と
-// レート制限・リクエストタイムアウトは gemini-image-kit が担うため、このパッケージは
-// カットごとの参照元 URL とプロンプトの組み立てに専念します。
+// 生成するロジックを提供します。参照画像は gs:// URI のまま vertex-image-kit へ
+// 渡すため、このパッケージはカットごとの参照元 URL とプロンプトの組み立て、および
+// カット間の並列実行に専念します。
 package keyframe
 
 import (
@@ -11,9 +11,10 @@ import (
 	"log/slog"
 	"time"
 
-	imagePorts "github.com/shouni/gemini-image-kit/ports"
 	characterkit "github.com/shouni/go-character-kit/character"
 	"github.com/shouni/go-gemini-client/gemini"
+	imagePorts "github.com/shouni/vertex-image-kit/ports"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/shouni/go-veo-orchestrator/ports"
 )
@@ -24,10 +25,13 @@ const defaultNegativeKeyframePrompt = "speech bubble, dialogue balloon, text, al
 
 // Generator は、キャラクターの一貫性を保ちながら複数カットのキーフレームを生成します。
 //
-// レート制限・並列度・タイムアウトは注入される画像ジェネレータ
-// （gemini-image-kit の WithRateLimit / WithMaxConcurrency / WithRequestTimeout）が
-// 受け持ちます。以前はこのパッケージが errgroup + rate.Limiter を自前で持っており、
-// 同じガードが画像キットの下流3箇所に重複していました。
+// 並列度はこのパッケージが持ちます（WithMaxConcurrency）。注入される画像ジェネレータ
+// 側の一括生成に委ねると、1 枚ごとの進捗ログ（何枚中の何枚目か・所要時間）を出す
+// フックが無くなるためです。1 枚に分単位掛かる処理でそれが読めないと進捗を判断できません。
+//
+// 一方、発射間隔と 1 回あたりの上限時間はここでは持ちません。注入側（workflow の
+// callGuard）が受け持ちます — 同じリミッターを台本のテキスト生成にも共有する必要が
+// あり、クォータはプロジェクト単位だからです。
 type Generator struct {
 	characters     *characterkit.Characters
 	generator      imagePorts.ImageGenerator
@@ -36,6 +40,7 @@ type Generator struct {
 	aspectRatio    string
 	imageSize      string
 	negativePrompt string
+	maxConcurrency int
 }
 
 type keyframeTask struct {
@@ -70,12 +75,12 @@ func NewGenerator(
 	return g
 }
 
-// Execute は、カット列のキーフレームを順に生成します。
+// Execute は、カット列のキーフレームを最大 maxConcurrency 並列で生成します。
 //
 // 戻り値は cuts と同じ長さ・並びで、エラー時も生成できた位置には結果が入ります。
-// キーフレーム 1 枚ごとに生成コストが掛かるため、1 件の失敗で支払い済みの画像を
-// 捨てません（呼び出し側の RunAndSave は部分結果も保存するので、再実行は失敗した
-// カットだけを続きから生成します）。エラーは errors.Join で集約されます。
+// キーフレーム 1 枚ごとに生成コストが掛かるため、1 件の失敗で残りを打ち切らず、
+// 支払い済みの画像も捨てません（呼び出し側の RunAndSave は部分結果も保存するので、
+// 再実行は失敗したカットだけを続きから生成します）。エラーは errors.Join で集約されます。
 func (g *Generator) Execute(ctx context.Context, cuts []ports.Cut) ([]*ports.KeyframeImage, error) {
 	if len(cuts) == 0 {
 		return nil, nil
@@ -84,15 +89,27 @@ func (g *Generator) Execute(ctx context.Context, cuts []ports.Cut) ([]*ports.Key
 	images := make([]*ports.KeyframeImage, len(cuts))
 	errs := make([]error, len(cuts))
 
+	concurrency := g.maxConcurrency
+	if concurrency <= 0 {
+		concurrency = 1
+	}
+
+	var eg errgroup.Group
+	eg.SetLimit(concurrency)
 	for i, cut := range cuts {
 		task := keyframeTask{index: i, total: len(cuts), cut: cut}
-		// 呼び出し元のキャンセル後は新しい生成を始めない（生成済みの結果は保持する）。
-		if err := ctx.Err(); err != nil {
-			errs[i] = err
-			continue
-		}
-		images[i], errs[i] = g.generateCutKeyframe(ctx, task)
+		eg.Go(func() error {
+			// 呼び出し元のキャンセル後は新しい生成を始めない（生成済みの結果は保持する）。
+			if err := ctx.Err(); err != nil {
+				errs[i] = err
+				return nil
+			}
+			images[i], errs[i] = g.generateCutKeyframe(ctx, task)
+			return nil
+		})
 	}
+	// クロージャは常に nil を返すため Wait もエラーを返しません（個々の失敗は errs に集約）。
+	_ = eg.Wait()
 
 	return images, errors.Join(errs...)
 }
@@ -202,8 +219,8 @@ func (g *Generator) buildImageRequest(cut ports.Cut, char *characterkit.Characte
 	// g.aspectRatio に一致する参照画像（ReferenceURLs）があればそちらを優先します。
 	referenceURL := char.ReferenceURLFor(g.aspectRatio)
 
-	// 参照の解決（Vertex AI + gs:// は直接参照、Gemini API は File API へ1回だけアップロード）は
-	// gemini-image-kit が担う。ここは参照元 URL を渡すだけでよい。
+	// gs:// 参照は Vertex AI がそのまま解決するため、ここは参照元 URL を渡すだけでよい
+	// （取得もアップロードも発生しない）。
 	return imagePorts.ImageRequest{
 		GenerationOptions: g.buildGenerationOptions(userPrompt, systemPrompt, char.Seed),
 		Images:            []imagePorts.ImageURI{{ReferenceURL: referenceURL}},

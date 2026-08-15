@@ -34,6 +34,7 @@ func (m *manager) buildKeyframeRunner() *runner.CutKeyframeRunner {
 		m.promptDeps.KeyframePrompt,
 		m.generationUnit.model,
 		keyframe.WithAspectRatio(m.cfg.KeyframeAspectRatio),
+		keyframe.WithMaxConcurrency(m.cfg.MaxConcurrency),
 	)
 
 	return runner.NewCutKeyframeRunner(keyframeGen, m.writer)

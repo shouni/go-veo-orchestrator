@@ -3,13 +3,12 @@ module github.com/shouni/go-veo-orchestrator
 go 1.26
 
 require (
-	github.com/jellydator/ttlcache/v3 v3.4.1
-	github.com/shouni/gemini-image-kit v1.13.0
 	github.com/shouni/go-character-kit v1.1.0
-	github.com/shouni/go-gemini-client v1.17.1
-	github.com/shouni/go-http-kit v1.8.0
+	github.com/shouni/go-gemini-client v1.17.2
 	github.com/shouni/go-remote-io v1.8.0
 	github.com/shouni/go-utils v1.5.1
+	github.com/shouni/vertex-image-kit v1.0.0
+	golang.org/x/sync v0.22.0
 )
 
 require (
@@ -26,7 +25,7 @@ require (
 	github.com/googleapis/enterprise-certificate-proxy v0.3.20 // indirect
 	github.com/googleapis/gax-go/v2 v2.23.0 // indirect
 	github.com/gorilla/websocket v1.5.3 // indirect
-	github.com/shouni/netarmor v1.2.0 // indirect
+	github.com/shouni/netarmor v1.2.1 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.70.0 // indirect
 	go.opentelemetry.io/otel v1.45.0 // indirect
@@ -34,7 +33,6 @@ require (
 	go.opentelemetry.io/otel/trace v1.45.0 // indirect
 	golang.org/x/crypto v0.54.0 // indirect
 	golang.org/x/net v0.57.0 // indirect
-	golang.org/x/sync v0.22.0 // indirect
 	golang.org/x/sys v0.47.0 // indirect
 	golang.org/x/text v0.40.0 // indirect
 	golang.org/x/time v0.15.0 // indirect

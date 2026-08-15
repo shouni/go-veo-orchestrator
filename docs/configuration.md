@@ -14,7 +14,7 @@
 | `ImageModel` | キーフレーム画像生成に使うモデル（**必須**） |
 | `MaxConcurrency` | キーフレーム生成の最大並列数（動画生成は Video-to-Video 連鎖のため常に逐次です） |
 | `RateInterval` | キーフレーム生成の発射間隔の下限 |
-| `RateBurst` | キーフレーム生成レート制限のバースト許容数（既定 1） |
+| `RequestTimeout` | AI 呼び出し1回あたりの上限時間（既定 5 分）。レート制限の待機はこの外側なので、混雑がタイムアウトに化けません |
 | `KeyframeAspectRatio` | キーフレームのアスペクト比。空なら `keyframe.CutAspectRatio` |
 
 `Config.WithModels(gemini, image)` / `Config.WithAspectRatio(ratio)` で部分的に上書きしたコピーを取得できます（空文字は「変更なし」）。
@@ -49,8 +49,8 @@
 | `keyframe.WithImageSize` | 解像度（既定 "2K"） |
 | `keyframe.WithNegativePrompt` | ネガティブプロンプトの差し替え（既定は文字・フキダシ排除の定型文） |
 
-並列数・レート制限は注入する画像ジェネレータ側（gemini-image-kit の `WithMaxConcurrency` / `WithRateLimit`）の設定で、`workflow` が `Config.MaxConcurrency` / `RateInterval` / `RateBurst` をそちらへ配線します。
+`RateInterval` と `RequestTimeout` は `workflow` の `callGuard` が受け持ち、**台本のテキスト生成とキーフレームの画像生成の両方**に掛かります（クォータはプロジェクト単位で、操作の種類ごとではないため）。`MaxConcurrency` はカット間の並列度で、`keyframe.Generator` が `errgroup` で適用します — 1枚ごとの進捗ログ（何枚中の何枚目か・所要時間）を出すために、画像キット側の一括生成には委ねていません。なお `RateInterval` が設定されていれば、スループットは並列度によらず発射間隔で頭打ちになります。
 
 保存側は `runner.NewCutKeyframeRunner` の `runner.WithCacheControl` で、キーフレーム画像に付ける `Cache-Control` を差し替えられます（既定は `DefaultKeyframeCacheControl` = `public, max-age=1800`。生成物を公開したくないデプロイでは `private` などを指定してください）。
 
-キーフレームの生成結果はライブラリ自身の型 `ports.KeyframeImage`（`Data` / `MimeType` / `UsedSeed` / `Model` / `Prompt`）で返ります。gemini-image-kit の型を公開面に出さないための境界で、利用側は画像キットを import せずに済みます。
+キーフレームの生成結果はライブラリ自身の型 `ports.KeyframeImage`（`Data` / `MimeType` / `UsedSeed` / `Model` / `Prompt`）で返ります。vertex-image-kit の型を公開面に出さないための境界で、利用側は画像キットを import せずに済みます。

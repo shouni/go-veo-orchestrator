@@ -1,13 +1,17 @@
+// Package workflow は、設定とクライアント群から go-veo-orchestrator の各 Runner
+// （台本・キーフレーム・動画・パブリッシュ）を組み立てる DI 層を提供します。
+// AI 呼び出しの発射間隔・1回あたりの上限時間・重複排除（singleflight）もここで
+// 掛けます。テキスト生成と画像生成の両方に同じガードが必要だからです。
 package workflow
 
 import (
 	"fmt"
 
-	imagePorts "github.com/shouni/gemini-image-kit/ports"
 	characterkit "github.com/shouni/go-character-kit/character"
 	"github.com/shouni/go-gemini-client/gemini"
-	"github.com/shouni/go-http-kit/httpkit"
 	"github.com/shouni/go-remote-io/remoteio"
+	imagePorts "github.com/shouni/vertex-image-kit/ports"
+
 	"github.com/shouni/go-veo-orchestrator/ports"
 )
 
@@ -20,11 +24,14 @@ type PromptDeps struct {
 
 // ManagerArgs は、ワークフローの初期化と管理に必要な引数の集合を表します。
 type ManagerArgs struct {
-	Config      ports.Config
-	HTTPClient  httpkit.HTTPClient
-	Reader      ports.ContentReader
-	Writer      remoteio.Writer
-	AIClient    gemini.Model
+	Config ports.Config
+	// Reader は台本ソース（URL・テキスト）の取得に使います。参照画像は gs:// URI の
+	// まま Vertex AI へ渡るため、画像の解決には使いません。
+	Reader ports.ContentReader
+	Writer remoteio.Writer
+	// AIClient は台本のテキスト生成とキーフレームの画像生成の両方に使います。
+	// 生成呼び出しの 1 メソッドだけを要求します。
+	AIClient    gemini.Generator
 	VideoRunner ports.VideoRunner
 	PromptDeps  *PromptDeps
 }
@@ -38,14 +45,12 @@ type generationUnit struct {
 // manager は、ワークフローの各工程を担う Runner 群を構築・管理します。
 type manager struct {
 	cfg            ports.Config
-	httpClient     httpkit.HTTPClient
 	reader         ports.ContentReader
 	writer         remoteio.Writer
-	aiClient       gemini.Model
+	aiClient       gemini.Generator
 	videoRunner    ports.VideoRunner
 	generationUnit *generationUnit
 	promptDeps     *PromptDeps
-	imageCache     *imageCache
 }
 
 // New は、設定とキャラクター定義を基に新しい Workflows を初期化します。
@@ -60,38 +65,34 @@ func New(args ManagerArgs) (*ports.Workflows, error) {
 		return nil, err
 	}
 
+	// AI 呼び出しの発射間隔と1回あたりの上限時間は、ワークフロー全体で1つの
+	// ガードに集約する（クォータはプロジェクト単位で、操作の種類ごとではないため）。
+	guard := callGuard{
+		limiter: newRateLimiter(cfg.RateInterval),
+		timeout: cfg.RequestTimeout,
+	}
+
 	m := &manager{
-		cfg:         cfg,
-		httpClient:  args.HTTPClient,
-		reader:      args.Reader,
-		writer:      args.Writer,
-		aiClient:    args.AIClient,
+		cfg:    cfg,
+		reader: args.Reader,
+		writer: args.Writer,
+		// 同一内容のテキスト生成の同時実行を1回にまとめる（重複タスク・リトライ対策）
+		aiClient:    &singleflightGenerator{inner: args.AIClient, guard: guard},
 		videoRunner: args.VideoRunner,
 		promptDeps:  args.PromptDeps,
 	}
 
-	unit, err := m.buildGenerationUnit(m.aiClient, cfg.ImageModel)
+	unit, err := m.buildGenerationUnit(args.AIClient, cfg.ImageModel, guard)
 	if err != nil {
 		return nil, fmt.Errorf("GenerationUnit の構築に失敗: %w", err)
 	}
 	m.generationUnit = unit
 
-	workflows, err := m.buildAllRunners()
-	if err != nil {
-		return nil, err
-	}
-	if m.imageCache != nil {
-		// 画像キャッシュの定期クリーンアップ goroutine を Close で停止できるようにする。
-		workflows.SetCloseFunc(m.imageCache.Stop)
-	}
-	return workflows, nil
+	return m.buildAllRunners()
 }
 
 // validateArgs は引数のバリデーションを行います。
 func validateArgs(args *ManagerArgs) error {
-	if args.HTTPClient == nil {
-		return fmt.Errorf("HTTPClient is required")
-	}
 	if args.Reader == nil {
 		return fmt.Errorf("InputReader is required")
 	}

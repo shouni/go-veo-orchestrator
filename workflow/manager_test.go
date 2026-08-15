@@ -53,20 +53,9 @@ func TestNewRejectsMissingModels(t *testing.T) {
 	}
 }
 
-func TestWorkflowsCloseStopsImageCache(t *testing.T) {
-	workflows, err := New(testManagerArgs())
-	if err != nil {
-		t.Fatalf("New() error = %v", err)
-	}
-
-	// Close は panic せず、複数回呼んでも安全であること。
-	if err := workflows.Close(); err != nil {
-		t.Fatalf("first Close() error = %v", err)
-	}
-	if err := workflows.Close(); err != nil {
-		t.Fatalf("second Close() error = %v", err)
-	}
-}
+// Close のテストは vertex-image-kit への移行で削除しました。画像キャッシュと
+// その定期クリーンアップ goroutine が無くなり、Workflows に解放すべき資源が
+// 残っていないためです（Close 自体も削除しました）。
 
 func testManagerArgs() ManagerArgs {
 	chars, err := newTestCharacters([]characterkit.Character{
@@ -81,10 +70,9 @@ func testManagerArgs() ManagerArgs {
 			GeminiModel: "gemini-text",
 			ImageModel:  "gemini-image",
 		},
-		HTTPClient: fakeHTTPClient{},
-		Reader:     fakeContentReader{},
-		Writer:     fakeWriter{},
-		AIClient:   fakeGenerativeModel{},
+		Reader:   fakeContentReader{},
+		Writer:   fakeWriter{},
+		AIClient: fakeGenerativeModel{},
 		PromptDeps: &PromptDeps{
 			Characters:     chars,
 			ScriptPrompt:   fakeScriptPrompt{},
@@ -97,64 +85,17 @@ func newTestCharacters(list []characterkit.Character) (*characterkit.Characters,
 	return characterkit.NewCharacters(list)
 }
 
+// fakeGenerativeModel は gemini.Generator（1 メソッド）だけを実装します。
+//
+// 以前は File API 管理（UploadFile / DeleteFile）とバックエンド判定も実装していました。
+// ManagerArgs.AIClient が gemini.Model を要求していたためですが、キットが File API を
+// 使わなくなり gemini.Generator で足りるようになったので、使わないメソッドは消せます。
+// BackendInspector を実装しないため、vertex-image-kit のバックエンド判定
+// （オプショナルインターフェース）は素通りします。
 type fakeGenerativeModel struct{}
 
 func (fakeGenerativeModel) GenerateWithAttachments(context.Context, string, string, []gemini.Attachment, gemini.GenerateOptions) (*gemini.Response, error) {
 	return &gemini.Response{}, nil
-}
-
-func (fakeGenerativeModel) IsVertexAI() bool {
-	return false
-}
-
-func (fakeGenerativeModel) UploadFile(context.Context, io.Reader, string, string) (gemini.UploadedFile, error) {
-	return gemini.UploadedFile{URI: "uri", Name: "file"}, nil
-}
-
-func (fakeGenerativeModel) DeleteFile(context.Context, string) error {
-	return nil
-}
-
-type fakeHTTPClient struct{}
-
-func (fakeHTTPClient) Do(*http.Request) (*http.Response, error) {
-	return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(http.NoBody)}, nil
-}
-
-func (fakeHTTPClient) DoRequest(*http.Request) ([]byte, error) {
-	return nil, nil
-}
-
-func (fakeHTTPClient) FetchBytes(context.Context, string) ([]byte, string, error) {
-	return nil, "", nil
-}
-
-func (fakeHTTPClient) FetchAndDecodeJSON(context.Context, string, any) error {
-	return nil
-}
-
-func (fakeHTTPClient) PostJSONAndFetchBytes(context.Context, string, any) ([]byte, error) {
-	return nil, nil
-}
-
-func (fakeHTTPClient) PostRawBodyAndFetchBytes(context.Context, string, []byte, string) ([]byte, error) {
-	return nil, nil
-}
-
-func (fakeHTTPClient) FetchStream(context.Context, string, func(io.Reader) error) error {
-	return nil
-}
-
-func (fakeHTTPClient) GetStream(context.Context, string) (io.ReadCloser, error) {
-	return io.NopCloser(http.NoBody), nil
-}
-
-func (fakeHTTPClient) ValidateURL(context.Context, string) error {
-	return nil
-}
-
-func (fakeHTTPClient) IsSecureServiceURL(string) bool {
-	return true
 }
 
 type fakeContentReader struct{}
