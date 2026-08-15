@@ -24,7 +24,9 @@ Go version is pinned in `go.mod` (currently 1.26) — `setup-go` reads it from t
 
 ## Architecture
 
-Six packages, strict one-way dependency: `video → ports → veo → {keyframe, runner} → workflow`. `video` depends on nothing in-repo; `workflow` depends on everything. Never import `runner`, `keyframe` or `workflow` from `video`, `ports` or `veo`.
+Six packages, strict one-way dependency: `video → ports → veo → internal/{keyframe, runner} → workflow`. `video` depends on nothing in-repo; `workflow` depends on everything. Never import `internal/runner`, `internal/keyframe` or `workflow` from `video`, `ports` or `veo`.
+
+**Four packages are public**: `video`, `ports`, `veo`, `workflow`. `keyframe` and `runner` live under `internal/` because the only consumer (ap-mv) never imported them — it builds everything through `workflow.New` and depends on the `ports` interfaces, so the concrete Runner types were public surface nobody used. Un-hiding one is a one-line move if a second consumer ever needs it.
 
 ```
 video/     Domain model: Recipe, Cut, Cuts and their methods, GenerationRequest,
@@ -37,10 +39,12 @@ ports/     Contracts only: VideoRunner (+ the optional ReferenceImagesSupporter 
 veo/       Veo API constraints: which generation mode a request resolves to
            (ClassifyRequest), which durations each mode allows, and cut planning
            (splitting, capping, chain durations). No API calls happen here.
-keyframe/  Generator: builds and sends the image request for ONE cut. Holds the
+internal/internal/keyframe/
+           Generator: builds and sends the image request for ONE cut. Holds the
            character definitions and passes each cut's gs:// reference URL straight
            through — Vertex AI resolves it, so nothing is fetched or uploaded.
-runner/    Concrete Runner implementations: VideoScriptRunner, CutKeyframeRunner,
+internal/internal/runner/
+           Concrete Runner implementations: VideoScriptRunner, CutKeyframeRunner,
            VideoTimelineRunner (+ VideoRequestBuilder), VideoPublisherRunner.
            Owns keyframe concurrency, because it also owns the saving.
 workflow/  manager: workflow.New(ManagerArgs) builds the guarded image generator and
@@ -105,7 +109,7 @@ A cut that fails does not discard the images already paid for: partial successes
 
 ## External dependencies worth knowing
 
-- `github.com/shouni/vertex-image-kit` — keyframe/still-image generation on Vertex AI (`generator.New` → `*generator.Generator`); this repo's `imagePorts.ImageGenerator` / `ImageRequest` / `ImageResponse` / `ImageURI` come from its `ports` package. It accepts **`gs://` references only** and transfers no bytes, which is why this repo needs no GCS reader or HTTP client for images. It replaced `gemini-image-kit`, whose File API upload, cache and fetch layers never executed on the Vertex backend.
+- `github.com/shouni/vertex-image-kit` — internal/keyframe/still-image generation on Vertex AI (`generator.New` → `*generator.Generator`); this repo's `imagePorts.ImageGenerator` / `ImageRequest` / `ImageResponse` / `ImageURI` come from its `ports` package. It accepts **`gs://` references only** and transfers no bytes, which is why this repo needs no GCS reader or HTTP client for images. It replaced `gemini-image-kit`, whose File API upload, cache and fetch layers never executed on the Vertex backend.
 - `github.com/shouni/go-character-kit` — `characterkit.Characters`/`Character` (Seed, ReferenceURL(s)) for cross-cut character consistency.
 - `github.com/shouni/go-gemini-client` — `music.Recipe` (aliased as `video.MusicRecipe`) is the input music/lyrics recipe format — it lives in the leaf `music` package, so importing it does not drag in the `lyria` workflow. AI clients are taken as `gemini.Generator` (script generation) and `gemini.Model` (image core), the genai-free interfaces: nothing in this repo imports `google.golang.org/genai`. Structured output uses plain JSON Schema via `GenerateOptions.ResponseJSONSchema` (`video.RecipeSchema` returns `map[string]any`), not `genai.Schema`.
 - `github.com/shouni/go-remote-io` — `remoteio.Writer` used for persisting `video_music_meta.json` and keyframe outputs.

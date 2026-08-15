@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	characterkit "github.com/shouni/go-character-kit/character"
+	"github.com/shouni/go-veo-orchestrator/ports"
 	"github.com/shouni/go-veo-orchestrator/video"
 	imagePorts "github.com/shouni/vertex-image-kit/ports"
 )
@@ -170,7 +171,7 @@ func TestGenerator_Execute(t *testing.T) {
 }
 
 // TestGenerator_AspectRatio verifies WithAspectRatio's precedence: an explicit non-empty value
-// overrides the default (CutAspectRatio), while an empty value leaves the default unchanged.
+// overrides the default (ports.DefaultKeyframeAspectRatio), while an empty value leaves the default unchanged.
 func TestGenerator_AspectRatio(t *testing.T) {
 	ctx := context.Background()
 	zundamonSeed := int64(10001)
@@ -186,7 +187,7 @@ func TestGenerator_AspectRatio(t *testing.T) {
 		return g, genMock
 	}
 
-	t.Run("defaults to CutAspectRatio when not set", func(t *testing.T) {
+	t.Run("defaults to ports.DefaultKeyframeAspectRatio when not set", func(t *testing.T) {
 		g, genMock := newGeneratorWithAspectRatio()
 		var captured string
 		genMock.generateFunc = func(_ context.Context, req imagePorts.ImageRequest) (*imagePorts.ImageResponse, error) {
@@ -196,8 +197,8 @@ func TestGenerator_AspectRatio(t *testing.T) {
 		if _, err := execAll(ctx, t, g, cuts); err != nil {
 			t.Fatalf("Execute failed: %v", err)
 		}
-		if captured != CutAspectRatio {
-			t.Errorf("AspectRatio = %q, want default %q", captured, CutAspectRatio)
+		if captured != ports.DefaultKeyframeAspectRatio {
+			t.Errorf("AspectRatio = %q, want default %q", captured, ports.DefaultKeyframeAspectRatio)
 		}
 	})
 
@@ -226,8 +227,8 @@ func TestGenerator_AspectRatio(t *testing.T) {
 		if _, err := execAll(ctx, t, g, cuts); err != nil {
 			t.Fatalf("Execute failed: %v", err)
 		}
-		if captured != CutAspectRatio {
-			t.Errorf("AspectRatio = %q, want default %q", captured, CutAspectRatio)
+		if captured != ports.DefaultKeyframeAspectRatio {
+			t.Errorf("AspectRatio = %q, want default %q", captured, ports.DefaultKeyframeAspectRatio)
 		}
 	})
 }

@@ -9,11 +9,11 @@
 ```text
 go-veo-orchestrator/
 ├── workflow/    # 【統合管理】各工程を組み合わせ、Workflows インターフェースを実装。
-├── runner/      # 【実行実体】NewVideoScriptRunner / NewCutKeyframeRunner / NewVideoTimelineRunner /
+├── internal/runner/      # 【実行実体】NewVideoScriptRunner / NewCutKeyframeRunner / NewVideoTimelineRunner /
 │              #   NewVideoPublisherRunner。Veo リクエストの組み立ては NewVideoRequestBuilder
 │              #   （キャラクター参照を含める場合は NewVideoRequestBuilderWithCharacters、
 │              #   差し替えは WithRequestBuilder。既定は DefaultVideoRequestBuilder）。
-├── keyframe/    # 【キーフレーム生成戦略】カット列からの静止画生成（カット間の並列度はここ。発射間隔と上限時間は workflow の callGuard）。
+├── internal/keyframe/    # 【キーフレーム生成戦略】カット列からの静止画生成（カット間の並列度はここ。発射間隔と上限時間は workflow の callGuard）。
 └── ports/       # 【契約・定義】Interface（VideoRunner等）、共通モデル、動作設定(Config)。全ての起点。
 ```
 

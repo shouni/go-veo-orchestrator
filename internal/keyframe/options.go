@@ -1,5 +1,7 @@
 package keyframe
 
+import "github.com/shouni/go-veo-orchestrator/ports"
+
 // Option は Generator の設定を適用する関数型です。
 //
 // 並列度・発射間隔・リクエストタイムアウトのオプションはここにはありません。
@@ -9,13 +11,13 @@ package keyframe
 type Option func(*Generator)
 
 func applyDefaultOptions(g *Generator) {
-	g.aspectRatio = CutAspectRatio
-	g.imageSize = ImageSize2K
+	g.aspectRatio = ports.DefaultKeyframeAspectRatio
+	g.imageSize = ports.DefaultKeyframeImageSize
 	g.negativePrompt = defaultNegativeKeyframePrompt
 }
 
 // WithAspectRatio は、生成するキーフレーム画像のアスペクト比を設定します
-// （例: "16:9", "9:16"）。空文字の場合は既定値（CutAspectRatio）のまま変更しません。
+// （例: "16:9", "9:16"）。空文字の場合は既定値（ports.DefaultKeyframeAspectRatio）のまま変更しません。
 func WithAspectRatio(value string) Option {
 	return func(g *Generator) {
 		if value != "" {
@@ -25,7 +27,7 @@ func WithAspectRatio(value string) Option {
 }
 
 // WithImageSize は、生成するキーフレーム画像の解像度を設定します（例: "1K", "2K"）。
-// 空文字の場合は既定値（ImageSize2K）のまま変更しません。
+// 空文字の場合は既定値（ports.DefaultKeyframeImageSize）のまま変更しません。
 func WithImageSize(value string) Option {
 	return func(g *Generator) {
 		if value != "" {

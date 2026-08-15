@@ -1,9 +1,9 @@
 package workflow
 
 import (
-	"github.com/shouni/go-veo-orchestrator/keyframe"
+	"github.com/shouni/go-veo-orchestrator/internal/keyframe"
+	"github.com/shouni/go-veo-orchestrator/internal/runner"
 	"github.com/shouni/go-veo-orchestrator/ports"
-	"github.com/shouni/go-veo-orchestrator/runner"
 )
 
 // buildAllRunners は、ワークフローの実行に必要なすべてのランナーを構築して返します。

@@ -15,7 +15,7 @@
 | `MaxConcurrency` | キーフレーム生成の最大並列数（動画生成は Video-to-Video 連鎖のため常に逐次です） |
 | `RateInterval` | キーフレーム生成の発射間隔の下限 |
 | `RequestTimeout` | AI 呼び出し1回あたりの上限時間（既定 5 分）。レート制限の待機はこの外側なので、混雑がタイムアウトに化けません |
-| `KeyframeAspectRatio` | キーフレームのアスペクト比。空なら `keyframe.CutAspectRatio` |
+| `KeyframeAspectRatio` | キーフレームのアスペクト比。空なら `ports.DefaultKeyframeAspectRatio` |
 
 `Config.WithModels(gemini, image)` / `Config.WithAspectRatio(ratio)` で部分的に上書きしたコピーを取得できます（空文字は「変更なし」）。
 
