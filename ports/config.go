@@ -14,13 +14,6 @@ const (
 	// DefaultRequestTimeout は AI 呼び出し1回あたりの既定の上限時間です。
 	// 画像生成は分単位で掛かることがあるため、余裕を持った値にしています。
 	DefaultRequestTimeout = 5 * time.Minute
-
-	// DefaultKeyframeAspectRatio は単体カットのキーフレーム推奨アスペクト比です。
-	// Config.KeyframeAspectRatio が空のときに使われます。
-	DefaultKeyframeAspectRatio = "16:9"
-
-	// DefaultKeyframeImageSize はキーフレームの既定の出力解像度（2048x2048 相当）です。
-	DefaultKeyframeImageSize = "2K"
 )
 
 // Config は Go Veo Orchestrator の各 Runner を動作させるための基本設定です。
@@ -47,9 +40,27 @@ type Config struct {
 	// RequestTimeout は AI 呼び出し1回あたりの上限時間です（0 以下は既定値）。
 	// レート制限の待機はこの上限の外側で行うため、混雑がタイムアウトに化けません。
 	RequestTimeout time.Duration
+	// --- Art Direction ---
+	//
+	// このライブラリは画作りの既定値を一切持ちません。アスペクト比も解像度も
+	// ネガティブプロンプトも作品ごとに変わる値で、キットが既定を持つと呼び出し側の
+	// 設定と二重の出所になり、片方だけ変えたときに黙って食い違います。
+
 	// KeyframeAspectRatio はキーフレーム画像生成のアスペクト比です（例: "16:9", "9:16"）。
-	// 空文字の場合は ports.DefaultKeyframeAspectRatio（既定値）が使われます。
+	// **必須です**（Validate 参照）。空のまま送ると、モデルが勝手に選んだ比率で
+	// 焼かれてしまい、誰も気付かないまま縦横が変わります。
 	KeyframeAspectRatio string
+	// KeyframeImageSize はキーフレーム画像の出力解像度です（例: "1K", "2K"）。
+	// **必須です**（Validate 参照）。
+	KeyframeImageSize string
+	// KeyframeNegativePrompt はキーフレーム生成で排除したい要素です
+	// （例: "speech bubble, text, watermark"）。
+	//
+	// 必須ではありません。空は「排除指定なし」という意味のある選択だからです。
+	// ただしキットは既定文言を持たないので、文字やフキダシを避けたいなら明示して
+	// ください。文言をキットに置かないのは、そこに画風の指定（monochrome など）が
+	// 混ざると、モノクロで作りたい作品がキットのリリース無しには作れなくなるためです。
+	KeyframeNegativePrompt string
 }
 
 // ApplyDefaults は未設定（ゼロ値）の項目にデフォルト値を適用します。
@@ -67,15 +78,21 @@ func (c *Config) ApplyDefaults() {
 
 // Validate はモデル名が指定されていることを検証します。
 func (c *Config) Validate() error {
-	missing := make([]string, 0, 2)
+	missing := make([]string, 0, 4)
 	if strings.TrimSpace(c.GeminiModel) == "" {
 		missing = append(missing, "GeminiModel")
 	}
 	if strings.TrimSpace(c.ImageModel) == "" {
 		missing = append(missing, "ImageModel")
 	}
+	if strings.TrimSpace(c.KeyframeAspectRatio) == "" {
+		missing = append(missing, "KeyframeAspectRatio")
+	}
+	if strings.TrimSpace(c.KeyframeImageSize) == "" {
+		missing = append(missing, "KeyframeImageSize")
+	}
 	if len(missing) > 0 {
-		return fmt.Errorf("%w: %s must be set (this library has no default model names)", ErrConfigInvalid, strings.Join(missing, ", "))
+		return fmt.Errorf("%w: %s must be set (this library holds no default model names and no art direction)", ErrConfigInvalid, strings.Join(missing, ", "))
 	}
 	return nil
 }

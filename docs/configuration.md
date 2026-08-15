@@ -15,7 +15,9 @@
 | `MaxConcurrency` | キーフレーム生成の最大並列数（動画生成は Video-to-Video 連鎖のため常に逐次です） |
 | `RateInterval` | キーフレーム生成の発射間隔の下限 |
 | `RequestTimeout` | AI 呼び出し1回あたりの上限時間（既定 5 分）。レート制限の待機はこの外側なので、混雑がタイムアウトに化けません |
-| `KeyframeAspectRatio` | キーフレームのアスペクト比。空なら `ports.DefaultKeyframeAspectRatio` |
+| `KeyframeAspectRatio` | キーフレームのアスペクト比（例: `16:9`, `9:16`）。**必須** |
+| `KeyframeImageSize` | キーフレームの出力解像度（例: `1K`, `2K`）。**必須** |
+| `KeyframeNegativePrompt` | キーフレームで排除したい要素（例: `speech bubble, text, watermark`）。任意（空は「排除指定なし」）|
 
 `Config.WithModels(gemini, image)` / `Config.WithAspectRatio(ratio)` で部分的に上書きしたコピーを取得できます（空文字は「変更なし」）。
 
@@ -54,3 +56,11 @@
 保存側は `runner.NewCutKeyframeRunner` の `runner.WithCacheControl` で、キーフレーム画像に付ける `Cache-Control` を差し替えられます（既定は `DefaultKeyframeCacheControl` = `public, max-age=1800`。生成物を公開したくないデプロイでは `private` などを指定してください）。
 
 キーフレームの生成結果はライブラリ自身の型 `video.KeyframeImage`（`Data` / `MimeType` / `UsedSeed` / `Model` / `Prompt`）で返ります。vertex-image-kit の型を公開面に出さないための境界で、利用側は画像キットを import せずに済みます。
+
+## 画作りの既定値は持ちません
+
+`KeyframeAspectRatio` / `KeyframeImageSize` を必須にし、`KeyframeNegativePrompt` の既定文言も持たないのは意図的です。
+
+これらは作品ごとに変わる値で、呼び出し側は自分の設定（ap-mv なら `VEO_ASPECT_RATIO`）を既に持っています。キットが既定値を併せ持つと出所が2つになり、片方だけ変えたときに黙って食い違います — ショート動画用に `9:16` を設定したのに、キーフレームだけキットの `16:9` で焼かれる、という形で。ログにも何も出ません。
+
+ネガティブプロンプトをキットに置かないのは、そこに画風の指定が混ざるためです。文字やフキダシの排除は普遍的でも、`monochrome` / `black and white` はアートディレクションそのもので、モノクロで作りたい作品がキットのリリース無しには作れなくなります。

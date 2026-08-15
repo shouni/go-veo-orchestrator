@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	characterkit "github.com/shouni/go-character-kit/character"
-	"github.com/shouni/go-veo-orchestrator/ports"
 	"github.com/shouni/go-veo-orchestrator/video"
 	imagePorts "github.com/shouni/vertex-image-kit/ports"
 )
@@ -170,8 +169,9 @@ func TestGenerator_Execute(t *testing.T) {
 	})
 }
 
-// TestGenerator_AspectRatio verifies WithAspectRatio's precedence: an explicit non-empty value
-// overrides the default (ports.DefaultKeyframeAspectRatio), while an empty value leaves the default unchanged.
+// TestGenerator_AspectRatio pins that the generator holds no art-direction default: what the
+// caller passes is what gets sent, and passing nothing sends nothing. ports.Config requires
+// KeyframeAspectRatio precisely so an empty value never reaches here in practice.
 func TestGenerator_AspectRatio(t *testing.T) {
 	ctx := context.Background()
 	zundamonSeed := int64(10001)
@@ -180,55 +180,29 @@ func TestGenerator_AspectRatio(t *testing.T) {
 	})
 	cuts := []video.Cut{{CharacterID: "zundamon"}}
 
-	newGeneratorWithAspectRatio := func(opts ...Option) (*Generator, *mockImageGenerator) {
+	captureAspectRatio := func(opts ...Option) string {
 		genMock := &mockImageGenerator{}
-		pbMock := &mockImagePrompt{}
-		g := NewGenerator(cm, genMock, pbMock, "gemini-2.0-flash", opts...)
-		return g, genMock
+		g := NewGenerator(cm, genMock, &mockImagePrompt{}, "gemini-2.0-flash", opts...)
+		var captured string
+		genMock.generateFunc = func(_ context.Context, req imagePorts.ImageRequest) (*imagePorts.ImageResponse, error) {
+			captured = req.AspectRatio
+			return &imagePorts.ImageResponse{}, nil
+		}
+		if _, err := execAll(ctx, t, g, cuts); err != nil {
+			t.Fatalf("Execute failed: %v", err)
+		}
+		return captured
 	}
 
-	t.Run("defaults to ports.DefaultKeyframeAspectRatio when not set", func(t *testing.T) {
-		g, genMock := newGeneratorWithAspectRatio()
-		var captured string
-		genMock.generateFunc = func(_ context.Context, req imagePorts.ImageRequest) (*imagePorts.ImageResponse, error) {
-			captured = req.AspectRatio
-			return &imagePorts.ImageResponse{}, nil
-		}
-		if _, err := execAll(ctx, t, g, cuts); err != nil {
-			t.Fatalf("Execute failed: %v", err)
-		}
-		if captured != ports.DefaultKeyframeAspectRatio {
-			t.Errorf("AspectRatio = %q, want default %q", captured, ports.DefaultKeyframeAspectRatio)
+	t.Run("sends nothing when the caller sets nothing", func(t *testing.T) {
+		if got := captureAspectRatio(); got != "" {
+			t.Errorf("AspectRatio = %q, want empty (the kit holds no default)", got)
 		}
 	})
 
-	t.Run("explicit value overrides default", func(t *testing.T) {
-		g, genMock := newGeneratorWithAspectRatio(WithAspectRatio("9:16"))
-		var captured string
-		genMock.generateFunc = func(_ context.Context, req imagePorts.ImageRequest) (*imagePorts.ImageResponse, error) {
-			captured = req.AspectRatio
-			return &imagePorts.ImageResponse{}, nil
-		}
-		if _, err := execAll(ctx, t, g, cuts); err != nil {
-			t.Fatalf("Execute failed: %v", err)
-		}
-		if captured != "9:16" {
-			t.Errorf("AspectRatio = %q, want %q", captured, "9:16")
-		}
-	})
-
-	t.Run("empty value does not override default", func(t *testing.T) {
-		g, genMock := newGeneratorWithAspectRatio(WithAspectRatio(""))
-		var captured string
-		genMock.generateFunc = func(_ context.Context, req imagePorts.ImageRequest) (*imagePorts.ImageResponse, error) {
-			captured = req.AspectRatio
-			return &imagePorts.ImageResponse{}, nil
-		}
-		if _, err := execAll(ctx, t, g, cuts); err != nil {
-			t.Fatalf("Execute failed: %v", err)
-		}
-		if captured != ports.DefaultKeyframeAspectRatio {
-			t.Errorf("AspectRatio = %q, want default %q", captured, ports.DefaultKeyframeAspectRatio)
+	t.Run("sends what the caller passed", func(t *testing.T) {
+		if got := captureAspectRatio(WithAspectRatio("9:16")); got != "9:16" {
+			t.Errorf("AspectRatio = %q, want %q", got, "9:16")
 		}
 	})
 }

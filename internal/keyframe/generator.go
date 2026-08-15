@@ -18,10 +18,6 @@ import (
 	"github.com/shouni/go-veo-orchestrator/video"
 )
 
-// defaultNegativeKeyframePrompt は単体カットのキーフレームで「文字」や「フキダシ」を
-// 排除するための既定の指定です（WithNegativePrompt で差し替え可能）。
-const defaultNegativeKeyframePrompt = "speech bubble, dialogue balloon, text, alphabet, letters, words, signatures, watermark, username, low quality, distorted, bad anatomy, monochrome, black and white, greyscale"
-
 // Generator は、キャラクターの一貫性を保ちながら複数カットのキーフレームを生成します。
 //
 // 生成の単位は 1 カットです。並列度は保存を持つ runner.CutKeyframeRunner が、発射間隔と
@@ -61,7 +57,6 @@ func NewGenerator(
 		model:      model,
 	}
 
-	applyDefaultOptions(g)
 	for _, opt := range opts {
 		opt(g)
 	}

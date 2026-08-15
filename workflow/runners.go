@@ -34,6 +34,8 @@ func (m *manager) buildKeyframeRunner() *runner.CutKeyframeRunner {
 		m.promptDeps.KeyframePrompt,
 		m.cfg.ImageModel,
 		keyframe.WithAspectRatio(m.cfg.KeyframeAspectRatio),
+		keyframe.WithImageSize(m.cfg.KeyframeImageSize),
+		keyframe.WithNegativePrompt(m.cfg.KeyframeNegativePrompt),
 	)
 
 	// 並列度は保存を持つ runner 側に置く。1 カットの「生成 → 保存」を 1 つの

@@ -37,10 +37,14 @@ func TestNewBuildsWorkflows(t *testing.T) {
 	}
 }
 
-func TestNewRejectsMissingModels(t *testing.T) {
+func TestNewRejectsMissingRequiredConfig(t *testing.T) {
 	cases := map[string]func(*ports.Config){
 		"GeminiModel": func(c *ports.Config) { c.GeminiModel = "" },
 		"ImageModel":  func(c *ports.Config) { c.ImageModel = "  " },
+		// 画作りの既定値をキットが持たないため、比率と解像度も必須。空のまま送ると
+		// モデルが勝手に選んだ絵になり、誰も気付かないまま縦横や解像度が変わる。
+		"KeyframeAspectRatio": func(c *ports.Config) { c.KeyframeAspectRatio = "" },
+		"KeyframeImageSize":   func(c *ports.Config) { c.KeyframeImageSize = " " },
 	}
 	for name, mutate := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -68,8 +72,10 @@ func testManagerArgs() ManagerArgs {
 
 	return ManagerArgs{
 		Config: ports.Config{
-			GeminiModel: "gemini-text",
-			ImageModel:  "gemini-image",
+			GeminiModel:         "gemini-text",
+			ImageModel:          "gemini-image",
+			KeyframeAspectRatio: "16:9",
+			KeyframeImageSize:   "2K",
 		},
 		Reader:   fakeContentReader{},
 		Writer:   fakeWriter{},
