@@ -20,7 +20,7 @@ golangci-lint run                # matches .golangci.yml (errcheck, govet, ineff
 
 CI (`.github/workflows/ci.yml`) runs three parallel jobs on push/PR to `main`/`develop`: build+vet+gofmt+`go test -race`, `golangci-lint`, and `govulncheck`. Match these locally before pushing.
 
-Go version is pinned in `go.mod` (currently 1.26) — `setup-go` reads it from there, so bump `go.mod` rather than hardcoding a version elsewhere.
+Go version is pinned in `go.mod` (currently **1.26.6**) — `setup-go` reads it from there, so bump `go.mod` rather than hardcoding a version elsewhere. The patch level is part of the pin on purpose: `go 1.26` alone let a local 1.26.5 toolchain build the repo with four reachable stdlib CVEs (net/url, crypto/tls, encoding/asn1, net/http), which `govulncheck` reports but no module update can fix. Pinning the patch makes Go fetch a fixed toolchain automatically.
 
 ## Architecture
 
