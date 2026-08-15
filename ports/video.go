@@ -1,65 +1,38 @@
 package ports
 
-import "context"
+import (
+	"context"
 
-// VideoGenerationRequest は Veo API に渡すマルチモーダルな入力をカプセル化します。
-type VideoGenerationRequest struct {
-	Prompt string
-	// ImageReference があれば Veo adapter はこれを優先します。
-	// 空の場合だけ InputImage をアップロードして参照 URI を作る想定です。
-	ImageReference string
-	// ReferenceImages はキャラクター立ち絵やキーフレームなど複数の参照画像 GCS URI です。
-	// Veo API の referenceImages フィールドに対応し、最大3枚まで指定できます。
-	// セットされている場合は ImageReference より優先されます。
-	ReferenceImages []string
-	AudioReference  string
-	InputImage      []byte
-	InputAudio      []byte
-	// PreviousVideoURI は前カットの Video-to-Video 文脈として引き継ぐ動画の
-	// **gs:// URI** です。Veo の video 入力は GCS 参照のみを受け付けるため、
-	// gs:// 以外の値（オペレーション名など）を入れても video_extension には
-	// 分類されません（ClassifyVeoRequest / DefaultVideoRequestBuilder が除去します）。
-	// Veo API は video と referenceImages を同時に受け付けないため、
-	// usePreviousVideo が有効な場合のみ adapter 側で使用します。
-	PreviousVideoURI string
-	// LastFrameReference は動画の終了フレームとして使う画像の GCS URI です
-	// （Veo の first/last frame 補間）。Veo API では image（開始フレーム）との
-	// 併用が必須のため、adapter 側は image 入力（image_to_video）のときだけ
-	// lastFrame として送ります。対応モデルは Veo 2 / Veo 3.1 系のみです。
-	//
-	// このフィールドは呼び出し側が Build() の後で設定するものです。本パッケージの
-	// DefaultVideoRequestBuilder は生成・検証・参照のいずれも行いません（セクション
-	// 境界・キャラクター変更・尺分割などの last-frame ガードは呼び出し側で判断し、
-	// Build() が返したリクエストに対して後付けで設定する想定です）。
-	LastFrameReference string
-	Seed               int64
-	CutIndex           int
-	DurationSec        float64
-}
-
-// VideoResponse は生成された動画のメタデータです。
-type VideoResponse struct {
-	CloudURL string
-	// VideoID は生成された動画の識別子で、**次カットの PreviousVideoURI として
-	// そのまま渡せる gs:// URI であることが契約です**。GCS 出力を持たない生成
-	// （URI が得られない場合）は空にしてください — オペレーション名などで埋めると、
-	// 次カットが video_extension に分類されず、7秒固定で計画された尺が
-	// ErrUnsupportedCutDuration で拒否されます。
-	VideoID     string
-	CutIndex    int
-	DurationSec float64
-	MimeType    string
-	SizeBytes   int64
-}
+	"github.com/shouni/go-veo-orchestrator/video"
+)
 
 // VideoRunner は Veo API を叩いて1カットの動画を生成・管理する契約です。
+// 実装（Veo adapter）はこのリポジトリに含まれず、呼び出し側が注入します。
 type VideoRunner interface {
-	Run(ctx context.Context, req VideoGenerationRequest) (*VideoResponse, error)
+	Run(ctx context.Context, req video.GenerationRequest) (*video.Response, error)
+}
+
+// ReferenceImagesSupporter は、reference_to_video（referenceImages、Veo 3系の非Fastモデル
+// のみ対応で8秒固定）を使えるかを問い合わせられる VideoRunner のオプションインター
+// フェースです。カットの尺を Veo のサポート値へ正規化する処理が、モデル判定ロジックを
+// 重複実装せずに「このカットは8秒固定になるか」を判断するために使います。
+//
+// 実装するのは adapter なので、判定を組み立てる veo.RunnerCapabilities ではなく
+// adapter 向けの契約が集まるこのパッケージに置いています。
+type ReferenceImagesSupporter interface {
+	SupportsReferenceImages() bool
+}
+
+// LastFrameSupporter は、frames_to_video（image + lastFrame の first/last frame 補間、
+// Veo 2 / Veo 3.1 系のみ対応）を使えるかを問い合わせられる VideoRunner のオプション
+// インターフェースです。
+type LastFrameSupporter interface {
+	SupportsLastFrame() bool
 }
 
 // VideoTimelineRunner は Music Recipe のカット列を順次動画化する契約です。
 type VideoTimelineRunner interface {
-	Run(ctx context.Context, recipe *VideoRecipe) ([]*VideoResponse, error)
+	Run(ctx context.Context, r *video.Recipe) ([]*video.Response, error)
 }
 
 // noopVideoTimelineRunner is a VideoTimelineRunner that always fails with
@@ -74,6 +47,6 @@ func NewNoopVideoTimelineRunner() VideoTimelineRunner {
 	return noopVideoTimelineRunner{}
 }
 
-func (noopVideoTimelineRunner) Run(context.Context, *VideoRecipe) ([]*VideoResponse, error) {
+func (noopVideoTimelineRunner) Run(context.Context, *video.Recipe) ([]*video.Response, error) {
 	return nil, ErrVideoRunnerNotConfigured
 }

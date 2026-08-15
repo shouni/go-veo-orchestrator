@@ -28,13 +28,13 @@ type VeoRunner struct {
 	// client, bucket, model, location など、実行環境に必要な依存を保持します。
 }
 
-func (r *VeoRunner) Run(ctx context.Context, req ports.VideoGenerationRequest) (*ports.VideoResponse, error) {
+func (r *VeoRunner) Run(ctx context.Context, req video.GenerationRequest) (*video.Response, error) {
 	// 1. req.ImageReference / req.AudioReference を優先して参照を解決
 	// 2. 必要なら req.InputImage / req.InputAudio をアップロード
 	// 3. req.Prompt, req.PreviousVideoURI, req.Seed, req.DurationSec を Veo API に渡す
 	// 4. operation を poll して完了を待つ
 	// 5. CloudURL と VideoID を返す
-	return &ports.VideoResponse{
+	return &video.Response{
 		CloudURL:    "gs://example-bucket/videos/cut_001.mp4",
 		VideoID:     "veo-video-id",
 		CutIndex:    req.CutIndex,
@@ -71,7 +71,7 @@ func (r *VeoRunner) Run(ctx context.Context, req ports.VideoGenerationRequest) (
 
 ## モデルの対応機能を伝える
 
-どの Veo 機能が使えるかは、`VideoRunner` に以下のオプションインターフェースを実装すると `ports.RunnerCapabilities` が自動で拾います。未実装の Runner は両方 false となり、image_to_video 側へ倒れます。
+どの Veo 機能が使えるかは、`VideoRunner` に以下のオプションインターフェースを実装すると `veo.RunnerCapabilities` が自動で拾います。未実装の Runner は両方 false となり、image_to_video 側へ倒れます。
 
 ```go
 type ReferenceImagesSupporter interface{ SupportsReferenceImages() bool }

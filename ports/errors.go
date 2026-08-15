@@ -42,16 +42,6 @@ var (
 	// 扱えます（リトライしても直りません）。
 	ErrUnsupportedCutDuration = errors.New("cut duration is not supported by the resolved Veo generation mode")
 
-	// ErrRecipeInvalid は、VideoRecipe.Validate が検出した構造上の問題
-	// （タイトル欠落・カット無し・範囲外の section_index）を包むセンチネルです。
-	// AI 生成スクリプトの検証では「再生成すれば直るかもしれない失敗」を、
-	// 通信エラーなどと区別するために使えます。
-	ErrRecipeInvalid = errors.New("video recipe is invalid")
-
-	// ErrKeyframeRunnerRequired は、VideoTimelineRunner にキーフレームランナーが
-	// 注入されていない場合に返されます。
-	ErrKeyframeRunnerRequired = errors.New("keyframe runner is required")
-
 	// ErrVideoRunnerRequired は、VideoTimelineRunner に VideoRunner（Veo アダプター）が
 	// 注入されていない場合に返されます。ErrVideoRunnerNotConfigured が「未設定の
 	// ワークフローを呼んだ」ことを表すのに対し、こちらは構築の誤りを表します。

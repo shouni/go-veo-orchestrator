@@ -1,0 +1,40 @@
+package runner
+
+import (
+	"encoding/json"
+	"testing"
+
+	"github.com/shouni/go-veo-orchestrator/video"
+)
+
+func TestBuildRecipeMetadataDoesNotNormalizeRecipe(t *testing.T) {
+	recipe := &video.Recipe{
+		ProjectTitle: "fallback title",
+		Cuts: []video.Cut{
+			{
+				VisualAnchor: "explicit cut",
+				AudioSync:    video.AudioSync{DurationSec: 8},
+			},
+		},
+	}
+
+	data, err := buildRecipeMetadata(recipe)
+	if err != nil {
+		t.Fatalf("buildRecipeMetadata() error = %v", err)
+	}
+
+	var got video.Recipe
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("metadata JSON should be valid: %v", err)
+	}
+
+	if recipe.MusicRecipe.Title != "" {
+		t.Fatalf("MusicRecipe.Title was normalized to %q", recipe.MusicRecipe.Title)
+	}
+	if recipe.Cuts[0].CutIndex != 0 {
+		t.Fatalf("CutIndex was normalized to %d", recipe.Cuts[0].CutIndex)
+	}
+	if recipe.Cuts[0].Status != "" {
+		t.Fatalf("Status was normalized to %q", recipe.Cuts[0].Status)
+	}
+}

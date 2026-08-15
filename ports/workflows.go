@@ -2,62 +2,46 @@ package ports
 
 import (
 	"context"
-	"sync"
+
+	"github.com/shouni/go-veo-orchestrator/video"
 )
 
 // Workflows は、構築済みの各 Runner を保持します。
+//
+// Close はありません。参照画像を gs:// URI のまま渡すようになり、画像キャッシュと
+// その定期クリーンアップ goroutine が無くなったためです（発射間隔のリミッターと
+// singleflight は解放すべき資源を持ちません）。呼び出し側の defer は不要です。
 type Workflows struct {
 	Script      ScriptRunner
 	CutKeyframe CutKeyframeRunner
 	Video       VideoTimelineRunner
 	Publish     VideoPublishRunner
-
-	closeOnce sync.Once
-	onClose   func()
-}
-
-// SetCloseFunc は、Close で一度だけ実行するクリーンアップ処理を登録します。
-// 画像キャッシュのバックグラウンド goroutine など、workflow.New が確保した
-// リソースの解放を接続するために構築側（workflow パッケージ）が使う想定です。
-// ゼロ値や手組みの Workflows には登録がなく、Close は何もしません。
-func (w *Workflows) SetCloseFunc(fn func()) {
-	w.onClose = fn
-}
-
-// Close は、workflow.New で構築した Workflows が確保したバックグラウンド
-// リソース（現状は画像キャッシュの定期クリーンアップ goroutine）を解放します。
-// 複数回呼んでも安全で、2回目以降は何もしません。
-func (w *Workflows) Close() error {
-	w.closeOnce.Do(func() {
-		if w.onClose != nil {
-			w.onClose()
-		}
-	})
-	return nil
 }
 
 // ScriptRunner は、ソース（URLやテキスト）を解析し、Music Recipe を含む動画台本を生成する責務を持ちます。
 type ScriptRunner interface {
-	Run(ctx context.Context, scriptURL string, mode string) (*VideoRecipe, error)
+	Run(ctx context.Context, scriptURL string, mode string) (*video.Recipe, error)
 }
 
-// CutKeyframeRunner は、解析済みの動画データを基に、カットのキーフレーム画像を生成する責務を持ちます。
+// CutKeyframeRunner は、Workflows.CutKeyframe が利用側へ公開する操作です。
+//
+// 生成だけを行う Generate は含めません。成果物を保存せずに画像だけ受け取っても
+// recipe の KeyframeReference が更新されず、利用側は自分でファイル名規約を
+// 再実装する羽目になります（保存を含む2つが実際の入口です）。
 type CutKeyframeRunner interface {
-	// Run generates keyframe images only for the cuts that have no KeyframeReference yet and
-	// returns a slice aligned with recipe.Cuts — nil at the positions that already had one.
-	// Callers treat nil as "reuse the cut's existing reference".
-	Run(ctx context.Context, recipe *VideoRecipe) ([]*KeyframeImage, error)
-	RunAndSave(ctx context.Context, recipe *VideoRecipe, outputPath string) (*VideoRecipe, error)
-	// EditAndSave edits the existing keyframe image of recipe.Cuts[cutPosition] using
-	// editPrompt (preserving composition/pose rather than regenerating from scratch), saves
-	// the result the same way RunAndSave does, and returns the recipe with the updated
-	// KeyframeReference. The target cut's KeyframeReference must already point at the image
-	// to edit. Returns an error if the configured image generator does not support editing.
-	EditAndSave(ctx context.Context, recipe *VideoRecipe, cutPosition int, editPrompt string, outputPath string) (*VideoRecipe, error)
+	// GenerateAndSave は未生成のカットのキーフレームを生成して保存し、
+	// KeyframeReference を更新した recipe を返します。
+	GenerateAndSave(ctx context.Context, recipe *video.Recipe, outputPath string) (*video.Recipe, error)
+	// EditAndSave は video.Cuts[cutPosition] の既存キーフレームを editPrompt で編集し
+	// （一から作り直すのではなく構図・ポーズを保ちます）、GenerateAndSave と同じ方法で
+	// 保存して、KeyframeReference を更新した recipe を返します。対象カットの
+	// KeyframeReference は編集元の画像を指している必要があります。
+	// 注入された画像ジェネレータが編集に対応していない場合はエラーを返します。
+	EditAndSave(ctx context.Context, recipe *video.Recipe, cutPosition int, editPrompt string, outputPath string) (*video.Recipe, error)
 }
 
 // VideoPublishRunner は、動画レシピと生成済みカットのメタデータを JSON として出力する責務を持ちます。
 type VideoPublishRunner interface {
-	Run(ctx context.Context, recipe *VideoRecipe, outputDir string) (*PublishResult, error)
-	BuildMetadata(recipe *VideoRecipe) ([]byte, error)
+	Run(ctx context.Context, recipe *video.Recipe, outputDir string) (*video.PublishResult, error)
+	BuildMetadata(recipe *video.Recipe) ([]byte, error)
 }

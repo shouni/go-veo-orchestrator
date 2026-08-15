@@ -4,11 +4,12 @@ import (
 	"context"
 
 	characterkit "github.com/shouni/go-character-kit/character"
+	"github.com/shouni/go-veo-orchestrator/video"
 )
 
 // TemplateData はスクリプト生成プロンプトのテンプレートに渡す構造化入力です。
 type TemplateData struct {
-	SourceRecipe *VideoRecipe
+	SourceRecipe *video.Recipe
 }
 
 // ScriptPrompt は、AIプロンプトを構築する契約です。
@@ -18,18 +19,22 @@ type ScriptPrompt interface {
 
 // KeyframePrompt は、カットのキーフレーム画像生成AI向けのプロンプトを構築する契約です。
 type KeyframePrompt interface {
-	BuildCut(cut Cut, char *characterkit.Character) (userPrompt string, systemPrompt string)
+	BuildCut(cut video.Cut, char *characterkit.Character) (userPrompt string, systemPrompt string)
 	// BuildEdit builds the user/system prompt for editing an existing keyframe image with
 	// editPrompt, reinforcing character identity and style consistency (art style, negative
 	// prompt guidance) the same way BuildCut does for full generation.
-	BuildEdit(cut Cut, char *characterkit.Character, editPrompt string) (userPrompt string, systemPrompt string)
+	BuildEdit(cut video.Cut, char *characterkit.Character, editPrompt string) (userPrompt string, systemPrompt string)
 }
 
-// CutImageGenerator は、一連のカットのキーフレーム画像を生成します。
+// CutImageGenerator は、カット 1 件のキーフレーム画像を生成します。
 //
-// 戻り値は cuts と同じ長さ・並びで、エラー時も生成できた位置には結果が入ります
-// （キーフレーム 1 枚ごとに生成コストが掛かるため、1 件の失敗で支払い済みの
-// 画像を捨てない）。呼び出し側は結果とエラーの両方を見てください。
+// **1 枚単位なのは意図的です。** 呼び出し側（CutKeyframeRunner）は 1 枚できるたびに
+// 即座に保存し、KeyframeReference を更新します。まとめて生成してから保存すると、
+// 途中でプロセスが落ちた場合に生成済み（＝課金済み）の画像がメモリごと失われ、
+// 再実行で全部作り直しになります。並列実行と順序の保持は呼び出し側の仕事です。
+//
+// index / total は進捗ログ用です（「何枚中の何枚目か」）。1 枚に分単位掛かるため、
+// これが無いと実行中に進捗を判断できません。
 type CutImageGenerator interface {
-	Execute(ctx context.Context, cuts []Cut) ([]*KeyframeImage, error)
+	GenerateCut(ctx context.Context, cut video.Cut, index, total int) (*video.KeyframeImage, error)
 }
