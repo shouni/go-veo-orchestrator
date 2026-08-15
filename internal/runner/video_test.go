@@ -372,3 +372,40 @@ func TestVideoTimelineRunner_RunRejectsUnsupportedDuration(t *testing.T) {
 		t.Errorf("cut status = %q, want failed", recipe.Cuts[0].Status)
 	}
 }
+
+// TestVideoTimelineRunner_DoesNotGenerateKeyframes pins that the timeline runner consumes
+// keyframe references and never produces them. It used to generate missing keyframes itself
+// and hand the bytes to Veo without saving them, so a crash threw away paid-for images and the
+// bytes sent could drift from the file on GCS. Generation and saving now live in exactly one
+// place (CutKeyframeRunner); a cut without a reference becomes a prompt-only generation.
+func TestVideoTimelineRunner_DoesNotGenerateKeyframes(t *testing.T) {
+	ctx := context.Background()
+	videoRunner := &mockVideoRunner{}
+	recipe := &video.Recipe{
+		ProjectTitle: "no keyframes",
+		Cuts: []video.Cut{
+			{CutIndex: 1, AudioSync: video.AudioSync{DurationSec: 8}},
+		},
+	}
+
+	runner := NewVideoTimelineRunner(videoRunner)
+	if _, err := runner.Run(ctx, recipe); err != nil {
+		t.Fatalf("Run() error = %v, want a cut without a keyframe to still generate", err)
+	}
+
+	if len(videoRunner.requests) != 1 {
+		t.Fatalf("video requests = %d, want 1", len(videoRunner.requests))
+	}
+	req := videoRunner.requests[0]
+	if req.ImageReference != "" {
+		t.Errorf("ImageReference = %q, want empty (the runner must not invent one)", req.ImageReference)
+	}
+	if len(req.InputImage) != 0 {
+		t.Errorf("InputImage = %d bytes, want none (keyframes travel as gs:// references)", len(req.InputImage))
+	}
+	// レシピは書き換えられない。参照の生成は CutKeyframeRunner の仕事。
+	if recipe.Cuts[0].KeyframeReference != "" {
+		t.Errorf("KeyframeReference = %q, want the timeline runner to leave it alone",
+			recipe.Cuts[0].KeyframeReference)
+	}
+}

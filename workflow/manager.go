@@ -29,6 +29,10 @@ type ManagerArgs struct {
 	// Reader は台本ソース（URL・テキスト）の取得に使います。参照画像は gs:// URI の
 	// まま Vertex AI へ渡るため、画像の解決には使いません。
 	Reader ports.ContentReader
+	// Writer は生成物とメタデータの保存先です。
+	//
+	// **同時アクセス安全である必要があります。** キーフレームはカットごとの goroutine が
+	// 生成直後に保存するため、Config.MaxConcurrency が 2 以上なら Write は並行に呼ばれます。
 	Writer remoteio.Writer
 	// AIClient は台本のテキスト生成とキーフレームの画像生成の両方に使います。
 	// 生成呼び出しの 1 メソッドだけを要求します。

@@ -22,6 +22,11 @@ import (
 const DefaultKeyframeCacheControl = "public, max-age=1800"
 
 // CutKeyframeRunner は、動画レシピを元にカットキーフレーム生成を管理します。
+//
+// **注入する remoteio.Writer は同時アクセス安全である必要があります。**
+// GenerateAndSave はカットごとに goroutine を起こし、その中で生成から保存までを
+// 完結させるため（1枚できるたびに保存するのが目的）、WithMaxConcurrency が 2 以上なら
+// Write は並行に呼ばれます。
 type CutKeyframeRunner struct {
 	generator      ports.CutImageGenerator
 	writer         remoteio.Writer

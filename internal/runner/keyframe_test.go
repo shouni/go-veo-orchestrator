@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/shouni/go-remote-io/remoteio"
 	"github.com/shouni/go-veo-orchestrator/ports"
@@ -16,7 +17,13 @@ import (
 )
 
 // fakeWriter records every Write call so tests can assert on the saved paths/content.
+// fakeWriter は remoteio.Writer のテストダブルです。
+//
+// mu は必須です。GenerateAndSave はカットごとに goroutine を起こし、その中で保存まで
+// 行うため、Writer は複数の goroutine から同時に呼ばれます（注入する実装にも同じ
+// 要件が掛かります。CutKeyframeRunner のドキュメント参照）。
 type fakeWriter struct {
+	mu     sync.Mutex
 	writes map[string][]byte
 }
 
@@ -29,8 +36,17 @@ func (w *fakeWriter) Write(_ context.Context, path string, contentReader io.Read
 	if err != nil {
 		return err
 	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
 	w.writes[path] = data
 	return nil
+}
+
+// writeCount は記録済みの書き込み数を返します（並行実行中でも安全に読めます）。
+func (w *fakeWriter) writeCount() int {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return len(w.writes)
 }
 
 // fakeCutImageGenerator implements both ports.CutImageGenerator and cutImageEditor so tests
@@ -114,8 +130,8 @@ func TestCutKeyframeRunner_EditAndSave(t *testing.T) {
 		if got.Cuts[0].KeyframeReference == "gs://bucket/jobs/j1/images/keyframe_2.png" {
 			t.Error("expected KeyframeReference to be updated to the newly saved path")
 		}
-		if len(writer.writes) != 2 {
-			t.Fatalf("expected 2 writes (keyframe + metadata), got %d: %v", len(writer.writes), writer.writes)
+		if writer.writeCount() != 2 {
+			t.Fatalf("expected 2 writes (keyframe + metadata), got %d: %v", writer.writeCount(), writer.writes)
 		}
 	})
 
@@ -205,8 +221,8 @@ func TestCutKeyframeRunner_RunAndSave(t *testing.T) {
 		if got.Cuts[0].KeyframeReference == got.Cuts[1].KeyframeReference {
 			t.Fatalf("expected distinct indexed paths per cut, both = %q", got.Cuts[0].KeyframeReference)
 		}
-		if len(writer.writes) != 3 { // 2 keyframes + metadata
-			t.Fatalf("expected 3 writes, got %d: %v", len(writer.writes), writer.writes)
+		if writer.writeCount() != 3 { // 2 keyframes + metadata
+			t.Fatalf("expected 3 writes, got %d: %v", writer.writeCount(), writer.writes)
 		}
 	})
 
@@ -411,5 +427,100 @@ func TestCutKeyframeRunner_SavesEachKeyframeAsItIsGenerated(t *testing.T) {
 	if updated.Cuts[0].KeyframeSeed != 101 || updated.Cuts[1].KeyframeSeed != 102 {
 		t.Errorf("KeyframeSeed = %d/%d, want the seed each image was generated with",
 			updated.Cuts[0].KeyframeSeed, updated.Cuts[1].KeyframeSeed)
+	}
+}
+
+// TestCutKeyframeRunner_MaxConcurrency pins that WithMaxConcurrency actually bounds how many
+// cuts are generated at once. Concurrency lives on this runner rather than the keyframe
+// generator because the runner also owns the saving, and a cut's generate-and-save must stay
+// inside one goroutine. Before it moved here the equivalent setting sat on ports.Config and was
+// read by nothing at all, so the configured value was silently discarded.
+func TestCutKeyframeRunner_MaxConcurrency(t *testing.T) {
+	ctx := context.Background()
+
+	for _, limit := range []int{1, 3} {
+		t.Run(fmt.Sprintf("limit=%d", limit), func(t *testing.T) {
+			var mu sync.Mutex
+			inFlight, peak := 0, 0
+
+			gen := &capturingCutImageGenerator{
+				image: func(_ video.Cut) *video.KeyframeImage {
+					mu.Lock()
+					inFlight++
+					if inFlight > peak {
+						peak = inFlight
+					}
+					mu.Unlock()
+
+					time.Sleep(20 * time.Millisecond)
+
+					mu.Lock()
+					inFlight--
+					mu.Unlock()
+					return &video.KeyframeImage{Data: []byte("img"), MimeType: "image/png"}
+				},
+			}
+
+			cuts := make([]video.Cut, 8)
+			for i := range cuts {
+				cuts[i] = keyframeCut(i+1, "")
+			}
+			recipe := &video.Recipe{ProjectTitle: "concurrency", Cuts: cuts}
+
+			r := NewCutKeyframeRunner(gen, newFakeWriter(), WithMaxConcurrency(limit))
+			if _, err := r.GenerateAndSave(ctx, recipe, "gs://bucket/jobs/j1/"); err != nil {
+				t.Fatalf("GenerateAndSave() error = %v", err)
+			}
+
+			mu.Lock()
+			defer mu.Unlock()
+			if peak > limit {
+				t.Errorf("peak concurrency = %d, want <= %d", peak, limit)
+			}
+			if limit > 1 && peak < 2 {
+				t.Errorf("peak concurrency = %d, want the cuts to actually overlap", peak)
+			}
+		})
+	}
+}
+
+// TestCutKeyframeRunner_ParallelGenerationKeepsCutAlignment pins that each cut's reference and
+// seed land on that cut, not on whichever finished first. Generation runs in parallel and the
+// results are written straight into recipe.Cuts, so a position mix-up would silently attach
+// cut 3's image to cut 1 — a failure that only shows up as the wrong picture in a finished video.
+func TestCutKeyframeRunner_ParallelGenerationKeepsCutAlignment(t *testing.T) {
+	ctx := context.Background()
+
+	// 逆順に遅延させ、完了順を入力順とわざとずらす。
+	gen := &capturingCutImageGenerator{
+		image: func(cut video.Cut) *video.KeyframeImage {
+			time.Sleep(time.Duration(5-cut.CutIndex) * 10 * time.Millisecond)
+			return &video.KeyframeImage{
+				Data: []byte("img"), MimeType: "image/png", UsedSeed: int64(1000 + cut.CutIndex),
+			}
+		},
+	}
+
+	cuts := make([]video.Cut, 4)
+	for i := range cuts {
+		cuts[i] = keyframeCut(i+1, "")
+	}
+	recipe := &video.Recipe{ProjectTitle: "alignment", Cuts: cuts}
+
+	r := NewCutKeyframeRunner(gen, newFakeWriter(), WithMaxConcurrency(4))
+	updated, err := r.GenerateAndSave(ctx, recipe, "gs://bucket/jobs/j1/")
+	if err != nil {
+		t.Fatalf("GenerateAndSave() error = %v", err)
+	}
+
+	for i, cut := range updated.Cuts {
+		if want := int64(1000 + cut.CutIndex); cut.KeyframeSeed != want {
+			t.Errorf("cut %d: KeyframeSeed = %d, want %d (result landed on the wrong cut)",
+				cut.CutIndex, cut.KeyframeSeed, want)
+		}
+		// 保存名はレシピ内の位置で決まる。詰めたり入れ替えたりしてはいけない。
+		if want := fmt.Sprintf("keyframe_%d", i+1); !strings.Contains(cut.KeyframeReference, want) {
+			t.Errorf("cut %d: reference %q, want it to contain %q", cut.CutIndex, cut.KeyframeReference, want)
+		}
 	}
 }

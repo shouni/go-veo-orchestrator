@@ -134,8 +134,8 @@ func TestCutKeyframeRunner_GenerateAndSavePersistsPartialResults(t *testing.T) {
 		t.Errorf("failed cut must stay pending, got %q", got.Cuts[1].KeyframeReference)
 	}
 	// 1枚のキーフレーム + メタデータの2書き込み。
-	if len(writer.writes) != 2 {
-		t.Fatalf("writes = %d, want keyframe + metadata", len(writer.writes))
+	if writer.writeCount() != 2 {
+		t.Fatalf("writes = %d, want keyframe + metadata", writer.writeCount())
 	}
 }
 
