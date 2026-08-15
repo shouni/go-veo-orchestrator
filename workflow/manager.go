@@ -1,7 +1,7 @@
 // Package workflow は、設定とクライアント群から go-veo-orchestrator の各 Runner
 // （台本・キーフレーム・動画・パブリッシュ）を組み立てる DI 層を提供します。
-// AI 呼び出しの発射間隔・1回あたりの上限時間・重複排除（singleflight）もここで
-// 掛けます。テキスト生成と画像生成の両方に同じガードが必要だからです。
+// AI 呼び出しの発射間隔・1回あたりの上限時間・重複排除（singleflight）もここで掛けます
+// （callGuard 参照）。
 package workflow
 
 import (
@@ -64,18 +64,15 @@ func New(args ManagerArgs) (*ports.Workflows, error) {
 		return nil, err
 	}
 
-	// AI 呼び出しの発射間隔と1回あたりの上限時間は、ワークフロー全体で1つの
-	// ガードに集約する（クォータはプロジェクト単位で、操作の種類ごとではないため）。
 	guard := callGuard{
 		limiter: newRateLimiter(cfg.RateInterval),
 		timeout: cfg.RequestTimeout,
 	}
 
 	m := &manager{
-		cfg:    cfg,
-		reader: args.Reader,
-		writer: args.Writer,
-		// 同一内容のテキスト生成の同時実行を1回にまとめる（重複タスク・リトライ対策）
+		cfg:         cfg,
+		reader:      args.Reader,
+		writer:      args.Writer,
 		aiClient:    &singleflightGenerator{inner: args.AIClient, guard: guard},
 		videoRunner: args.VideoRunner,
 		promptDeps:  args.PromptDeps,
@@ -120,15 +117,12 @@ func validateArgs(args *ManagerArgs) error {
 // buildImageGenerator は画像生成の実行体を組み立てます。
 //
 // 参照画像は gs:// URI をそのまま Vertex AI へ渡すため、GCS リーダーも HTTP
-// クライアントもキャッシュも要りません。発射間隔と1回あたりの上限時間は
-// vertex-image-kit のオプション（WithRateLimit / WithRequestTimeout）ではなく
-// callGuard で掛けます — 同じリミッターを台本のテキスト生成にも共有する必要が
-// あり、クォータはプロジェクト単位なので画像だけ絞っても足りないためです。
+// クライアントもキャッシュも要りません。generator.New にオプションを渡していないのも
+// 意図どおりで、発射間隔と上限時間は callGuard 側で掛けます。
 func buildImageGenerator(client gemini.Generator, guard callGuard) (imagePorts.ImageGenerator, error) {
 	gen, err := generator.New(client)
 	if err != nil {
 		return nil, fmt.Errorf("画像生成エンジンの初期化に失敗しました: %w", err)
 	}
-	// 同一内容の画像生成の同時実行を1回にまとめる（重複タスク・リトライ対策）
 	return &singleflightImageGenerator{inner: gen, guard: guard}, nil
 }

@@ -198,7 +198,7 @@ func TestCutKeyframeRunner_EditAndSave(t *testing.T) {
 	})
 }
 
-func TestCutKeyframeRunner_RunAndSave(t *testing.T) {
+func TestCutKeyframeRunner_GenerateAndSave(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("saves indexed keyframes and updated metadata", func(t *testing.T) {
@@ -288,10 +288,10 @@ func keyframeCut(index int, keyframeReference string) video.Cut {
 	}
 }
 
-// TestCutKeyframeRunner_RunAndSaveSkipsExistingKeyframes pins the resumability rule: a cut that
-// already has a keyframe is not re-generated. Without it, any caller re-running a saved recipe
-// (to generate video from it, to resume, to regenerate one cut) pays for every image again.
-func TestCutKeyframeRunner_RunAndSaveSkipsExistingKeyframes(t *testing.T) {
+// 再開のルールを固定する: キーフレームを既に持つカットは焼き直さない。これが無いと、
+// 保存済みレシピを再実行する呼び出し（動画生成・再開・1 カットだけの作り直し）が
+// 毎回すべての画像の料金を払い直すことになる。
+func TestCutKeyframeRunner_GenerateAndSaveSkipsExistingKeyframes(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("generates only the cuts missing a keyframe", func(t *testing.T) {

@@ -14,7 +14,8 @@ import (
 // --- Mocks ---
 
 // mockImageGenerator は vertex-image-kit の ImageGenerator を模したテストダブルです。
-// Execute はカット間を並列実行するため、mu による保護は必須です。
+// このパッケージの生成は逐次ですが、runner 側のテストからも並列に叩かれるため
+// mu で保護します。
 type mockImageGenerator struct {
 	mu            sync.Mutex
 	generateCount int
@@ -47,8 +48,8 @@ func (m *mockImagePrompt) BuildEdit(_ video.Cut, _ *characterkit.Character, edit
 	return editPrompt, "edit-system"
 }
 
-// execAll は、旧 Execute のようにカット列をまとめて生成するテスト用ヘルパーです。
-// 本番の並列実行と保存は runner.CutKeyframeRunner が持つため、ここでは逐次で足ります。
+// execAll はカット列をまとめて生成するテスト用ヘルパーです。本番の並列実行と保存は
+// runner.CutKeyframeRunner が持つため、ここでは逐次で足ります。
 func execAll(ctx context.Context, t *testing.T, g *Generator, cuts []video.Cut) ([]*video.KeyframeImage, error) {
 	t.Helper()
 	images := make([]*video.KeyframeImage, len(cuts))
@@ -66,7 +67,7 @@ func execAll(ctx context.Context, t *testing.T, g *Generator, cuts []video.Cut) 
 
 // --- Tests ---
 
-func TestGenerator_Execute(t *testing.T) {
+func TestGenerator_GenerateCut(t *testing.T) {
 	ctx := context.Background()
 
 	// 1. 依存関係のセットアップ

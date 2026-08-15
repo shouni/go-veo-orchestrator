@@ -16,8 +16,8 @@ type Recipe struct {
 	// LocationAnchor is the single persistent core setting (location plus any recurring prop —
 	// e.g. "a misty coastal cliffside road overlooking the ocean at dawn; her bicycle beside
 	// her") for the entire video. It is decided once at script-generation time and propagated
-	// onto every Cut by Normalize. Keyframe generation runs each cut independently and in
-	// parallel (see go-veo-orchestrator/internal/keyframe.Generator.Execute), and prompt builders such as
+	// onto every Cut by Normalize. Keyframe generation runs one cut at a time
+	// (internal/keyframe.Generator.GenerateCut), and prompt builders such as
 	// ports.KeyframePrompt.BuildCut only ever see a single Cut, not the parent Recipe — so
 	// without this field, a cut whose own VisualAnchor omits the location (e.g. a tight emotional
 	// close-up) has nothing grounding its background, and the image model is free to hallucinate

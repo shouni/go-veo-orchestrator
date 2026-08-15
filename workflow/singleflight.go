@@ -17,9 +17,11 @@ import (
 // AI API を叩く実行そのものに、発射間隔（Config.RateInterval）と1回あたりの
 // 上限時間（Config.RequestTimeout）を適用します。
 //
-// ガードを画像キット側（vertex-image-kit の WithRateLimit / WithRequestTimeout）
-// ではなくここに置くのは、台本のテキスト生成にも同じリミッターを掛ける必要が
-// あるためです。クォータはプロジェクト単位なので、画像だけ絞っても意味がありません。
+// ワークフロー全体で 1 つのインスタンスを共有し、台本のテキスト生成とキーフレームの
+// 画像生成の両方に同じガードを掛けます。クォータはプロジェクト単位で操作の種類ごとでは
+// ないため、片方だけ絞っても意味がないからです。これが、発射間隔と上限時間を
+// vertex-image-kit のオプション（WithRateLimit / WithRequestTimeout）ではなく
+// ここに置いている理由でもあります。
 type callGuard struct {
 	// limiter は発射間隔のリミッターです。nil は制限なしを意味します。
 	limiter *rateLimiter
@@ -40,7 +42,6 @@ type singleflightImageGenerator struct {
 var _ imagePorts.ImageGenerator = (*singleflightImageGenerator)(nil)
 
 // Generate はリクエスト内容のハッシュをキーに同時実行をまとめます。
-// 共有される応答は呼び出し元ごとに複製して返します。
 func (g *singleflightImageGenerator) Generate(ctx context.Context, req imagePorts.ImageRequest) (*imagePorts.ImageResponse, error) {
 	key := imageRequestKey(&req)
 	resp, err := doSingleflight(ctx, &g.group, g.guard, key, func(execCtx context.Context) (*imagePorts.ImageResponse, error) {
