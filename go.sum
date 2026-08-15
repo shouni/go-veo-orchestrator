@@ -43,8 +43,8 @@ github.com/shouni/go-utils v1.5.1 h1:bw+YrAbUbtrT9WRbnwWHipwRo9ZY8dyPy2/bBdorDD8
 github.com/shouni/go-utils v1.5.1/go.mod h1:MRR3X08kWJ+sSS2+KRuvWEikXui5Tixg9vta6r30SnE=
 github.com/shouni/netarmor v1.2.1 h1:EwSvhPKOA+rVMceIHn+YpqlWn3bHKovrSOi1MX6ajdY=
 github.com/shouni/netarmor v1.2.1/go.mod h1:WxojUH0M+Z2lqZH2vw572A1zn5l1VkH7V47rnTnZmVY=
-github.com/shouni/vertex-image-kit v1.0.0 h1:ISn1+ftKTLpG3bLoXbBbllqitujpdl8Ys3yhnQ+x9ug=
-github.com/shouni/vertex-image-kit v1.0.0/go.mod h1:aodSBfe7We6+kuP6jMh9zHPaGJ9tVUYA8TuWfi/jknc=
+github.com/shouni/vertex-image-kit v1.0.1 h1:IKom2YWJVz8OM2uFV3X8O+9i9YQUYFEwG9GgaG6vzsI=
+github.com/shouni/vertex-image-kit v1.0.1/go.mod h1:aodSBfe7We6+kuP6jMh9zHPaGJ9tVUYA8TuWfi/jknc=
 github.com/stretchr/objx v0.5.2 h1:xuMeJ0Sdp5ZMRXx/aWO6RZxdr3beISkG5/G/aIRr3pY=
 github.com/stretchr/objx v0.5.2/go.mod h1:FRsXN1f5AsAjCGJKqEizvkpNtU+EGNCLh3NxZ/8L+MA=
 github.com/stretchr/testify v1.11.1 h1:7s2iGBzp5EwR7/aIZr8ao5+dra3wiQyKjjFuvgVKu7U=

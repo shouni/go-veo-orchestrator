@@ -7,7 +7,7 @@ require (
 	github.com/shouni/go-gemini-client v1.17.2
 	github.com/shouni/go-remote-io v1.8.1
 	github.com/shouni/go-utils v1.5.1
-	github.com/shouni/vertex-image-kit v1.0.0
+	github.com/shouni/vertex-image-kit v1.0.1
 	golang.org/x/sync v0.22.0
 )
 
