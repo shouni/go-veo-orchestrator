@@ -18,11 +18,11 @@
 | `video.RecipeSchema(characterIDs)` | 台本生成の構造化出力スキーマ（`character_id` を enum で制約した JSON Schema） |
 | `Cuts.FillAudioReference(url)` / `Cuts.FillCharacterID(id)` | 未設定カットへの音源・キャラクターの一括補完 |
 | `Cuts.IndexOf(cutIndex)` | cut_index からレシピ内の位置を引く |
-| `ports.NewVideoRecipeFromMusic(music.Recipe)` | Music Recipe から動画レシピを組み立て（深いコピー + Normalize） |
+| `video.NewRecipeFromMusic(music.Recipe)` | Music Recipe から動画レシピを組み立て（深いコピー + Normalize） |
 | `veo.ExpandCutsToSupportedDurations(...)` | カット尺を Veo のサポート値へ正規化する尺プランナー（分割・チェーン形成・セクション境界リセット） |
 | `veo.CapCutsTotalDuration(cuts, maxSec)` / `veo.ChainTailEnd(cuts, i, usePrev)` | 合計尺の切り詰め・チェーン再生成範囲の解決 |
-| `veo.SplitCutBySupportedDurations(cut, totalSec)` / `ports.AllowedCutDurations(usesRefs)` | 1 カットの分割と、参照画像の有無で変わる許容尺の取得 |
-| `ports.CutUsesReferenceImages(cut, characters)` | そのカットが reference_to_video 経路（＝8 秒固定）になるかの判定 |
+| `veo.SplitCutBySupportedDurations(cut, totalSec)` / `veo.AllowedCutDurations(usesRefs)` | 1 カットの分割と、参照画像の有無で変わる許容尺の取得 |
+| `veo.CutUsesReferenceImages(cut, characters)` | そのカットが reference_to_video 経路（＝8 秒固定）になるかの判定 |
 | `veo.SplitDialogueLines(dialogue)` / `veo.DistributeLines(lines, n)` | 台詞の行分割と、分割後カットへの割り当て |
 | `veo.ModelCapabilities(model)` | モデル名から referenceImages / lastFrame 対応を導出 |
 

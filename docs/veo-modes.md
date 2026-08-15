@@ -13,7 +13,7 @@ mode := veo.ClassifyRequest(req, usePreviousVideo, caps)
 
 ## 判定の優先順位と対応尺
 
-モードは `veo.GenerationMode`、モデルの対応状況は `veo.Capabilities` です。尺の一覧は `ports.ImageToVideoDurationsSec` / `ports.ReferenceToVideoDurationsSec` として公開しています。
+モードは `veo.GenerationMode`、モデルの対応状況は `veo.Capabilities` です。尺の一覧は `veo.ImageToVideoDurationsSec` / `veo.ReferenceToVideoDurationsSec` として公開しています。
 
 | 優先 | モード | 条件 | 対応尺（秒） |
 | --- | --- | --- | --- |

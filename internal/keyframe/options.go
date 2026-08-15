@@ -13,7 +13,11 @@ package keyframe
 type Option func(*Generator)
 
 // WithAspectRatio は、生成するキーフレーム画像のアスペクト比を設定します
-// （例: "16:9", "9:16"）。空文字の場合は既定値（ports.DefaultKeyframeAspectRatio）のまま変更しません。
+// （例: "16:9", "9:16"）。空文字の場合は何も変更しません。
+//
+// キットは既定値を持たないため、未設定のままだとモデルへ空が渡ります。
+// 実際には ports.Config.KeyframeAspectRatio が必須なので、workflow 経由で
+// 組み立てる限り空にはなりません。
 func WithAspectRatio(value string) Option {
 	return func(g *Generator) {
 		if value != "" {
@@ -23,7 +27,7 @@ func WithAspectRatio(value string) Option {
 }
 
 // WithImageSize は、生成するキーフレーム画像の解像度を設定します（例: "1K", "2K"）。
-// 空文字の場合は既定値（ports.DefaultKeyframeImageSize）のまま変更しません。
+// 空文字の場合は何も変更しません（WithAspectRatio と同じく、キットは既定値を持ちません）。
 func WithImageSize(value string) Option {
 	return func(g *Generator) {
 		if value != "" {
@@ -32,9 +36,12 @@ func WithImageSize(value string) Option {
 	}
 }
 
-// WithNegativePrompt は、キーフレーム生成のネガティブプロンプトを差し替えます。
-// 既定値は文字・フキダシ・低品質などを排除する定型文です。空文字を渡すと
-// ネガティブプロンプトなしで生成します。
+// WithNegativePrompt は、キーフレーム生成のネガティブプロンプトを設定します。
+//
+// キットは既定文言を持ちません。文字やフキダシを避けたいなら呼び出し側が明示して
+// ください（ports.Config.KeyframeNegativePrompt）。文言をキットに置かないのは、
+// そこに画風の指定（monochrome など）が混ざると、モノクロで作りたい作品が
+// キットのリリース無しには作れなくなるためです。
 func WithNegativePrompt(value string) Option {
 	return func(g *Generator) {
 		g.negativePrompt = value
