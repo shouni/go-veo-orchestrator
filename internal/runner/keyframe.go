@@ -24,9 +24,8 @@ const DefaultKeyframeCacheControl = "public, max-age=1800"
 // CutKeyframeRunner は、動画レシピを元にカットキーフレーム生成を管理します。
 //
 // **注入する remoteio.Writer は同時アクセス安全である必要があります。**
-// GenerateAndSave はカットごとに goroutine を起こし、その中で生成から保存までを
-// 完結させるため（1枚できるたびに保存するのが目的）、WithMaxConcurrency が 2 以上なら
-// Write は並行に呼ばれます。
+// GenerateAndSave はカットごとの goroutine の中で保存まで済ませるため、
+// WithMaxConcurrency が 2 以上なら Write は並行に呼ばれます。
 type CutKeyframeRunner struct {
 	generator      ports.CutImageGenerator
 	writer         remoteio.Writer
@@ -49,11 +48,11 @@ func WithCacheControl(value string) KeyframeRunnerOption {
 }
 
 // WithMaxConcurrency は、カット間のキーフレーム生成の同時実行数を設定します。
-// 1 以下（既定は 1）なら逐次実行です。並列度をここに置くのは、1 カットの
-// 「生成 → 保存」を 1 つの goroutine で完結させるためです。
+// 1 以下（既定は 1）なら逐次実行です。
 //
-// 注意: 注入側にレート制限（Config.RateInterval）が掛かっている場合、スループットは
-// 並列度によらず発射間隔で頭打ちになります。両方を大きくする設定は矛盾しています。
+// 並列度を画像生成側（keyframe.Generator）ではなく保存を持つこちらに置くのは、
+// 1 カットの「生成 → 保存」を 1 つの goroutine で完結させるためです。発射間隔との
+// 関係は ports.Config.MaxConcurrency を参照してください。
 func WithMaxConcurrency(n int) KeyframeRunnerOption {
 	return func(r *CutKeyframeRunner) {
 		if n > 0 {
@@ -126,9 +125,7 @@ func (r *CutKeyframeRunner) GenerateAndSave(ctx context.Context, recipe *video.R
 	return recipe, genErr
 }
 
-// generateAndSaveCuts は未生成のカットを並列に処理します。カットごとに
-// 「生成 → 保存 → レシピへ反映」までを 1 つの goroutine が完結させるため、
-// 保存されないまま失われる画像がありません。
+// generateAndSaveCuts は未生成のカットを並列に処理します。
 //
 // recipe.Cuts の各要素は担当 goroutine だけが書き込むため（添字が重複しない）、
 // 排他は不要です。
@@ -207,7 +204,7 @@ func pendingKeyframeCutPositions(cuts []video.Cut) []int {
 	return pending
 }
 
-// resolveKeyframeBasePath は、RunAndSave / EditAndSave が共通して必要とする保存先ディレクトリと
+// resolveKeyframeBasePath は、GenerateAndSave / EditAndSave が共通して必要とする保存先ディレクトリと
 // インデックス付きキーフレームパスの基点を解決します。
 func resolveKeyframeBasePath(outputPath string) (targetDir string, basePath string, err error) {
 	targetDir = resolveBaseURL(outputPath)
@@ -236,7 +233,7 @@ func keyframeExtensionForMime(mimeType string) string {
 }
 
 // saveKeyframeImage は、basePath から index 番目のキーフレームパスを生成し、画像を保存します。
-// RunAndSave / EditAndSave の両方から使われる共通の保存ロジックです。
+// GenerateAndSave / EditAndSave の両方から使われる共通の保存ロジックです。
 func (r *CutKeyframeRunner) saveKeyframeImage(ctx context.Context, basePath string, index int, image *video.KeyframeImage) (string, error) {
 	keyframePath, err := generateIndexedPath(basePath, index)
 	if err != nil {
@@ -262,19 +259,17 @@ func (r *CutKeyframeRunner) saveKeyframeImage(ctx context.Context, basePath stri
 	return keyframePath, nil
 }
 
-// cutImageEditor is implemented by image generators that can edit an existing single-cut
-// keyframe image using a text instruction, instead of regenerating it from scratch.
+// cutImageEditor は、既存のキーフレーム画像をテキスト指示で編集できる画像生成器が
+// 満たすインターフェースです（作り直しではなく編集）。
 type cutImageEditor interface {
 	EditCut(ctx context.Context, cut video.Cut, editPrompt string) (*video.KeyframeImage, error)
 }
 
-// EditAndSave edits the existing keyframe image of recipe.Cuts[cutPosition] using editPrompt
-// (preserving composition/pose rather than regenerating from scratch), saves the result the
-// same way RunAndSave does, and returns the recipe with the updated KeyframeReference.
+// EditAndSave は ports.CutKeyframeRunner.EditAndSave の実装です。
 //
-// 以前は単一カットのレシピしか受け付けず、呼び出し側が対象カットだけの使い捨てレシピを
-// 組み立ててカットごとにループしていました。レシピ全体と対象位置を受け取ることで、
-// 保存されるメタデータも常に完全なレシピになります。
+// レシピ全体と対象位置を受け取るのは、保存されるメタデータを常に完全なレシピに
+// 保つためです（以前は単一カットのレシピしか受け付けず、呼び出し側が対象カットだけの
+// 使い捨てレシピを組み立ててループしていました）。
 func (r *CutKeyframeRunner) EditAndSave(ctx context.Context, recipe *video.Recipe, cutPosition int, editPrompt string, outputPath string) (*video.Recipe, error) {
 	if recipe == nil {
 		return nil, ports.ErrRecipeRequired

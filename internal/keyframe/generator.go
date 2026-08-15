@@ -18,11 +18,11 @@ import (
 	"github.com/shouni/go-veo-orchestrator/video"
 )
 
-// Generator は、キャラクターの一貫性を保ちながら複数カットのキーフレームを生成します。
+// Generator は、キャラクターの一貫性を保ちながらカットのキーフレームを生成します。
 //
-// 生成の単位は 1 カットです。並列度は保存を持つ runner.CutKeyframeRunner が、発射間隔と
-// 1 回あたりの上限時間は workflow の callGuard が受け持ちます。このパッケージに残るのは
-// 「1 枚をどう組み立ててどう送るか」だけです。
+// 生成の単位は 1 カットで、このパッケージに残るのは「1 枚をどう組み立ててどう送るか」
+// だけです。並列度は runner.CutKeyframeRunner が、発射間隔と 1 回あたりの上限時間は
+// workflow の callGuard が持ちます。
 type Generator struct {
 	characters     *characterkit.Characters
 	generator      imagePorts.ImageGenerator
@@ -64,11 +64,8 @@ func NewGenerator(
 	return g
 }
 
-// GenerateCut は 1 カット分のキーフレームを生成します。
-//
-// 並列実行はここでは行いません。保存を持つ呼び出し側（runner.CutKeyframeRunner）が
-// 1 枚できるたびに保存できるよう、生成の単位を 1 枚に保っています。まとめて生成して
-// から保存すると、途中で落ちた場合に課金済みの画像がメモリごと失われます。
+// GenerateCut は 1 カット分のキーフレームを生成します。並列実行はここでは行いません
+// （呼び出し側が 1 枚ごとに保存できるようにするため — CutKeyframeRunner.GenerateAndSave 参照）。
 //
 // index / total は進捗ログ用（1 始まり）で、生成そのものには影響しません。
 func (g *Generator) GenerateCut(ctx context.Context, cut video.Cut, index, total int) (*video.KeyframeImage, error) {
@@ -93,8 +90,8 @@ func (g *Generator) generateCutKeyframe(ctx context.Context, task keyframeTask) 
 		"キーフレーム生成", task.index+1, char.ID)
 }
 
-// runImageGeneration wraps a single Generate call with the start/complete logging and
-// error message shape shared by generateCutKeyframe and EditCut.
+// runImageGeneration は 1 回の Generate 呼び出しを、開始・完了ログとエラー文言の
+// 体裁で包みます。generateCutKeyframe と EditCut が共有します。
 func (g *Generator) runImageGeneration(
 	ctx context.Context,
 	req imagePorts.ImageRequest,
@@ -134,12 +131,13 @@ func keyframeImageFrom(resp *imagePorts.ImageResponse) *video.KeyframeImage {
 	}
 }
 
-// EditCut edits an existing keyframe image for a single cut using a text instruction
-// (cut.KeyframeReference as the source image), preserving composition/pose/background and
-// changing only what editPrompt specifies. It reuses the same conversational image model as
-// Execute (Gemini's multimodal "Nano Banana" image models support editing an input image via
-// a plain generateContent call), rather than a dedicated edit API — Vertex AI's Imagen
-// mask-based edit/capability models have no supported successor.
+// EditCut は、既存のキーフレーム画像（cut.KeyframeReference を元画像とする）を
+// テキスト指示で編集します。構図・ポーズ・背景は保ったまま、editPrompt が指定した
+// 部分だけを変えます。
+//
+// 専用の編集 API ではなく GenerateCut と同じ対話型の画像モデルを使います。Gemini の
+// マルチモーダル画像モデル（Nano Banana 系）は通常の generateContent で入力画像の
+// 編集ができ、Vertex AI の Imagen マスク編集系モデルには後継が無いためです。
 func (g *Generator) EditCut(ctx context.Context, cut video.Cut, editPrompt string) (*video.KeyframeImage, error) {
 	if cut.KeyframeReference == "" {
 		return nil, fmt.Errorf("cut %d: %w", cut.CutIndex, ports.ErrNoKeyframeToEdit)
@@ -180,16 +178,14 @@ func (g *Generator) buildImageRequest(cut video.Cut, char *characterkit.Characte
 	// g.aspectRatio に一致する参照画像（ReferenceURLs）があればそちらを優先します。
 	referenceURL := char.ReferenceURLFor(g.aspectRatio)
 
-	// gs:// 参照は Vertex AI がそのまま解決するため、ここは参照元 URL を渡すだけでよい
-	// （取得もアップロードも発生しない）。
 	return imagePorts.ImageRequest{
 		GenerationOptions: g.buildGenerationOptions(userPrompt, systemPrompt, char.Seed),
 		Images:            []imagePorts.ImageURI{{ReferenceURL: referenceURL}},
 	}
 }
 
-// buildGenerationOptions builds the GenerationOptions shared by buildImageRequest and EditCut;
-// only the Images field differs between a fresh keyframe generation and an edit of an existing one.
+// buildGenerationOptions は buildImageRequest と EditCut が共有する GenerationOptions を
+// 組み立てます。新規生成と既存画像の編集で違うのは Images だけです。
 func (g *Generator) buildGenerationOptions(prompt, systemPrompt string, seed *int64) imagePorts.GenerationOptions {
 	return imagePorts.GenerationOptions{
 		Model:          g.model,

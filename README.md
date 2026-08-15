@@ -4,16 +4,17 @@
 [![Language](https://img.shields.io/badge/Language-Go-blue)](https://golang.org/)
 [![Go Version](https://img.shields.io/github/go-mod/go-version/shouni/go-veo-orchestrator)](https://golang.org/)
 [![GitHub tag (latest by date)](https://img.shields.io/github/v/tag/shouni/go-veo-orchestrator)](https://github.com/shouni/go-veo-orchestrator/tags)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Go Reference](https://pkg.go.dev/badge/github.com/shouni/go-veo-orchestrator.svg)](https://pkg.go.dev/github.com/shouni/go-veo-orchestrator)
+[![Status](https://img.shields.io/badge/Status-Completed-brightgreen)](#)
 
 ## 🚀 概要 (About)
 
 **Go Veo Orchestrator** は、**Music Recipe（音楽レシピ / 楽曲構成書）** から動画カット列を構造化し、Google の動画生成 AI **Veo (Vertex AI / Gemini API)** へ渡すためのバックエンドオーケストレーターです。
 
-[Vertex Image Kit](https://github.com/shouni/vertex-image-kit) を使ってカットごとのキーフレームを生成し、`VideoRunner` adapter を通じて Veo に **Prompt / Keyframe / Audio / PreviousVideoURI / Seed** を渡します。**Veo API の具体実装はこのリポジトリに含まれず**、`ports.VideoRunner` として差し替える設計です。
+[Vertex Image Kit](https://github.com/shouni/vertex-image-kit) を使ってカットごとのキーフレームを生成し、`VideoRunner` adapter を通じて Veo に **Prompt / Keyframe / Audio / PreviousVideoURI / Seed** を渡します。
 
-`video_id` を次カットの `PreviousVideoURI` として引き継ぐことで、Video-to-Video の文脈を保った連続カット生成を行います。生成済みカットは `status=generated` と `video_id` / `video_url` を使ってスキップできるため、途中失敗後の再開にも対応しやすい構造です。
+`video_id` を次カットの `PreviousVideoURI` として引き継ぐことで、Video-to-Video の文脈を保った連続カット生成を行います。
 
 ---
 
@@ -30,7 +31,7 @@
   キーフレームも同じ考え方で、`keyframe_reference` を持つカットは焼き直しません（`CutKeyframe.GenerateAndSave`）。**1 枚生成するたびに保存する**ため、途中で落ちても失うのは最大 1 枚で、続きから再開できます。焼き直したいカットは `keyframe_reference` を空にしてから渡します（`Cut.ResetGeneration(false)`）。
 
 * **🧩 Adapter-Oriented Architecture**
-  Veo への実通信は `ports.VideoRunner` に閉じ込め、オーケストレーション、キーフレーム生成、メタデータ保存を分離しています。
+  Veo への実通信は `ports.VideoRunner` に閉じ込め、オーケストレーション、キーフレーム生成、メタデータ保存を分離しています。**Veo API の具体実装はこのリポジトリに含まれません**（[実装ガイド](docs/adapter.md)）。
 
 ---
 
@@ -39,7 +40,7 @@
 | ワークフロー | 担当インターフェース | 内容 |
 | --- | --- | --- |
 | **1. Scripting** | `ScriptRunner` | Music Recipe JSON を読み込み、歌詞・section・楽曲展開から、カット割り・カメラワーク・推定秒数を含む **Video Recipe** を生成。 |
-| **2. Cut Keyframe Gen** | `CutKeyframeRunner` | 各カットのキーフレーム画像を、キャラクター Seed と参照画像を使って生成し、**1 枚ごとに保存**（`GenerateAndSave`）。**`keyframe_reference` が既にあるカットは生成しません**。既存キーフレームの局所編集にも対応（`EditAndSave`）。 |
+| **2. Cut Keyframe Gen** | `CutKeyframeRunner` | 各カットのキーフレーム画像を、キャラクター Seed と参照画像を使って生成・保存（`GenerateAndSave`）。既存キーフレームの局所編集にも対応（`EditAndSave`）。 |
 | **3. Video Gen** | `VideoTimelineRunner` + `VideoRunner` | `VideoRequestBuilder` が `VideoGenerationRequest` を組み立て、Veo adapter に順次投入。 |
 | **4. Metadata Publish** | `VideoPublishRunner` | `video_id` / `video_url` / `status` 更新済みの `video_music_meta.json` を保存。 |
 
@@ -47,7 +48,7 @@
 
 ## ⚡ クイックスタート
 
-`workflow.New` に依存を渡して `*ports.Workflows` を組み立て、各 Runner を呼びます。`VideoRunner` が Veo API アダプタの差し込み口です（[実装ガイド](docs/adapter.md)）。
+`workflow.New` に依存を渡して `*ports.Workflows` を組み立て、各 Runner を呼びます。
 
 ```go
 workflows, err := workflow.New(workflow.ManagerArgs{

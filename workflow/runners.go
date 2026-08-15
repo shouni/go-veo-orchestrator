@@ -38,8 +38,6 @@ func (m *manager) buildKeyframeRunner() *runner.CutKeyframeRunner {
 		keyframe.WithNegativePrompt(m.cfg.KeyframeNegativePrompt),
 	)
 
-	// 並列度は保存を持つ runner 側に置く。1 カットの「生成 → 保存」を 1 つの
-	// goroutine で完結させ、落ちても保存済みの分が残るようにするため。
 	return runner.NewCutKeyframeRunner(keyframeGen, m.writer,
 		runner.WithMaxConcurrency(m.cfg.MaxConcurrency))
 }

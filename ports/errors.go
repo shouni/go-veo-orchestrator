@@ -33,7 +33,7 @@ var (
 
 	// ErrNoKeyframeToEdit は、編集対象のカットにまだ既存のキーフレーム画像
 	// （KeyframeReference）が設定されていない場合に返されます。呼び出し側は
-	// これを検知して、先に RunAndSave 等でキーフレームを生成するよう促せます。
+	// これを検知して、先に GenerateAndSave 等でキーフレームを生成するよう促せます。
 	ErrNoKeyframeToEdit = errors.New("cut has no existing keyframe to edit")
 
 	// ErrUnsupportedCutDuration は、カットの尺が、そのカットが解決する Veo の生成モードで

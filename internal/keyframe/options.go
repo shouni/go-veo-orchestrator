@@ -6,10 +6,8 @@ package keyframe
 // 呼び出し側（ports.Config 経由）が決めます。キットが画作りの既定を持つと、
 // 呼び出し側の設定と二重の出所になって黙って食い違うためです。
 //
-// 並列度・発射間隔・リクエストタイムアウトのオプションはここにはありません。
-// 並列度は保存を持つ runner.CutKeyframeRunner が、発射間隔と上限時間は workflow の
-// callGuard が受け持ちます（後者は台本のテキスト生成にも同じリミッターを掛ける必要が
-// あり、クォータはプロジェクト単位のためです）。
+// 並列度・発射間隔・リクエストタイムアウトのオプションはここにはありません
+// （それぞれ runner.CutKeyframeRunner と workflow の callGuard が持ちます）。
 type Option func(*Generator)
 
 // WithAspectRatio は、生成するキーフレーム画像のアスペクト比を設定します
