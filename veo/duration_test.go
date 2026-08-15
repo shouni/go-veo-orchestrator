@@ -1,4 +1,4 @@
-package ports
+package veo
 
 import (
 	"reflect"
@@ -11,14 +11,14 @@ import (
 // reporting "no supported duration", which would make every cut fail validation.
 func TestDurationsForMode(t *testing.T) {
 	tests := []struct {
-		mode VeoGenerationMode
+		mode GenerationMode
 		want []float64
 	}{
-		{VeoModeImageToVideo, []float64{4, 6, 8}},
-		{VeoModeFramesToVideo, []float64{4, 6, 8}},
-		{VeoModeReferenceToVideo, []float64{8}},
-		{VeoModeVideoExtension, []float64{7}},
-		{VeoGenerationMode("unknown"), []float64{4, 6, 8}},
+		{ModeImageToVideo, []float64{4, 6, 8}},
+		{ModeFramesToVideo, []float64{4, 6, 8}},
+		{ModeReferenceToVideo, []float64{8}},
+		{ModeVideoExtension, []float64{7}},
+		{GenerationMode("unknown"), []float64{4, 6, 8}},
 	}
 	for _, tt := range tests {
 		if got := DurationsForMode(tt.mode); !reflect.DeepEqual(got, tt.want) {
@@ -46,20 +46,20 @@ func TestDurationAccessorsReturnCopies(t *testing.T) {
 func TestIsSupportedDuration(t *testing.T) {
 	tests := []struct {
 		duration float64
-		mode     VeoGenerationMode
+		mode     GenerationMode
 		want     bool
 	}{
-		{8, VeoModeImageToVideo, true},
-		{4, VeoModeImageToVideo, true},
-		{5, VeoModeImageToVideo, false},
-		{7, VeoModeImageToVideo, false},
-		{8, VeoModeReferenceToVideo, true},
-		{6, VeoModeReferenceToVideo, false},
-		{7, VeoModeVideoExtension, true},
-		{8, VeoModeVideoExtension, false},
+		{8, ModeImageToVideo, true},
+		{4, ModeImageToVideo, true},
+		{5, ModeImageToVideo, false},
+		{7, ModeImageToVideo, false},
+		{8, ModeReferenceToVideo, true},
+		{6, ModeReferenceToVideo, false},
+		{7, ModeVideoExtension, true},
+		{8, ModeVideoExtension, false},
 		// 誤差拡散などで生じる微小なズレは同値として扱う。
-		{8.0000000001, VeoModeImageToVideo, true},
-		{0, VeoModeImageToVideo, false},
+		{8.0000000001, ModeImageToVideo, true},
+		{0, ModeImageToVideo, false},
 	}
 	for _, tt := range tests {
 		if got := IsSupportedDuration(tt.duration, tt.mode); got != tt.want {
@@ -103,8 +103,8 @@ func TestChainDurations(t *testing.T) {
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("ChainDurations(image_to_video) = %v, want %v", got, want)
 	}
-	if longest := got[len(got)-1]; longest+VeoVideoExtensionDurationSec <= VeoContinuationMaxDurationSec {
-		t.Errorf("longest chain %v could still be extended without reaching the cap %v", longest, VeoContinuationMaxDurationSec)
+	if longest := got[len(got)-1]; longest+VideoExtensionDurationSec <= ContinuationMaxDurationSec {
+		t.Errorf("longest chain %v could still be extended without reaching the cap %v", longest, ContinuationMaxDurationSec)
 	}
 
 	got = ChainDurations(ReferenceToVideoDurationsSec())

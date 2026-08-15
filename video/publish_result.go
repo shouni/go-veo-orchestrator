@@ -1,4 +1,4 @@
-package ports
+package video
 
 // PublishResult はパブリッシュ処理の結果として生成されたファイルの情報を保持します。
 type PublishResult struct {

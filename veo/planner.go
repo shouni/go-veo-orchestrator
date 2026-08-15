@@ -1,10 +1,11 @@
-package ports
+package veo
 
 import (
 	"math"
 	"strings"
 
 	characterkit "github.com/shouni/go-character-kit/character"
+	"github.com/shouni/go-veo-orchestrator/video"
 )
 
 // このファイルは「カット尺のプランナー」— レシピ上の任意尺のカット列を、Veo が
@@ -23,7 +24,7 @@ import (
 // usePreviousVideo が true の場合、原則として先頭カット以降（PreviousVideoURI を伴い
 // video_extension で生成される想定のカット）は image_to_video 用の {4,6,8} ではなく 7 秒固定へ
 // 揃えます。ただし video_extension は「前の動画」として渡せる累積尺に上限
-// (VeoContinuationMaxDurationSec) があり、これを超えると Veo 側が
+// (ContinuationMaxDurationSec) があり、これを超えると Veo 側が
 // "Video duration N seconds exceeds the maximum duration 30 seconds" (code=3) で拒否するため、
 // 累積尺が上限に達する手前でチェーンをリセットします。リセットされたカットは
 // PreviousVideoURI を使わない新規ベース（image_to_video、{4,6,8}秒）として扱われ、
@@ -40,7 +41,7 @@ import (
 //
 // characters と referenceImagesSupported は、各カットが reference_to_video（referenceImages、
 // 8秒固定）と image_to_video（{4,6,8}秒）のどちらで生成されるかを判定するために使います。
-// 判定は実際のリクエスト組み立てと同じ規則（CutReferenceImages）を ClassifyVeoRequest に
+// 判定は実際のリクエスト組み立てと同じ規則（CutReferenceImages）を ClassifyRequest に
 // 掛けたものです（詳細は CutUsesReferenceImages）。
 //
 // usePreviousVideo が true のとき、シーン分割側が事前計画したチェーンブロック
@@ -49,10 +50,10 @@ import (
 // ブロック尺は計画時点で累積上限内に収まる候補値なので、ブロック途中で技術的リセットが
 // 発生することはありません。IsChainStart を持たない未生成カット（旧レシピなど）は
 // 従来どおり貪欲な分割と累積尺ベースのチェーン形成で処理します。
-func ExpandCutsToSupportedDurations(cuts []Cut, usePreviousVideo bool, characters *characterkit.Characters, referenceImagesSupported bool) []Cut {
-	expanded := make([]Cut, 0, len(cuts))
+func ExpandCutsToSupportedDurations(cuts []video.Cut, usePreviousVideo bool, characters *characterkit.Characters, referenceImagesSupported bool) []video.Cut {
+	expanded := make([]video.Cut, 0, len(cuts))
 	for _, cut := range cuts {
-		var subCuts []Cut
+		var subCuts []video.Cut
 		if usePreviousVideo && cut.IsChainStart && !cut.IsGenerated() {
 			subCuts = splitChainCutIntoSupportedDurations(cut, AllowedCutDurations(cut, characters, referenceImagesSupported))
 		} else {
@@ -101,7 +102,7 @@ func ExpandCutsToSupportedDurations(cuts []Cut, usePreviousVideo bool, character
 		if isSectionStart {
 			cumulative = 0
 		}
-		if expanded[i].IsChainStart || cumulative == 0 || cumulative+VeoVideoExtensionDurationSec > VeoContinuationMaxDurationSec {
+		if expanded[i].IsChainStart || cumulative == 0 || cumulative+VideoExtensionDurationSec > ContinuationMaxDurationSec {
 			// 新規チェーンの先頭（曲頭、セクション境界、リセット直後、または事前計画
 			// されたチェーンブロックの起点）。分割時に既に割り当てた尺
 			// （image_to_videoなら{4,6,8}秒、reference_to_videoなら8秒固定）をそのまま使う。
@@ -111,9 +112,9 @@ func ExpandCutsToSupportedDurations(cuts []Cut, usePreviousVideo bool, character
 			}
 			continue
 		}
-		expanded[i].DurationSec = VeoVideoExtensionDurationSec
-		expanded[i].EndSec = expanded[i].StartSec + VeoVideoExtensionDurationSec
-		cumulative += VeoVideoExtensionDurationSec
+		expanded[i].DurationSec = VideoExtensionDurationSec
+		expanded[i].EndSec = expanded[i].StartSec + VideoExtensionDurationSec
+		cumulative += VideoExtensionDurationSec
 	}
 	return expanded
 }
@@ -122,7 +123,7 @@ func ExpandCutsToSupportedDurations(cuts []Cut, usePreviousVideo bool, character
 // image_to_video のどちらで生成されるかに応じて、Veo がそのカットに対して受け付ける尺
 // （秒）の候補リストを返します（referenceImagesSupported が false の場合、モデルが
 // referenceImages に対応していないため image_to_video 用の {4,6,8} を返します）。
-func AllowedCutDurations(cut Cut, characters *characterkit.Characters, referenceImagesSupported bool) []float64 {
+func AllowedCutDurations(cut video.Cut, characters *characterkit.Characters, referenceImagesSupported bool) []float64 {
 	if CutUsesReferenceImages(cut, characters, referenceImagesSupported) {
 		return ReferenceToVideoDurationsSec()
 	}
@@ -131,15 +132,15 @@ func AllowedCutDurations(cut Cut, characters *characterkit.Characters, reference
 
 // CutUsesReferenceImages は、このカットが Veo の referenceImages（reference_to_video）で
 // 生成されるかを返します。実際の生成が組むのと同じ参照画像リスト（CutReferenceImages）で
-// リクエストを分類する（ClassifyVeoRequest）ため、尺の正規化と実際の生成が使う判定は
+// リクエストを分類する（ClassifyRequest）ため、尺の正規化と実際の生成が使う判定は
 // 構造的に一致します。
-func CutUsesReferenceImages(cut Cut, characters *characterkit.Characters, referenceImagesSupported bool) bool {
-	req := VideoGenerationRequest{
+func CutUsesReferenceImages(cut video.Cut, characters *characterkit.Characters, referenceImagesSupported bool) bool {
+	req := video.GenerationRequest{
 		ImageReference:  cut.KeyframeReference,
-		ReferenceImages: CutReferenceImages(cut, characters),
+		ReferenceImages: video.CutReferenceImages(cut, characters),
 	}
-	caps := VeoCapabilities{ReferenceImages: referenceImagesSupported}
-	return ClassifyVeoRequest(req, false, caps) == VeoModeReferenceToVideo
+	caps := Capabilities{ReferenceImages: referenceImagesSupported}
+	return ClassifyRequest(req, false, caps) == ModeReferenceToVideo
 }
 
 // SplitCutBySupportedDurations は1カットをサポート尺のサブカット列へ分割します。
@@ -148,15 +149,15 @@ func CutUsesReferenceImages(cut Cut, characters *characterkit.Characters, refere
 // 事前に決定します（reference_to_videoなら{8}、image_to_videoなら{4,6,8}）。
 // CutIndex の振り直しは行いません（シーン分割など、呼び出し側が自前の採番を持つ
 // 経路から使うため。全体の正規化には ExpandCutsToSupportedDurations を使ってください）。
-func SplitCutBySupportedDurations(cut Cut, allowedDurations []float64) []Cut {
+func SplitCutBySupportedDurations(cut video.Cut, allowedDurations []float64) []video.Cut {
 	if cut.IsGenerated() {
-		return []Cut{cut}
+		return []video.Cut{cut}
 	}
 	duration := cut.EffectiveDurationSec()
-	if duration <= VeoMaxCutDurationSec {
+	if duration <= MaxCutDurationSec {
 		cut.DurationSec = SnapDuration(duration, allowedDurations)
 		cut.EndSec = cut.StartSec + cut.DurationSec
-		return []Cut{cut}
+		return []video.Cut{cut}
 	}
 
 	// 貪欲に8秒上限で分割し、末尾の端数のみサポート尺へ丸める。
@@ -165,8 +166,8 @@ func SplitCutBySupportedDurations(cut Cut, allowedDurations []float64) []Cut {
 	// ありますが、Veo の個別カット生成としては問題ないため仕様として許容しています。
 	var durations []float64
 	for remaining := duration; remaining > 0; {
-		d := VeoMaxCutDurationSec
-		if remaining < VeoMaxCutDurationSec {
+		d := MaxCutDurationSec
+		if remaining < MaxCutDurationSec {
 			d = SnapDuration(remaining, allowedDurations)
 		}
 		durations = append(durations, d)
@@ -181,8 +182,8 @@ func SplitCutBySupportedDurations(cut Cut, allowedDurations []float64) []Cut {
 // から順に連続配置し、親カットの歌詞（Dialogue）を行単位でサブカットへ均等配分します。
 // サブ尺リストの計算方法（貪欲な8秒上限 vs [ベース, 7秒, ...]）だけが呼び出し元ごとに
 // 異なり、そこから先の組み立ては共通です。
-func buildSubCutsFromDurations(cut Cut, durations []float64) []Cut {
-	subCuts := make([]Cut, 0, len(durations))
+func buildSubCutsFromDurations(cut video.Cut, durations []float64) []video.Cut {
+	subCuts := make([]video.Cut, 0, len(durations))
 	offset := 0.0
 	for i, d := range durations {
 		sub := cut
@@ -213,28 +214,28 @@ func buildSubCutsFromDurations(cut Cut, durations []float64) []Cut {
 // reference_to_video のカット（ベース8秒固定）に {4,6} ベース前提のブロック尺（11秒など）が
 // 計画されていた場合、ベースは allowedBases へ丸められるため実現尺が計画と数秒ずれますが、
 // 計画側も同じ CutUsesReferenceImages 判定で候補を選ぶため通常は一致します。
-func splitChainCutIntoSupportedDurations(cut Cut, allowedBases []float64) []Cut {
+func splitChainCutIntoSupportedDurations(cut video.Cut, allowedBases []float64) []video.Cut {
 	duration := cut.EffectiveDurationSec()
-	if duration <= VeoMaxCutDurationSec {
+	if duration <= MaxCutDurationSec {
 		cut.DurationSec = SnapDuration(duration, allowedBases)
 		cut.EndSec = cut.StartSec + cut.DurationSec
-		return []Cut{cut}
+		return []video.Cut{cut}
 	}
-	extensions := int(math.Ceil((duration - VeoMaxCutDurationSec) / VeoVideoExtensionDurationSec))
-	base := SnapDuration(duration-float64(extensions)*VeoVideoExtensionDurationSec, allowedBases)
+	extensions := int(math.Ceil((duration - MaxCutDurationSec) / VideoExtensionDurationSec))
+	base := SnapDuration(duration-float64(extensions)*VideoExtensionDurationSec, allowedBases)
 
 	// [ベース, 7秒 × extensions] のサブ尺列を組み立てる。
 	durations := make([]float64, 0, extensions+1)
 	durations = append(durations, base)
 	for i := 0; i < extensions; i++ {
-		durations = append(durations, VeoVideoExtensionDurationSec)
+		durations = append(durations, VideoExtensionDurationSec)
 	}
 	return buildSubCutsFromDurations(cut, durations)
 }
 
 // CapCutsTotalDuration は合計尺が maxSec を超えないよう、超過するカット以降を切り詰めます。
 // 少なくとも先頭の1カットは残します。
-func CapCutsTotalDuration(cuts []Cut, maxSec float64) []Cut {
+func CapCutsTotalDuration(cuts []video.Cut, maxSec float64) []video.Cut {
 	total := 0.0
 	for i, cut := range cuts {
 		if i > 0 && total+cut.DurationSec > maxSec {
@@ -251,7 +252,7 @@ func CapCutsTotalDuration(cuts []Cut, maxSec float64) []Cut {
 // 継続チェーンでは、対象カットの動画を作り直すと後続カットの PreviousVideoURI が指す
 // 動画が古いままになります。そのため次のチェーン起点の手前までをまとめて作り直します。
 // usePreviousVideo=false ではカット同士が動画で繋がらないため、対象カット 1 枚で閉じます。
-func ChainTailEnd(cuts []Cut, target int, usePreviousVideo bool) int {
+func ChainTailEnd(cuts []video.Cut, target int, usePreviousVideo bool) int {
 	if !usePreviousVideo {
 		return target
 	}
@@ -268,8 +269,8 @@ func ChainTailEnd(cuts []Cut, target int, usePreviousVideo bool) int {
 // isChainBase は、このカットがチェーンの起点（ベース）かを返します。
 // 事前計画されたチェーンは IsChainStart を持ちますが、旧レシピは貪欲な分割で
 // 7秒以外の尺がベースになるため、どちらの手掛かりも見ます。
-func isChainBase(cut Cut) bool {
-	return cut.IsChainStart || cut.DurationSec != VeoVideoExtensionDurationSec
+func isChainBase(cut video.Cut) bool {
+	return cut.IsChainStart || cut.DurationSec != VideoExtensionDurationSec
 }
 
 // SplitDialogueLines は歌詞テキストを空行を除いた行スライスへ分解します。

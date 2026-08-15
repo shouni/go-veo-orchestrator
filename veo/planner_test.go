@@ -1,17 +1,19 @@
-package ports
+package veo
 
 import (
 	"testing"
+
+	"github.com/shouni/go-veo-orchestrator/video"
 )
 
 // TestExpandCutsToSupportedDurationsUsePreviousVideo verifies that, when usePreviousVideo is
 // enabled, every cut after the first is normalized to Veo's video_extension duration (7s)
 // instead of the image_to_video set ({4,6,8}), since those cuts carry a PreviousVideoURI.
 func TestExpandCutsToSupportedDurationsUsePreviousVideo(t *testing.T) {
-	cuts := []Cut{
-		{CutIndex: 1, AudioSync: AudioSync{StartSec: 90, DurationSec: 8}},
-		{CutIndex: 2, AudioSync: AudioSync{StartSec: 98, DurationSec: 8}},
-		{CutIndex: 3, AudioSync: AudioSync{StartSec: 106, DurationSec: 8}},
+	cuts := []video.Cut{
+		{CutIndex: 1, AudioSync: video.AudioSync{StartSec: 90, DurationSec: 8}},
+		{CutIndex: 2, AudioSync: video.AudioSync{StartSec: 98, DurationSec: 8}},
+		{CutIndex: 3, AudioSync: video.AudioSync{StartSec: 106, DurationSec: 8}},
 	}
 
 	got := ExpandCutsToSupportedDurations(cuts, true, nil, false)
@@ -23,10 +25,10 @@ func TestExpandCutsToSupportedDurationsUsePreviousVideo(t *testing.T) {
 		t.Errorf("cut[0] duration = %v, want 8 (no previous video)", got[0].DurationSec)
 	}
 	for i := 1; i < len(got); i++ {
-		if got[i].DurationSec != VeoVideoExtensionDurationSec {
-			t.Errorf("cut[%d] duration = %v, want %v (video_extension)", i, got[i].DurationSec, VeoVideoExtensionDurationSec)
+		if got[i].DurationSec != VideoExtensionDurationSec {
+			t.Errorf("cut[%d] duration = %v, want %v (video_extension)", i, got[i].DurationSec, VideoExtensionDurationSec)
 		}
-		wantEnd := got[i].StartSec + VeoVideoExtensionDurationSec
+		wantEnd := got[i].StartSec + VideoExtensionDurationSec
 		if got[i].EndSec != wantEnd {
 			t.Errorf("cut[%d] end = %v, want %v", i, got[i].EndSec, wantEnd)
 		}
@@ -37,13 +39,13 @@ func TestExpandCutsToSupportedDurationsUsePreviousVideo(t *testing.T) {
 // keep their recorded duration even when usePreviousVideo is enabled, so resuming a job never
 // rewrites metadata for cuts whose video already exists.
 func TestExpandCutsToSupportedDurationsSkipsGeneratedCuts(t *testing.T) {
-	cuts := []Cut{
+	cuts := []video.Cut{
 		{
-			CutIndex:    1,
-			AudioSync:   AudioSync{StartSec: 90, DurationSec: 8},
-			VideoResult: VideoResult{Status: CutStatusGenerated, VideoID: "gs://bucket/cut_01.mp4"},
+			CutIndex:  1,
+			AudioSync: video.AudioSync{StartSec: 90, DurationSec: 8},
+			Result:    video.Result{Status: video.CutStatusGenerated, VideoID: "gs://bucket/cut_01.mp4"},
 		},
-		{CutIndex: 2, AudioSync: AudioSync{StartSec: 98, DurationSec: 8}},
+		{CutIndex: 2, AudioSync: video.AudioSync{StartSec: 98, DurationSec: 8}},
 	}
 
 	got := ExpandCutsToSupportedDurations(cuts, true, nil, false)
@@ -51,17 +53,17 @@ func TestExpandCutsToSupportedDurationsSkipsGeneratedCuts(t *testing.T) {
 	if got[0].DurationSec != 8 {
 		t.Errorf("generated cut[0] duration = %v, want unchanged 8", got[0].DurationSec)
 	}
-	if got[1].DurationSec != VeoVideoExtensionDurationSec {
-		t.Errorf("cut[1] duration = %v, want %v", got[1].DurationSec, VeoVideoExtensionDurationSec)
+	if got[1].DurationSec != VideoExtensionDurationSec {
+		t.Errorf("cut[1] duration = %v, want %v", got[1].DurationSec, VideoExtensionDurationSec)
 	}
 }
 
 // TestExpandCutsToSupportedDurationsDisabled verifies the previous {4,6,8} snapping behavior is
 // unchanged when usePreviousVideo is false (e.g. SectionSelectFilter's initial split/cap pass).
 func TestExpandCutsToSupportedDurationsDisabled(t *testing.T) {
-	cuts := []Cut{
-		{CutIndex: 1, AudioSync: AudioSync{StartSec: 0, DurationSec: 8}},
-		{CutIndex: 2, AudioSync: AudioSync{StartSec: 8, DurationSec: 8}},
+	cuts := []video.Cut{
+		{CutIndex: 1, AudioSync: video.AudioSync{StartSec: 0, DurationSec: 8}},
+		{CutIndex: 2, AudioSync: video.AudioSync{StartSec: 8, DurationSec: 8}},
 	}
 
 	got := ExpandCutsToSupportedDurations(cuts, false, nil, false)
@@ -80,14 +82,14 @@ func TestExpandCutsToSupportedDurationsDisabled(t *testing.T) {
 // to also become a reset, because the cumulative counter kept summing every generated cut's
 // duration forever instead of restarting from a generated cut that was itself a chain start.
 func TestExpandCutsToSupportedDurationsResumedGenerationDoesNotCascadeReset(t *testing.T) {
-	cuts := []Cut{
-		{CutIndex: 1, AudioSync: AudioSync{StartSec: 40, DurationSec: 8}},
-		{CutIndex: 2, AudioSync: AudioSync{StartSec: 48, DurationSec: 8}},
-		{CutIndex: 3, AudioSync: AudioSync{StartSec: 56, DurationSec: 8}},
-		{CutIndex: 4, AudioSync: AudioSync{StartSec: 64, DurationSec: 8}},
-		{CutIndex: 5, AudioSync: AudioSync{StartSec: 72, DurationSec: 8}},
-		{CutIndex: 6, AudioSync: AudioSync{StartSec: 80, DurationSec: 8}},
-		{CutIndex: 7, AudioSync: AudioSync{StartSec: 88, DurationSec: 8}},
+	cuts := []video.Cut{
+		{CutIndex: 1, AudioSync: video.AudioSync{StartSec: 40, DurationSec: 8}},
+		{CutIndex: 2, AudioSync: video.AudioSync{StartSec: 48, DurationSec: 8}},
+		{CutIndex: 3, AudioSync: video.AudioSync{StartSec: 56, DurationSec: 8}},
+		{CutIndex: 4, AudioSync: video.AudioSync{StartSec: 64, DurationSec: 8}},
+		{CutIndex: 5, AudioSync: video.AudioSync{StartSec: 72, DurationSec: 8}},
+		{CutIndex: 6, AudioSync: video.AudioSync{StartSec: 80, DurationSec: 8}},
+		{CutIndex: 7, AudioSync: video.AudioSync{StartSec: 88, DurationSec: 8}},
 	}
 
 	// Simulate one Cloud Tasks invocation per cut: re-expand the whole list (as
@@ -95,14 +97,14 @@ func TestExpandCutsToSupportedDurationsResumedGenerationDoesNotCascadeReset(t *t
 	// pending cut, marking IsChainStart exactly as runDirect does.
 	for next := 0; next < len(cuts); next++ {
 		cuts = ExpandCutsToSupportedDurations(cuts, true, nil, false)
-		if cuts[next].DurationSec != VeoVideoExtensionDurationSec {
+		if cuts[next].DurationSec != VideoExtensionDurationSec {
 			cuts[next].IsChainStart = true
 		}
-		cuts[next].Status = CutStatusGenerated
+		cuts[next].Status = video.CutStatusGenerated
 	}
 
 	// 8,7,7 (chain1, cumulative 8->15->22) then reset at cut4 (chain2: 8,7,7) then
-	// reset at cut7 (chain3: 8). VeoContinuationMaxDurationSec=24 caps each chain at 2
+	// reset at cut7 (chain3: 8). ContinuationMaxDurationSec=24 caps each chain at 2
 	// video_extension continuations (not 3) to limit color-drift accumulation.
 	wantDurations := []float64{8, 7, 7, 8, 7, 7, 8}
 	wantChainStart := []bool{true, false, false, true, false, false, true}
@@ -119,15 +121,15 @@ func TestExpandCutsToSupportedDurationsResumedGenerationDoesNotCascadeReset(t *t
 // TestExpandCutsToSupportedDurationsSectionBoundaryForcesReset verifies that a section change
 // resets the cumulative-duration chain even though the technical cap hasn't been reached, and
 // that only the section-boundary cut is marked IsSectionStart (not ordinary technical resets).
-// Section membership comes directly from cut.SectionIndex (as VideoRecipe.Normalize would set
+// Section membership comes directly from cut.SectionIndex (as video.Recipe.Normalize would set
 // it from StartSec), not from a separately-passed sections list.
 // Note: IsChainStart itself is set later by runDirect (video_gen.go), not by this function.
 func TestExpandCutsToSupportedDurationsSectionBoundaryForcesReset(t *testing.T) {
-	cuts := []Cut{
-		{CutIndex: 1, SectionIndex: 1, AudioSync: AudioSync{StartSec: 0, DurationSec: 8}},  // Verse start (i==0, not a "section boundary")
-		{CutIndex: 2, SectionIndex: 1, AudioSync: AudioSync{StartSec: 8, DurationSec: 8}},  // still Verse, would continue (cumulative 8+7=15<=30)
-		{CutIndex: 3, SectionIndex: 2, AudioSync: AudioSync{StartSec: 16, DurationSec: 8}}, // Chorus start: section boundary despite cumulative headroom
-		{CutIndex: 4, SectionIndex: 2, AudioSync: AudioSync{StartSec: 24, DurationSec: 8}}, // still Chorus, continuation
+	cuts := []video.Cut{
+		{CutIndex: 1, SectionIndex: 1, AudioSync: video.AudioSync{StartSec: 0, DurationSec: 8}},  // Verse start (i==0, not a "section boundary")
+		{CutIndex: 2, SectionIndex: 1, AudioSync: video.AudioSync{StartSec: 8, DurationSec: 8}},  // still Verse, would continue (cumulative 8+7=15<=30)
+		{CutIndex: 3, SectionIndex: 2, AudioSync: video.AudioSync{StartSec: 16, DurationSec: 8}}, // Chorus start: section boundary despite cumulative headroom
+		{CutIndex: 4, SectionIndex: 2, AudioSync: video.AudioSync{StartSec: 24, DurationSec: 8}}, // still Chorus, continuation
 	}
 
 	got := ExpandCutsToSupportedDurations(cuts, true, nil, false)
@@ -139,8 +141,8 @@ func TestExpandCutsToSupportedDurationsSectionBoundaryForcesReset(t *testing.T) 
 		}
 	}
 	// cut[1] is an ordinary continuation: forced to the video_extension duration (7s).
-	if got[1].DurationSec != VeoVideoExtensionDurationSec {
-		t.Errorf("cut[1] duration = %v, want %v (ordinary continuation)", got[1].DurationSec, VeoVideoExtensionDurationSec)
+	if got[1].DurationSec != VideoExtensionDurationSec {
+		t.Errorf("cut[1] duration = %v, want %v (ordinary continuation)", got[1].DurationSec, VideoExtensionDurationSec)
 	}
 	// cut[2] is the section boundary: it must keep its snapped base duration (8s), not be
 	// forced to the technical reset's 7s continuation value.
@@ -153,9 +155,9 @@ func TestExpandCutsToSupportedDurationsSectionBoundaryForcesReset(t *testing.T) 
 // SectionIndex (the zero value, e.g. recipes predating this field) behave exactly like before
 // section-boundary detection existed: no section-start resets are inferred.
 func TestExpandCutsToSupportedDurationsZeroSectionIndexIsNoop(t *testing.T) {
-	cuts := []Cut{
-		{CutIndex: 1, AudioSync: AudioSync{StartSec: 0, DurationSec: 8}},
-		{CutIndex: 2, AudioSync: AudioSync{StartSec: 8, DurationSec: 8}},
+	cuts := []video.Cut{
+		{CutIndex: 1, AudioSync: video.AudioSync{StartSec: 0, DurationSec: 8}},
+		{CutIndex: 2, AudioSync: video.AudioSync{StartSec: 8, DurationSec: 8}},
 	}
 
 	got := ExpandCutsToSupportedDurations(cuts, true, nil, false)
@@ -168,26 +170,26 @@ func TestExpandCutsToSupportedDurationsZeroSectionIndexIsNoop(t *testing.T) {
 }
 
 func TestExpandCutsToSupportedDurationsRespectsSceneSplitReset(t *testing.T) {
-	cuts := []Cut{
+	cuts := []video.Cut{
 		{
 			CutIndex:       1,
 			VisualAnchor:   "scene 1",
-			AudioSync:      AudioSync{StartSec: 0, DurationSec: 15},
-			KeyframeResult: KeyframeResult{KeyframeReference: "gs://bucket/scene1.png"},
+			AudioSync:      video.AudioSync{StartSec: 0, DurationSec: 15},
+			KeyframeResult: video.KeyframeResult{KeyframeReference: "gs://bucket/scene1.png"},
 		},
 		{
 			CutIndex:       2,
 			VisualAnchor:   "scene 2",
-			AudioSync:      AudioSync{StartSec: 15, DurationSec: 15},
-			KeyframeResult: KeyframeResult{KeyframeReference: "gs://bucket/scene2.png"},
-			ChainControl:   ChainControl{IsSectionStart: true},
+			AudioSync:      video.AudioSync{StartSec: 15, DurationSec: 15},
+			KeyframeResult: video.KeyframeResult{KeyframeReference: "gs://bucket/scene2.png"},
+			ChainControl:   video.ChainControl{IsSectionStart: true},
 		},
 		{
 			CutIndex:       3,
 			VisualAnchor:   "scene 3",
-			AudioSync:      AudioSync{StartSec: 30, DurationSec: 22},
-			KeyframeResult: KeyframeResult{KeyframeReference: "gs://bucket/scene3.png"},
-			ChainControl:   ChainControl{IsSectionStart: true},
+			AudioSync:      video.AudioSync{StartSec: 30, DurationSec: 22},
+			KeyframeResult: video.KeyframeResult{KeyframeReference: "gs://bucket/scene3.png"},
+			ChainControl:   video.ChainControl{IsSectionStart: true},
 		},
 	}
 
@@ -231,10 +233,10 @@ func TestVideoToVideoChainDurations(t *testing.T) {
 // realized as [base, 7s, 7s...] and never rewritten by the cumulative-duration chain logic, so
 // the durations scene_split allocated against the song timeline survive to actual generation.
 func TestExpandCutsToSupportedDurationsPlannedChainBlocks(t *testing.T) {
-	cuts := []Cut{
-		{CutIndex: 1, AudioSync: AudioSync{StartSec: 0, DurationSec: 8}, ChainControl: ChainControl{IsChainStart: true}},
-		{CutIndex: 2, AudioSync: AudioSync{StartSec: 8, DurationSec: 11}, ChainControl: ChainControl{IsChainStart: true}},
-		{CutIndex: 3, AudioSync: AudioSync{StartSec: 19, DurationSec: 20}, ChainControl: ChainControl{IsChainStart: true, IsSectionStart: true}},
+	cuts := []video.Cut{
+		{CutIndex: 1, AudioSync: video.AudioSync{StartSec: 0, DurationSec: 8}, ChainControl: video.ChainControl{IsChainStart: true}},
+		{CutIndex: 2, AudioSync: video.AudioSync{StartSec: 8, DurationSec: 11}, ChainControl: video.ChainControl{IsChainStart: true}},
+		{CutIndex: 3, AudioSync: video.AudioSync{StartSec: 19, DurationSec: 20}, ChainControl: video.ChainControl{IsChainStart: true, IsSectionStart: true}},
 	}
 
 	got := ExpandCutsToSupportedDurations(cuts, true, nil, false)
@@ -269,9 +271,9 @@ func TestExpandCutsToSupportedDurationsPlannedChainBlocks(t *testing.T) {
 // Durations must be stable across re-expansion — a 7s extension must not be re-snapped to 8s,
 // and a 4s/6s base must keep its planned duration.
 func TestExpandCutsToSupportedDurationsPlannedChainBlocksStableOnResume(t *testing.T) {
-	cuts := []Cut{
-		{CutIndex: 1, AudioSync: AudioSync{StartSec: 0, DurationSec: 8}, ChainControl: ChainControl{IsChainStart: true}},
-		{CutIndex: 2, AudioSync: AudioSync{StartSec: 8, DurationSec: 11}, ChainControl: ChainControl{IsChainStart: true}},
+	cuts := []video.Cut{
+		{CutIndex: 1, AudioSync: video.AudioSync{StartSec: 0, DurationSec: 8}, ChainControl: video.ChainControl{IsChainStart: true}},
+		{CutIndex: 2, AudioSync: video.AudioSync{StartSec: 8, DurationSec: 11}, ChainControl: video.ChainControl{IsChainStart: true}},
 	}
 	cuts = ExpandCutsToSupportedDurations(cuts, true, nil, false)
 	wantDurations := []float64{8, 4, 7}
@@ -286,7 +288,7 @@ func TestExpandCutsToSupportedDurationsPlannedChainBlocksStableOnResume(t *testi
 				t.Errorf("resume %d: cut[%d].DurationSec = %v, want %v", next, i, cuts[i].DurationSec, wantDurations[i])
 			}
 		}
-		cuts[next].Status = CutStatusGenerated
+		cuts[next].Status = video.CutStatusGenerated
 		cuts[next].VideoID = "gs://bucket/video.mp4"
 	}
 }
@@ -295,9 +297,9 @@ func TestExpandCutsToSupportedDurationsPlannedChainBlocksStableOnResume(t *testi
 // split into multiple sub-cuts (splitCutBySupportedDurations) carries its SectionIndex to every
 // sub-cut, so the split itself is never mistaken for a section boundary.
 func TestExpandCutsToSupportedDurationsPreservesSectionIndexAcrossSplit(t *testing.T) {
-	cuts := []Cut{
-		{CutIndex: 1, SectionIndex: 1, AudioSync: AudioSync{StartSec: 0, DurationSec: 20}},
-		{CutIndex: 2, SectionIndex: 2, AudioSync: AudioSync{StartSec: 20, DurationSec: 8}},
+	cuts := []video.Cut{
+		{CutIndex: 1, SectionIndex: 1, AudioSync: video.AudioSync{StartSec: 0, DurationSec: 20}},
+		{CutIndex: 2, SectionIndex: 2, AudioSync: video.AudioSync{StartSec: 20, DurationSec: 8}},
 	}
 
 	got := ExpandCutsToSupportedDurations(cuts, true, nil, false)

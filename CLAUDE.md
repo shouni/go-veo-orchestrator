@@ -24,52 +24,64 @@ Go version is pinned in `go.mod` (currently 1.26) — `setup-go` reads it from t
 
 ## Architecture
 
-Four packages, strict dependency direction: `ports` is the contract layer everything else depends on; `keyframe` and `runner` implement pieces against those contracts; `workflow` wires concrete implementations together into the public `ports.Workflows` struct. Never import `runner` or `keyframe` from `ports`.
+Six packages, strict one-way dependency: `video → ports → veo → {keyframe, runner} → workflow`. `video` depends on nothing in-repo; `workflow` depends on everything. Never import `runner`, `keyframe` or `workflow` from `video`, `ports` or `veo`.
 
 ```
-ports/     Interfaces (VideoRunner, ScriptPrompt, KeyframePrompt, ...), domain models
-           (VideoRecipe, Cut, VideoGenerationRequest), Veo request classification and
-           duration rules (veo_mode.go, veo_duration.go), Config, sentinel errors. Everything
-           else depends on this package; it depends on nothing else in-repo.
-keyframe/  Generator (per-cut keyframe image generation, parallel across cuts). It holds
-           the character definitions directly and passes each cut's gs:// reference URL
-           straight through — Vertex AI resolves it, so nothing is fetched or uploaded.
-           Concurrency lives here; rate interval and per-call timeout live in workflow.
+video/     Domain model: Recipe, Cut, Cuts and their methods, GenerationRequest,
+           Response, KeyframeImage, PublishResult, the MusicRecipe aliases, and the
+           recipe JSON Schema. Leaf package — depends on nothing else in-repo.
+ports/     Contracts only: VideoRunner (+ the optional ReferenceImagesSupporter /
+           LastFrameSupporter an adapter may implement), ScriptPrompt, KeyframePrompt,
+           CutImageGenerator, ContentReader, the four Runner interfaces, Workflows,
+           Config, sentinel errors. Imports video; holds no algorithms.
+veo/       Veo API constraints: which generation mode a request resolves to
+           (ClassifyRequest), which durations each mode allows, and cut planning
+           (splitting, capping, chain durations). No API calls happen here.
+keyframe/  Generator: builds and sends the image request for ONE cut. Holds the
+           character definitions and passes each cut's gs:// reference URL straight
+           through — Vertex AI resolves it, so nothing is fetched or uploaded.
 runner/    Concrete Runner implementations: VideoScriptRunner, CutKeyframeRunner,
            VideoTimelineRunner (+ VideoRequestBuilder), VideoPublisherRunner.
-workflow/  manager: workflow.New(ManagerArgs) builds the generationUnit (image core +
-           generator) and all four Runners, returning *ports.Workflows. This is the one
-           package an external caller imports to construct the library; ManagerArgs.VideoRunner
+           Owns keyframe concurrency, because it also owns the saving.
+workflow/  manager: workflow.New(ManagerArgs) builds the guarded image generator and
+           all four Runners, returning *ports.Workflows. This is the one package an
+           external caller imports to construct the library; ManagerArgs.VideoRunner
            is the injection point for the real Veo adapter.
 ```
+
+`ports` used to hold all of the above. It was split because a package named for its contracts should not also be where the domain model and 550 lines of Veo duration algebra live — the same reason go-comic-kit separated `comic` from `ports`. Of the 39 symbols ap-mv imported from the old `ports`, only six were actually contracts.
 
 ### The Runner/Workflow contract
 
 `ports.Workflows` exposes four runners, each independently usable: `Script` (Music Recipe → `VideoRecipe`), `CutKeyframe` (per-cut keyframe image generation, plus `EditAndSave` for localized edits to an existing keyframe), `Video` (`VideoTimelineRunner`: sequential Video-to-Video chain generation), `Publish` (writes `video_music_meta.json`).
 
-Persisting results is split deliberately. `CutKeyframeRunner` writes its own artifacts (`RunAndSave`, `EditAndSave`) because the filenames encode each cut's position in the recipe — a caller doing that itself would have to reimplement the naming and set `KeyframeReference` without owning the recipe's invariants. `VideoTimelineRunner` does **not** save: it only generates, and the caller invokes `Publish` when it is ready. It used to have a `RunAndSave`, but publishing immediately after generation is wrong for any caller that needs a step in between — ap-mv concatenates the video chains and sets `FinalVideoURL` first, so a metadata file written by the timeline runner would always be missing that field. Nothing called it. Keep this split: generation and publication are separate calls on the video side.
+Persisting results is split deliberately. `CutKeyframeRunner` writes its own artifacts (`GenerateAndSave`, `EditAndSave`) because the filenames encode each cut's position in the recipe — a caller doing that itself would have to reimplement the naming and set `KeyframeReference` without owning the recipe's invariants. `VideoTimelineRunner` does **not** save: it only generates, and the caller invokes `Publish` when it is ready. It used to have a `GenerateAndSave`, but publishing immediately after generation is wrong for any caller that needs a step in between — ap-mv concatenates the video chains and sets `FinalVideoURL` first, so a metadata file written by the timeline runner would always be missing that field. Nothing called it. Keep this split: generation and publication are separate calls on the video side.
 
 If `ManagerArgs.VideoRunner` is nil, `Workflows.Video` is **not nil** — it's `ports.NewNoopVideoTimelineRunner()`, which always returns `ports.ErrVideoRunnerNotConfigured`. Check with `errors.Is(err, ports.ErrVideoRunnerNotConfigured)`, never `Workflows.Video == nil`.
 
-### VideoRecipe / Cut model (`ports/recipe.go`)
+### Recipe / Cut model (`video/recipe.go`)
 
-`Cut` is JSON-flat but Go-composed: fields are grouped into embedded structs `AudioSync`, `KeyframeResult`, `VideoResult`, `ChainControl`. Field access (`cut.VideoID`, `cut.DurationSec`) is unaffected, but composite literals must nest by group — `ports.Cut{AudioSync: ports.AudioSync{DurationSec: 5}, KeyframeResult: ports.KeyframeResult{KeyframeReference: "..."}}`, not a flat literal.
+`Cut` is JSON-flat but Go-composed: fields are grouped into embedded structs `AudioSync`, `KeyframeResult`, `VideoResult`, `ChainControl`. Field access (`cut.VideoID`, `cut.DurationSec`) is unaffected, but composite literals must nest by group — `video.Cut{AudioSync: video.AudioSync{DurationSec: 5}, KeyframeResult: video.KeyframeResult{KeyframeReference: "..."}}`, not a flat literal.
 
 `VideoRecipe.Normalize()` (call before processing any recipe that might come from partially-hand-authored JSON) fills in cut numbering, `start_sec`/`end_sec` from cumulative `duration_sec`, default `status: "pending"`, generates `Cuts` from `MusicRecipe.Sections` if `Cuts` is empty, and propagates `LocationAnchor` from the recipe down to every cut (keyframe prompt builders only ever see one `Cut`, never the parent recipe, so this is how a tight close-up cut still knows the persistent scene setting).
 
 A cut is skippable/resumable when `Cut.IsGenerated()` — `status == "generated"` or both `video_id` and `video_url` are set. `VideoTimelineRunner.Run` uses this to avoid regenerating already-completed cuts and to keep the `PreviousVideoURI` chain intact across a resumed run.
 
-Keyframes have the same rule under a different field: **both** `CutKeyframeRunner.Run` and `RunAndSave` generate only the cuts whose `KeyframeReference` is empty. `Run` returns a slice aligned position-for-position with `recipe.Cuts`, holding `nil` where a cut already had an image — `VideoTimelineRunner.prepareKeyframes` and `RunAndSave` both read `nil` as "reuse the cut's existing reference", so neither pays to re-bake. `RunAndSave` writes the metadata either way (a caller that finds jobs by `video_music_meta.json` must still see the job when nothing was generated). The two conditions are deliberately separate — a cut can have its keyframe baked while its video is still pending, which is the normal state between the keyframe stage and video generation. **Clearing `KeyframeReference` is how a caller asks for a re-bake**; there is no "force" flag, because a flag would let a caller regenerate images while still claiming the recipe describes them. Generation is driven off a `[]Cut` subset rather than a sub-`VideoRecipe`, since `VideoRecipe.Normalize()` renumbers `CutIndex` from 1 and would desync a partial batch from the parent recipe; saved filenames use the cut's position in the parent recipe so a partial batch never writes `keyframe_1.png` for cut 5.
+Keyframes follow the same resume rule under a different field: `CutKeyframeRunner.GenerateAndSave` generates only the cuts whose `KeyframeReference` is empty. **It saves each image the moment it is produced** and writes `KeyframeReference` + `KeyframeSeed` onto the cut before moving on, so a crash mid-run (Cloud Run timeout, deploy, OOM) loses at most one image instead of every generated — and already billed — keyframe. Re-running resumes from whatever was persisted. It writes the metadata either way (a caller that finds jobs by `video_music_meta.json` must still see the job when nothing was generated).
+
+There is no generate-without-saving path any more, and `VideoTimelineRunner` no longer generates keyframes at all: it consumes `KeyframeReference` and warns about cuts that have none (those become prompt-only generations). The old shape returned in-memory images that were passed to Veo as `InputImage` bytes — that was the flow where a crash threw away paid-for work, and it also let the bytes sent to Veo drift from the file saved to GCS. `KeyframeSeed` exists because the image itself never reaches the recipe, and the video stage reuses the keyframe's seed.
+
+The keyframe stage and the video stage are separate conditions on purpose — a cut can have its keyframe baked while its video is still pending, which is the normal state between the two stages. **Clearing `KeyframeReference` is how a caller asks for a re-bake**; there is no "force" flag, because a flag would let a caller regenerate images while still claiming the recipe describes them. Saved filenames use the cut's position **in the recipe that was passed in**, so a caller generating a subset (ap-mv's per-cut / per-section regeneration builds a temporary recipe holding just the target cuts) must give it its own output prefix, or cut 5 gets written as `keyframe_1.png`.
 
 `SectionIndex` on a `Cut` is the 1-based position in `MusicRecipe.Sections` it was derived from; when one section splits into multiple cuts (scene_split), all resulting cuts keep the same `SectionIndex`, so callers can determine section membership directly instead of reverse-matching `StartSec` against section time ranges.
 
 ### Veo request classification and cut durations (`ports/veo_mode.go`, `ports/veo_duration.go`)
 
-Which Veo feature a request resolves to (`video_extension` / `reference_to_video` / `frames_to_video` / `image_to_video`) is decided in exactly one place: `ports.ClassifyVeoRequest(req, usePreviousVideo, caps)`. Adapter request-body construction, cut-duration planning, and generation-mode-specific prompt selection all consume that one decision — when adding a new Veo input mode, extend the classifier and its capability struct `ports.VeoCapabilities` rather than adding branches at call sites. Model capabilities come from optional interfaces on the `VideoRunner` (`ReferenceImagesSupporter`, `LastFrameSupporter`) via `ports.RunnerCapabilities`; a runner implementing neither reports no optional support and falls back to `image_to_video`.
+Which Veo feature a request resolves to (`video_extension` / `reference_to_video` / `frames_to_video` / `image_to_video`) is decided in exactly one place: `veo.ClassifyRequest(req, usePreviousVideo, caps)`. Adapter request-body construction, cut-duration planning, and generation-mode-specific prompt selection all consume that one decision — when adding a new Veo input mode, extend the classifier and its capability struct `veo.Capabilities` rather than adding branches at call sites. Model capabilities come from optional interfaces on the `VideoRunner` (`ReferenceImagesSupporter`, `LastFrameSupporter`) via `veo.RunnerCapabilities`; a runner implementing neither reports no optional support and falls back to `image_to_video`.
 
-Veo accepts only discrete cut durations, and which set applies depends on the resolved mode: `reference_to_video` is 8s only, `video_extension` is 7s only, the image-input modes take {4,6,8}. `ports.DurationsForMode` / `IsSupportedDuration` / `SnapDuration` / `ChainDurations` are the shared primitives — do not re-derive these numbers at call sites. Duration *planning* (splitting a long cut, error-diffusing rounding across a timeline) is deliberately the caller's job; the library only supplies the rules and rejects violations. `VideoTimelineRunner.Run` validates each cut against its resolved mode before calling Veo and returns `ports.ErrUnsupportedCutDuration` rather than paying for a long-running operation that Veo will reject.
+Veo accepts only discrete cut durations, and which set applies depends on the resolved mode: `reference_to_video` is 8s only, `video_extension` is 7s only, the image-input modes take {4,6,8}. `veo.DurationsForMode` / `IsSupportedDuration` / `SnapDuration` / `ChainDurations` are the shared primitives — do not re-derive these numbers at call sites. Duration *planning* (splitting a long cut, error-diffusing rounding across a timeline) is deliberately the caller's job; the library only supplies the rules and rejects violations. `VideoTimelineRunner.Run` validates each cut against its resolved mode before calling Veo and returns `ports.ErrUnsupportedCutDuration` rather than paying for a long-running operation that Veo will reject.
 
-`ports.CutReferenceImages(cut, characters)` is the single rule for building `referenceImages` (`[character art, keyframe]`, max 3, blanks skipped). `DefaultVideoRequestBuilder` and any caller classifying a cut must both use it, so the duration a cut is rounded to always matches the mode its request actually resolves to.
+`video.CutReferenceImages(cut, characters)` is the single rule for building `referenceImages` (`[character art, keyframe]`, max 3, blanks skipped). `DefaultVideoRequestBuilder` and any caller classifying a cut must both use it, so the duration a cut is rounded to always matches the mode its request actually resolves to.
 
 `DefaultVideoRequestBuilder.Build` takes a `runner.BuildInput` struct (not positional args) and prunes inputs the resolved mode won't use — under `video_extension` it drops all image inputs, under non-`frames_to_video` modes it drops `LastFrameReference`. The built request therefore matches what the adapter sends, so logs never show inputs that were silently ignored.
 
@@ -79,7 +91,7 @@ The real Veo/Vertex AI call is entirely external to this repo. An adapter's `Run
 
 ### Sentinel errors (`ports/errors.go`)
 
-Callers use `errors.Is` against these to branch on specific failure modes rather than treating all errors alike: `ErrRecipeRequired`, `ErrEditingNotSupported` (image generator doesn't implement `EditCut`; caller can fall back to full `RunAndSave` regeneration), `ErrInvalidAIResponse` (AI text didn't parse as VideoRecipe JSON — distinguish from network/auth errors when deciding to retry), `ErrVideoRunnerNotConfigured`, `ErrInputTooLarge`, `ErrUnsupportedCutDuration` (recipe-side duration planning bug — retrying will never fix it), `ErrNoKeyframeToEdit`, `ErrRecipeInvalid`, the DI-failure trio `ErrKeyframeRunnerRequired` / `ErrVideoRunnerRequired` / `ErrWriterRequired`, and `ErrConfigInvalid` (`Config.Validate` at `workflow.New`: `GeminiModel` / `ImageModel` are required — this library keeps no default model names, since model IDs rot on Google's release schedule, not this repo's).
+Callers use `errors.Is` against these to branch on specific failure modes rather than treating all errors alike: `ErrRecipeRequired`, `ErrEditingNotSupported` (image generator doesn't implement `EditCut`; caller can fall back to full `GenerateAndSave` regeneration), `ErrInvalidAIResponse` (AI text didn't parse as VideoRecipe JSON — distinguish from network/auth errors when deciding to retry), `ErrVideoRunnerNotConfigured`, `ErrInputTooLarge`, `ErrUnsupportedCutDuration` (recipe-side duration planning bug — retrying will never fix it), `ErrNoKeyframeToEdit`, `ErrRecipeInvalid`, the DI-failure pair `ErrVideoRunnerRequired` / `ErrWriterRequired`, and `ErrConfigInvalid` (`Config.Validate` at `workflow.New`: `GeminiModel` / `ImageModel` are required — this library keeps no default model names, since model IDs rot on Google's release schedule, not this repo's).
 
 ### Concurrency notes
 
@@ -95,5 +107,5 @@ A cut that fails does not discard the images already paid for: partial successes
 
 - `github.com/shouni/vertex-image-kit` — keyframe/still-image generation on Vertex AI (`generator.New` → `*generator.Generator`); this repo's `imagePorts.ImageGenerator` / `ImageRequest` / `ImageResponse` / `ImageURI` come from its `ports` package. It accepts **`gs://` references only** and transfers no bytes, which is why this repo needs no GCS reader or HTTP client for images. It replaced `gemini-image-kit`, whose File API upload, cache and fetch layers never executed on the Vertex backend.
 - `github.com/shouni/go-character-kit` — `characterkit.Characters`/`Character` (Seed, ReferenceURL(s)) for cross-cut character consistency.
-- `github.com/shouni/go-gemini-client` — `music.Recipe` (aliased as `ports.MusicRecipe`) is the input music/lyrics recipe format — it lives in the leaf `music` package, so importing it does not drag in the `lyria` workflow. AI clients are taken as `gemini.Generator` (script generation) and `gemini.Model` (image core), the genai-free interfaces: nothing in this repo imports `google.golang.org/genai`. Structured output uses plain JSON Schema via `GenerateOptions.ResponseJSONSchema` (`ports.VideoRecipeSchema` returns `map[string]any`), not `genai.Schema`.
+- `github.com/shouni/go-gemini-client` — `music.Recipe` (aliased as `video.MusicRecipe`) is the input music/lyrics recipe format — it lives in the leaf `music` package, so importing it does not drag in the `lyria` workflow. AI clients are taken as `gemini.Generator` (script generation) and `gemini.Model` (image core), the genai-free interfaces: nothing in this repo imports `google.golang.org/genai`. Structured output uses plain JSON Schema via `GenerateOptions.ResponseJSONSchema` (`video.RecipeSchema` returns `map[string]any`), not `genai.Schema`.
 - `github.com/shouni/go-remote-io` — `remoteio.Writer` used for persisting `video_music_meta.json` and keyframe outputs.

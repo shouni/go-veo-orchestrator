@@ -3,8 +3,11 @@ package runner
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
 	"github.com/shouni/go-veo-orchestrator/ports"
+	"github.com/shouni/go-veo-orchestrator/veo"
+	"github.com/shouni/go-veo-orchestrator/video"
 )
 
 // CutObserver は、1カットの動画生成が完了するたびに呼ばれるフックです。
@@ -14,11 +17,10 @@ import (
 // Run はそこで停止して**それまでの部分結果**を返します。時間制限のあるジョブ基盤で
 // 「期限が近いので一旦保存して次の実行で再開する」という運用が、Run を自前の
 // ループで置き換えずにできます。
-type CutObserver func(ctx context.Context, cut *ports.Cut, res *ports.VideoResponse) error
+type CutObserver func(ctx context.Context, cut *video.Cut, res *video.Response) error
 
 // VideoTimelineRunner はキーフレーム生成結果を Veo へ順次流し込み、Video-to-Video の文脈を引き継ぎます。
 type VideoTimelineRunner struct {
-	keyframeRunner ports.CutKeyframeRunner
 	videoRunner    ports.VideoRunner
 	requestBuilder VideoRequestBuilder
 	observer       CutObserver
@@ -26,11 +28,9 @@ type VideoTimelineRunner struct {
 
 // NewVideoTimelineRunner は動画生成オーケストレーターを初期化します。
 func NewVideoTimelineRunner(
-	keyframeRunner ports.CutKeyframeRunner,
 	videoRunner ports.VideoRunner,
 ) *VideoTimelineRunner {
 	return &VideoTimelineRunner{
-		keyframeRunner: keyframeRunner,
 		videoRunner:    videoRunner,
 		requestBuilder: NewVideoRequestBuilder(),
 	}
@@ -59,26 +59,23 @@ func (r *VideoTimelineRunner) WithCutObserver(observer CutObserver) *VideoTimeli
 // エラー時も、それまでに完了したカットのレスポンスを部分結果として返します。
 // 1カットの生成には分単位の時間と実費が掛かるため、途中で失敗しても完了分の
 // 情報は呼び出し側が保存・再開に使えます（レシピの Cut には生成結果が反映済みです）。
-func (r *VideoTimelineRunner) Run(ctx context.Context, recipe *ports.VideoRecipe) ([]*ports.VideoResponse, error) {
+func (r *VideoTimelineRunner) Run(ctx context.Context, recipe *video.Recipe) ([]*video.Response, error) {
 	if err := r.validateRun(recipe); err != nil {
 		return nil, err
 	}
 	recipe.Normalize()
 
-	keyframes, err := r.prepareKeyframes(ctx, recipe)
-	if err != nil {
-		return nil, err
-	}
+	warnMissingKeyframes(ctx, recipe)
 
 	// 使用する VideoRunner が対応している Veo のオプション機能は全カットで共通なので
 	// ループの外で一度だけ導出する。
-	caps := ports.RunnerCapabilities(r.videoRunner)
+	caps := veo.RunnerCapabilities(r.videoRunner)
 
-	responses := make([]*ports.VideoResponse, 0, len(recipe.Cuts))
+	responses := make([]*video.Response, 0, len(recipe.Cuts))
 	lastVideoID := ""
 
 	for i := range recipe.Cuts {
-		res, err := r.runCut(ctx, recipe, i, keyframes[i], lastVideoID, caps)
+		res, err := r.runCut(ctx, recipe, i, lastVideoID, caps)
 		if err != nil {
 			return responses, err
 		}
@@ -95,12 +92,9 @@ func (r *VideoTimelineRunner) Run(ctx context.Context, recipe *ports.VideoRecipe
 	return responses, nil
 }
 
-func (r *VideoTimelineRunner) validateRun(recipe *ports.VideoRecipe) error {
+func (r *VideoTimelineRunner) validateRun(recipe *video.Recipe) error {
 	if recipe == nil {
 		return ports.ErrRecipeRequired
-	}
-	if r.keyframeRunner == nil {
-		return ports.ErrKeyframeRunnerRequired
 	}
 	if r.videoRunner == nil {
 		return ports.ErrVideoRunnerRequired
@@ -108,41 +102,30 @@ func (r *VideoTimelineRunner) validateRun(recipe *ports.VideoRecipe) error {
 	return nil
 }
 
-func (r *VideoTimelineRunner) prepareKeyframes(ctx context.Context, recipe *ports.VideoRecipe) ([]*ports.KeyframeImage, error) {
-	if !requiresKeyframeGeneration(recipe) {
-		return make([]*ports.KeyframeImage, len(recipe.Cuts)), nil
-	}
-
-	keyframes, err := r.keyframeRunner.Run(ctx, recipe)
-	if err != nil {
-		return nil, fmt.Errorf("カットキーフレーム生成に失敗しました: %w", err)
-	}
-	if err := mustMatchCutCount("生成されたキーフレーム数", len(keyframes), len(recipe.Cuts)); err != nil {
-		return nil, err
-	}
-	return keyframes, nil
-}
-
-func requiresKeyframeGeneration(recipe *ports.VideoRecipe) bool {
-	for _, cut := range recipe.Cuts {
-		if cut.IsGenerated() {
+// warnMissingKeyframes は、キーフレーム参照を持たないカットを警告します。
+//
+// このランナーはキーフレームを生成しません。生成と保存は CutKeyframeRunner の
+// 責務で、呼び出し側が先に実行します（保存されないまま生成された画像を持ち回ると、
+// 途中で落ちたときに課金済みの絵が失われるため、経路を1本に絞っています）。
+// 参照が無いカットはプロンプトのみの生成になるので、黙って進まず記録だけ残します。
+func warnMissingKeyframes(ctx context.Context, recipe *video.Recipe) {
+	for i := range recipe.Cuts {
+		cut := &recipe.Cuts[i]
+		if cut.IsGenerated() || cut.KeyframeReference != "" {
 			continue
 		}
-		if cut.KeyframeReference == "" {
-			return true
-		}
+		slog.WarnContext(ctx, "キーフレーム参照が無いカットをプロンプトのみで生成します",
+			"cut_index", cut.CutIndex)
 	}
-	return false
 }
 
 func (r *VideoTimelineRunner) runCut(
 	ctx context.Context,
-	recipe *ports.VideoRecipe,
+	recipe *video.Recipe,
 	cutIndex int,
-	keyframe *ports.KeyframeImage,
 	lastVideoID string,
-	caps ports.VeoCapabilities,
-) (*ports.VideoResponse, error) {
+	caps veo.Capabilities,
+) (*video.Response, error) {
 	cut := &recipe.Cuts[cutIndex]
 	if cut.IsGenerated() {
 		return responseFromCut(*cut), nil
@@ -150,7 +133,7 @@ func (r *VideoTimelineRunner) runCut(
 
 	// IsChainStart のカットは video-to-video チェーンの新規起点なので、直前カットの
 	// VideoID を PreviousVideoURI として引き継がず、チェーンをここでリセットする
-	// （セクション境界や継続尺の上限到達によるリセット。ports.ChainControl 参照）。
+	// （セクション境界や継続尺の上限到達によるリセット。video.ChainControl 参照）。
 	previousVideoURI := lastVideoID
 	if cut.IsChainStart {
 		previousVideoURI = ""
@@ -159,29 +142,28 @@ func (r *VideoTimelineRunner) runCut(
 	req := r.requestBuilder.Build(BuildInput{
 		Recipe:             recipe,
 		Cut:                *cut,
-		Keyframe:           keyframe,
 		PreviousVideoURI:   previousVideoURI,
-		LastFrameReference: ports.Cuts(recipe.Cuts).NextLastFrameReference(cutIndex),
+		LastFrameReference: video.Cuts(recipe.Cuts).NextLastFrameReference(cutIndex),
 		Capabilities:       caps,
 	})
 	if err := validateCutDuration(req, caps); err != nil {
-		cut.Status = ports.CutStatusFailed
+		cut.Status = video.CutStatusFailed
 		return nil, err
 	}
 
 	res, err := r.videoRunner.Run(ctx, req)
 	if err != nil {
-		cut.Status = ports.CutStatusFailed
+		cut.Status = video.CutStatusFailed
 		return nil, fmt.Errorf("cut %d の動画生成に失敗しました: %w", cut.CutIndex, err)
 	}
 	if res == nil {
 		// nil レスポンスも失敗として扱う。pending のまま残すと、resume 側が
 		// 「まだ実行していないカット」と誤認する。
-		cut.Status = ports.CutStatusFailed
+		cut.Status = video.CutStatusFailed
 		return nil, fmt.Errorf("cut %d の動画生成レスポンスが nil です", cut.CutIndex)
 	}
 
-	applyVideoResponse(cut.CutIndex, &cut.VideoResult, res)
+	applyVideoResponse(cut.CutIndex, &cut.Result, res)
 	return res, nil
 }
 
@@ -193,17 +175,17 @@ func (r *VideoTimelineRunner) runCut(
 // 検証せずに送ると Veo 側で拒否されますが、それが分かるのは長時間実行オペレーションを
 // 投げて待った後です。ここで手前に落とすことで、レシピ側の尺の計画ミスをカット生成の
 // 待ち時間と課金の前に、どのカットが何秒でどのモードだったかまで示して報告できます。
-func validateCutDuration(req ports.VideoGenerationRequest, caps ports.VeoCapabilities) error {
-	mode := ports.ClassifyVeoRequest(req, req.PreviousVideoURI != "", caps)
-	if ports.IsSupportedDuration(req.DurationSec, mode) {
+func validateCutDuration(req video.GenerationRequest, caps veo.Capabilities) error {
+	mode := veo.ClassifyRequest(req, req.PreviousVideoURI != "", caps)
+	if veo.IsSupportedDuration(req.DurationSec, mode) {
 		return nil
 	}
 	return fmt.Errorf("cut %d: %.2f秒は %s では生成できません（対応する尺: %v）: %w",
-		req.CutIndex, req.DurationSec, mode, ports.DurationsForMode(mode), ports.ErrUnsupportedCutDuration)
+		req.CutIndex, req.DurationSec, mode, veo.DurationsForMode(mode), ports.ErrUnsupportedCutDuration)
 }
 
-func responseFromCut(cut ports.Cut) *ports.VideoResponse {
-	return &ports.VideoResponse{
+func responseFromCut(cut video.Cut) *video.Response {
+	return &video.Response{
 		CloudURL:    cut.VideoURL,
 		VideoID:     cut.VideoID,
 		CutIndex:    cut.CutIndex,
@@ -211,18 +193,18 @@ func responseFromCut(cut ports.Cut) *ports.VideoResponse {
 	}
 }
 
-// applyVideoResponse は、動画生成結果 (res) をカットの VideoResult に反映します。
-// cutIndex 以外は VideoResult フィールドしか読み書きしないことをシグネチャで示しています。
-func applyVideoResponse(cutIndex int, result *ports.VideoResult, res *ports.VideoResponse) {
+// applyVideoResponse は、動画生成結果 (res) をカットの Result に反映します。
+// cutIndex 以外は Result フィールドしか読み書きしないことをシグネチャで示しています。
+func applyVideoResponse(cutIndex int, result *video.Result, res *video.Response) {
 	if res.CutIndex == 0 {
 		res.CutIndex = cutIndex
 	}
 	result.VideoURL = res.CloudURL
 	result.VideoID = res.VideoID
-	result.Status = ports.CutStatusGenerated
+	result.Status = video.CutStatusGenerated
 }
 
-func nextVideoID(current string, res *ports.VideoResponse) string {
+func nextVideoID(current string, res *video.Response) string {
 	if res.VideoID == "" {
 		return current
 	}

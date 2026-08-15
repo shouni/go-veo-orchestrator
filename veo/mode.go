@@ -1,8 +1,13 @@
-package ports
+package veo
 
-import "strings"
+import (
+	"strings"
 
-// VeoGenerationMode は、1つの動画生成リクエストが Veo のどの生成機能で解釈されるかを
+	"github.com/shouni/go-veo-orchestrator/ports"
+	"github.com/shouni/go-veo-orchestrator/video"
+)
+
+// GenerationMode は、1つの動画生成リクエストが Veo のどの生成機能で解釈されるかを
 // 表します。
 //
 // このモードは1つのリクエストにつき一度だけ決まり、以下の判断がすべてこの1つの値を
@@ -14,66 +19,51 @@ import "strings"
 //   - 生成モードごとに前提の異なるプロンプト（開始フレームあり／参照画像あり／
 //     前クリップの継続）の選択
 //
-// 判定を1箇所（ClassifyVeoRequest）に閉じているのは、これらがズレると「参照画像に
+// 判定を1箇所（ClassifyRequest）に閉じているのは、これらがズレると「参照画像に
 // 合わせろ」と指示しながら参照画像を送らない、といった無意味なリクエストになるためです。
-type VeoGenerationMode string
+type GenerationMode string
 
 const (
-	// VeoModeImageToVideo はキーフレーム画像を image 入力とする image_to_video です。
+	// ModeImageToVideo はキーフレーム画像を image 入力とする image_to_video です。
 	// 画像参照が一切ないリクエスト（テキストのみ）もここへ倒します。
-	VeoModeImageToVideo VeoGenerationMode = "image_to_video"
-	// VeoModeFramesToVideo は開始フレームを image 入力、終了フレームを lastFrame 入力と
+	ModeImageToVideo GenerationMode = "image_to_video"
+	// ModeFramesToVideo は開始フレームを image 入力、終了フレームを lastFrame 入力と
 	// する first/last frame 補間です（Veo 2 / Veo 3.1 系のみ、Fast も対応）。
-	VeoModeFramesToVideo VeoGenerationMode = "frames_to_video"
-	// VeoModeReferenceToVideo は [キャラ立ち絵, キーフレーム] を referenceImages とする
+	ModeFramesToVideo GenerationMode = "frames_to_video"
+	// ModeReferenceToVideo は [キャラ立ち絵, キーフレーム] を referenceImages とする
 	// reference_to_video です（Veo 3 系の非 Fast モデルのみ、8秒固定）。
-	VeoModeReferenceToVideo VeoGenerationMode = "reference_to_video"
-	// VeoModeVideoExtension は前カット動画を video 入力とする video_extension
+	ModeReferenceToVideo GenerationMode = "reference_to_video"
+	// ModeVideoExtension は前カット動画を video 入力とする video_extension
 	// （video-to-video 継続）です。このモードでは画像参照は一切送られません。
-	VeoModeVideoExtension VeoGenerationMode = "video_extension"
+	ModeVideoExtension GenerationMode = "video_extension"
 )
 
-// VeoCapabilities は、実際に使われる VideoRunner／モデルが Veo のオプション機能に
-// 対応しているかを表します。ClassifyVeoRequest の入力で、adapter はモデル名から、
+// Capabilities は、実際に使われる ports.VideoRunner／モデルが Veo のオプション機能に
+// 対応しているかを表します。ClassifyRequest の入力で、adapter はモデル名から、
 // 呼び出し側は RunnerCapabilities（Runner のオプションインターフェース）から導出します。
-type VeoCapabilities struct {
+type Capabilities struct {
 	// ReferenceImages は referenceImages（reference_to_video、8秒固定）への対応です。
 	ReferenceImages bool
 	// LastFrame は lastFrame（first/last frame 補間）への対応です。
 	LastFrame bool
 }
 
-// ReferenceImagesSupporter は、reference_to_video（referenceImages、Veo 3系の非Fastモデル
-// のみ対応で8秒固定）を使えるかを問い合わせられる VideoRunner のオプションインター
-// フェースです。カットの尺を Veo のサポート値へ正規化する処理が、モデル判定ロジックを
-// 重複実装せずに「このカットは8秒固定になるか」を判断するために使います。
-type ReferenceImagesSupporter interface {
-	SupportsReferenceImages() bool
-}
-
-// LastFrameSupporter は、frames_to_video（image + lastFrame の first/last frame 補間、
-// Veo 2 / Veo 3.1 系のみ対応）を使えるかを問い合わせられる VideoRunner のオプション
-// インターフェースです。
-type LastFrameSupporter interface {
-	SupportsLastFrame() bool
-}
-
-// RunnerCapabilities は VideoRunner のオプションインターフェース
-// （ReferenceImagesSupporter / LastFrameSupporter）から VeoCapabilities を導出します。
+// RunnerCapabilities は ports.VideoRunner のオプションインターフェース
+// （ReferenceImagesSupporter / LastFrameSupporter）から Capabilities を導出します。
 // インターフェースを実装しない Runner（テストダブル等）は各機能とも false になり、
 // image_to_video 側へ倒れます。
-func RunnerCapabilities(runner VideoRunner) VeoCapabilities {
-	caps := VeoCapabilities{}
-	if rs, ok := runner.(ReferenceImagesSupporter); ok {
+func RunnerCapabilities(runner ports.VideoRunner) Capabilities {
+	caps := Capabilities{}
+	if rs, ok := runner.(ports.ReferenceImagesSupporter); ok {
 		caps.ReferenceImages = rs.SupportsReferenceImages()
 	}
-	if ls, ok := runner.(LastFrameSupporter); ok {
+	if ls, ok := runner.(ports.LastFrameSupporter); ok {
 		caps.LastFrame = ls.SupportsLastFrame()
 	}
 	return caps
 }
 
-// ClassifyVeoRequest は、このリクエストが Veo のどの生成機能で解釈されるかを判定します。
+// ClassifyRequest は、このリクエストが Veo のどの生成機能で解釈されるかを判定します。
 // adapter のリクエスト本文構築と、呼び出し側のプロンプト・尺選択が同じ判定を共有する
 // ための唯一の分岐点で、優先順位は次のとおりです:
 //
@@ -86,17 +76,17 @@ func RunnerCapabilities(runner VideoRunner) VeoCapabilities {
 //     LastFrameReference が両方あり、モデルが lastFrame に対応しているとき
 //     （Veo の lastFrame は image とセットでのみ有効）。
 //  4. image_to_video — それ以外すべて。
-func ClassifyVeoRequest(req VideoGenerationRequest, usePreviousVideo bool, caps VeoCapabilities) VeoGenerationMode {
+func ClassifyRequest(req video.GenerationRequest, usePreviousVideo bool, caps Capabilities) GenerationMode {
 	if usePreviousVideo && strings.HasPrefix(strings.TrimSpace(req.PreviousVideoURI), "gs://") {
-		return VeoModeVideoExtension
+		return ModeVideoExtension
 	}
 	if caps.ReferenceImages && hasAnyReferenceImage(req.ReferenceImages) {
-		return VeoModeReferenceToVideo
+		return ModeReferenceToVideo
 	}
 	if caps.LastFrame && hasStartImage(req) && strings.TrimSpace(req.LastFrameReference) != "" {
-		return VeoModeFramesToVideo
+		return ModeFramesToVideo
 	}
-	return VeoModeImageToVideo
+	return ModeImageToVideo
 }
 
 // hasAnyReferenceImage は空白のみのエントリを除いた参照画像が1つ以上あるかを返します
@@ -112,20 +102,20 @@ func hasAnyReferenceImage(refs []string) bool {
 
 // hasStartImage は開始フレームとなる画像入力（GCS 参照またはインラインバイト列）が
 // あるかを返します。
-func hasStartImage(req VideoGenerationRequest) bool {
+func hasStartImage(req video.GenerationRequest) bool {
 	return strings.TrimSpace(req.ImageReference) != "" || len(req.InputImage) > 0
 }
 
-// VeoModelCapabilities は、Veo のモデル名からオプション機能への対応を導出します。
+// ModelCapabilities は、Veo のモデル名からオプション機能への対応を導出します。
 // モデル名→対応機能の規則はこの関数が唯一の定義元です（以前は adapter 側が文字列
 // 前方一致で再導出しており、「ルールはライブラリが持つ」という原則が破れていました）。
 //
 //   - referenceImages（reference_to_video、8秒固定）: Veo 3 系のみ。Fast は非対応。
 //   - lastFrame（first/last frame 補間）: veo-2.0 / veo-3.1 系（Fast も対応）。
 //     Veo 3.0 系は非対応。
-func VeoModelCapabilities(model string) VeoCapabilities {
+func ModelCapabilities(model string) Capabilities {
 	m := strings.ToLower(strings.TrimSpace(model))
-	return VeoCapabilities{
+	return Capabilities{
 		ReferenceImages: strings.HasPrefix(m, "veo-3") && !strings.Contains(m, "fast"),
 		LastFrame:       strings.HasPrefix(m, "veo-2") || strings.HasPrefix(m, "veo-3.1"),
 	}

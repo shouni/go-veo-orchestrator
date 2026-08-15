@@ -5,8 +5,8 @@ import (
 
 	characterkit "github.com/shouni/go-character-kit/character"
 	"github.com/shouni/go-gemini-client/lyria"
-
-	"github.com/shouni/go-veo-orchestrator/ports"
+	"github.com/shouni/go-veo-orchestrator/veo"
+	"github.com/shouni/go-veo-orchestrator/video"
 )
 
 func newTestCharacters() *characterkit.Characters {
@@ -24,7 +24,7 @@ func newTestCharacters() *characterkit.Characters {
 }
 
 // refCaps は referenceImages に対応したモデル（Veo 3系の非Fast）を表します。
-var refCaps = ports.VeoCapabilities{ReferenceImages: true}
+var refCaps = veo.Capabilities{ReferenceImages: true}
 
 func assertStrings(t *testing.T, label string, got, want []string) {
 	t.Helper()
@@ -43,16 +43,16 @@ func assertStrings(t *testing.T, label string, got, want []string) {
 // 検証します。
 func TestVideoRequestBuilderWithCharactersBuildsReferenceImages(t *testing.T) {
 	builder := NewVideoRequestBuilderWithCharacters(newTestCharacters())
-	cut := ports.Cut{
+	cut := video.Cut{
 		CutIndex:       1,
 		VisualAnchor:   "anchor",
 		CharacterID:    "zundamon",
-		AudioSync:      ports.AudioSync{DurationSec: 8},
-		KeyframeResult: ports.KeyframeResult{KeyframeReference: "gs://bucket/jobs/job-1/images/cut_1.png"},
+		AudioSync:      video.AudioSync{DurationSec: 8},
+		KeyframeResult: video.KeyframeResult{KeyframeReference: "gs://bucket/jobs/job-1/images/cut_1.png"},
 	}
 
 	req := builder.Build(BuildInput{
-		Recipe:       &ports.VideoRecipe{ProjectTitle: "test"},
+		Recipe:       &video.Recipe{ProjectTitle: "test"},
 		Cut:          cut,
 		Capabilities: refCaps,
 	})
@@ -73,15 +73,15 @@ func TestVideoRequestBuilderWithCharactersBuildsReferenceImages(t *testing.T) {
 // 同じ判定でフォールバックするため、組み立て段階から実際に送られる内容と揃えます。
 func TestVideoRequestBuilderReferenceImagesNeedsModelSupport(t *testing.T) {
 	builder := NewVideoRequestBuilderWithCharacters(newTestCharacters())
-	cut := ports.Cut{
+	cut := video.Cut{
 		CutIndex:       1,
 		VisualAnchor:   "anchor",
 		CharacterID:    "zundamon",
-		AudioSync:      ports.AudioSync{DurationSec: 8},
-		KeyframeResult: ports.KeyframeResult{KeyframeReference: "gs://bucket/kf.png"},
+		AudioSync:      video.AudioSync{DurationSec: 8},
+		KeyframeResult: video.KeyframeResult{KeyframeReference: "gs://bucket/kf.png"},
 	}
 
-	req := builder.Build(BuildInput{Recipe: &ports.VideoRecipe{ProjectTitle: "test"}, Cut: cut})
+	req := builder.Build(BuildInput{Recipe: &video.Recipe{ProjectTitle: "test"}, Cut: cut})
 
 	if req.ReferenceImages != nil {
 		t.Fatalf("ReferenceImages = %v, want nil without model support", req.ReferenceImages)
@@ -96,13 +96,13 @@ func TestVideoRequestBuilderReferenceImagesNeedsModelSupport(t *testing.T) {
 // Veo は video と referenceImages / image を同時に受け付けません。
 func TestVideoRequestBuilderOmitsImageInputsWithPreviousVideo(t *testing.T) {
 	builder := NewVideoRequestBuilderWithCharacters(newTestCharacters())
-	recipe := &ports.VideoRecipe{ProjectTitle: "test"}
-	cut := ports.Cut{
+	recipe := &video.Recipe{ProjectTitle: "test"}
+	cut := video.Cut{
 		CutIndex:       2,
 		VisualAnchor:   "anchor",
 		CharacterID:    "zundamon",
-		AudioSync:      ports.AudioSync{DurationSec: 7},
-		KeyframeResult: ports.KeyframeResult{KeyframeReference: "gs://bucket/jobs/job-1/images/cut_2.png"},
+		AudioSync:      video.AudioSync{DurationSec: 7},
+		KeyframeResult: video.KeyframeResult{KeyframeReference: "gs://bucket/jobs/job-1/images/cut_2.png"},
 	}
 
 	// (a) gs:// の PreviousVideoURI あり → video_extension なので画像入力は落ちる。
@@ -129,31 +129,31 @@ func TestVideoRequestBuilderOmitsImageInputsWithPreviousVideo(t *testing.T) {
 
 // TestVideoRequestBuilderReferenceImagesWithoutCharacterArt は、キャラクターが解決できない
 // （未設定・未知ID・立ち絵なし）場合でも、カット自身のキーフレームが referenceImages として
-// 使われることを検証します。ports.CutReferenceImages が referenceImages の唯一の組み立て
+// 使われることを検証します。video.CutReferenceImages が referenceImages の唯一の組み立て
 // 規則で、リクエストの生成モード判定もこの同じリストを見ます。
 func TestVideoRequestBuilderReferenceImagesWithoutCharacterArt(t *testing.T) {
 	tests := []struct {
 		name    string
 		builder *DefaultVideoRequestBuilder
-		cut     ports.Cut
+		cut     video.Cut
 	}{
 		{
 			name:    "characters not configured",
 			builder: NewVideoRequestBuilder(),
-			cut:     ports.Cut{CharacterID: "zundamon"},
+			cut:     video.Cut{CharacterID: "zundamon"},
 		},
 		{
 			name:    "unknown character",
 			builder: NewVideoRequestBuilderWithCharacters(newTestCharacters()),
-			cut:     ports.Cut{CharacterID: "unknown"},
+			cut:     video.Cut{CharacterID: "unknown"},
 		},
 		{
 			name:    "character without reference url",
 			builder: NewVideoRequestBuilderWithCharacters(newTestCharacters()),
-			cut:     ports.Cut{CharacterID: "no-ref"},
+			cut:     video.Cut{CharacterID: "no-ref"},
 		},
 	}
-	recipe := &ports.VideoRecipe{ProjectTitle: "test"}
+	recipe := &video.Recipe{ProjectTitle: "test"}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			tt.cut.CutIndex = 1
@@ -176,19 +176,19 @@ func TestVideoRequestBuilderReferenceImagesWithoutCharacterArt(t *testing.T) {
 // だけなので、組み立て段階で落として実際に送られる内容と一致させます。
 func TestVideoRequestBuilderLastFrameNeedsModelSupport(t *testing.T) {
 	builder := NewVideoRequestBuilder()
-	recipe := &ports.VideoRecipe{ProjectTitle: "test"}
-	cut := ports.Cut{
+	recipe := &video.Recipe{ProjectTitle: "test"}
+	cut := video.Cut{
 		CutIndex:       1,
 		VisualAnchor:   "anchor",
-		AudioSync:      ports.AudioSync{DurationSec: 8},
-		KeyframeResult: ports.KeyframeResult{KeyframeReference: "gs://bucket/cut_1.png"},
+		AudioSync:      video.AudioSync{DurationSec: 8},
+		KeyframeResult: video.KeyframeResult{KeyframeReference: "gs://bucket/cut_1.png"},
 	}
 
 	supported := builder.Build(BuildInput{
 		Recipe:             recipe,
 		Cut:                cut,
 		LastFrameReference: "gs://bucket/cut_2.png",
-		Capabilities:       ports.VeoCapabilities{LastFrame: true},
+		Capabilities:       veo.Capabilities{LastFrame: true},
 	})
 	if supported.LastFrameReference != "gs://bucket/cut_2.png" {
 		t.Fatalf("LastFrameReference = %q, want it kept for a supporting model", supported.LastFrameReference)
@@ -212,15 +212,15 @@ func TestVideoRequestBuilderFallsBackToCharacterSeed(t *testing.T) {
 	charSeed := int64(4242)
 	chars.List[0].Seed = &charSeed
 	recipeSeed := int64(777)
-	recipe := &ports.VideoRecipe{
+	recipe := &video.Recipe{
 		ProjectTitle: "test",
-		MusicRecipe:  ports.MusicRecipe{AIModels: lyria.AIModels{Seed: &recipeSeed}},
+		MusicRecipe:  video.MusicRecipe{AIModels: lyria.AIModels{Seed: &recipeSeed}},
 	}
 	builder := NewVideoRequestBuilderWithCharacters(chars)
 
 	withChar := builder.Build(BuildInput{
 		Recipe: recipe,
-		Cut:    ports.Cut{CutIndex: 1, CharacterID: "zundamon", AudioSync: ports.AudioSync{DurationSec: 8}},
+		Cut:    video.Cut{CutIndex: 1, CharacterID: "zundamon", AudioSync: video.AudioSync{DurationSec: 8}},
 	})
 	if withChar.Seed != charSeed {
 		t.Fatalf("Seed = %d, want character seed %d", withChar.Seed, charSeed)
@@ -228,7 +228,7 @@ func TestVideoRequestBuilderFallsBackToCharacterSeed(t *testing.T) {
 
 	withoutChar := builder.Build(BuildInput{
 		Recipe: recipe,
-		Cut:    ports.Cut{CutIndex: 2, CharacterID: "no-ref", AudioSync: ports.AudioSync{DurationSec: 8}},
+		Cut:    video.Cut{CutIndex: 2, CharacterID: "no-ref", AudioSync: video.AudioSync{DurationSec: 8}},
 	})
 	if withoutChar.Seed != recipeSeed {
 		t.Fatalf("Seed = %d, want recipe seed %d", withoutChar.Seed, recipeSeed)

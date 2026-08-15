@@ -13,18 +13,9 @@ import (
 
 	"github.com/shouni/go-remote-io/remoteio"
 	"github.com/shouni/go-veo-orchestrator/ports"
+	"github.com/shouni/go-veo-orchestrator/video"
+	"golang.org/x/sync/errgroup"
 )
-
-// mustMatchCutCount は、カット単位で生成した成果物（キーフレーム画像など）の数 got が
-// カット数 want と一致することを検証します。一致すれば nil を返します。kind は成果物の
-// 呼称（例: "生成された画像の数" / "生成されたキーフレーム数"）で、エラーメッセージの
-// 文言をそれぞれの呼び出し元と同一に保つためのラベルです。
-func mustMatchCutCount(kind string, got, want int) error {
-	if got == want {
-		return nil
-	}
-	return fmt.Errorf("%s(%d)とカット数(%d)が一致しません", kind, got, want)
-}
 
 // DefaultKeyframeCacheControl は、保存するキーフレーム画像に付ける既定の
 // Cache-Control ヘッダです（WithCacheControl で差し替え可能）。
@@ -32,9 +23,10 @@ const DefaultKeyframeCacheControl = "public, max-age=1800"
 
 // CutKeyframeRunner は、動画レシピを元にカットキーフレーム生成を管理します。
 type CutKeyframeRunner struct {
-	generator    ports.CutImageGenerator
-	writer       remoteio.Writer
-	cacheControl string
+	generator      ports.CutImageGenerator
+	writer         remoteio.Writer
+	cacheControl   string
+	maxConcurrency int
 }
 
 // KeyframeRunnerOption は CutKeyframeRunner の任意設定です。
@@ -51,6 +43,20 @@ func WithCacheControl(value string) KeyframeRunnerOption {
 	}
 }
 
+// WithMaxConcurrency は、カット間のキーフレーム生成の同時実行数を設定します。
+// 1 以下（既定は 1）なら逐次実行です。並列度をここに置くのは、1 カットの
+// 「生成 → 保存」を 1 つの goroutine で完結させるためです。
+//
+// 注意: 注入側にレート制限（Config.RateInterval）が掛かっている場合、スループットは
+// 並列度によらず発射間隔で頭打ちになります。両方を大きくする設定は矛盾しています。
+func WithMaxConcurrency(n int) KeyframeRunnerOption {
+	return func(r *CutKeyframeRunner) {
+		if n > 0 {
+			r.maxConcurrency = n
+		}
+	}
+}
+
 // NewCutKeyframeRunner は、依存関係を注入して初期化します。
 func NewCutKeyframeRunner(
 	generator ports.CutImageGenerator,
@@ -58,9 +64,10 @@ func NewCutKeyframeRunner(
 	opts ...KeyframeRunnerOption,
 ) *CutKeyframeRunner {
 	r := &CutKeyframeRunner{
-		generator:    generator,
-		writer:       writer,
-		cacheControl: DefaultKeyframeCacheControl,
+		generator:      generator,
+		writer:         writer,
+		cacheControl:   DefaultKeyframeCacheControl,
+		maxConcurrency: 1,
 	}
 	for _, opt := range opts {
 		if opt != nil {
@@ -70,70 +77,27 @@ func NewCutKeyframeRunner(
 	return r
 }
 
-// Run は、動画レシピのカットのうち**キーフレーム画像をまだ持たないものだけ**を生成し、
-// カット列と同じ長さ・同じ並びのスライスを返します。すでに KeyframeReference を持つ
-// カットの位置は nil です（呼び出し側はその参照をそのまま使えばよく、焼き直す理由が
-// ないため）。VideoTimelineRunner はこの nil を「既存の参照を使う」として扱います。
+// GenerateAndSave は、キーフレーム画像をまだ持たないカットについて
+// **1 枚生成するたびに即座に保存し**、KeyframeReference と KeyframeSeed を更新します。
 //
-// 生成が途中で失敗した場合も、成功した位置には結果が入った部分結果を返します
-// （エラーと両方を見てください）。判定は RunAndSave と同じ「KeyframeReference が
-// 空 = 未生成」です。焼き直したいカットは呼び出し側が参照を空にしてから渡してください。
-func (r *CutKeyframeRunner) Run(ctx context.Context, recipe *ports.VideoRecipe) ([]*ports.KeyframeImage, error) {
-	if recipe == nil {
-		return nil, ports.ErrRecipeRequired
-	}
-	recipe.Normalize()
-
-	images := make([]*ports.KeyframeImage, len(recipe.Cuts))
-	pending := pendingKeyframeCutPositions(recipe.Cuts)
-	if len(pending) == 0 {
-		slog.InfoContext(ctx, "全カットにキーフレームがあるため生成をスキップしました",
-			"cuts", len(recipe.Cuts))
-		return images, nil
-	}
-
-	targets := make([]ports.Cut, 0, len(pending))
-	for _, i := range pending {
-		targets = append(targets, recipe.Cuts[i])
-	}
-
-	slog.InfoContext(ctx, "Starting cut keyframe generation",
-		"cuts", len(targets), "skipped", len(recipe.Cuts)-len(targets))
-
-	generated, genErr := r.generator.Execute(ctx, targets)
-	if err := mustMatchCutCount("生成された画像の数", len(generated), len(targets)); err != nil {
-		// 部分失敗でも Execute は全長のスライスを返す契約。長さ違いは実装の破れ。
-		return nil, errors.Join(err, genErr)
-	}
-	// 生成対象を絞っても、返すスライスの添字はレシピ内の位置のままにする。詰めると
-	// 呼び出し側（VideoTimelineRunner、RunAndSave の保存名）がカットを取り違える。
-	for n, image := range generated {
-		images[pending[n]] = image
-	}
-	if genErr != nil {
-		return images, fmt.Errorf("cut keyframe generation failed: %w", genErr)
-	}
-
-	slog.InfoContext(ctx, "Successfully generated cut keyframes", "count", len(generated))
-	return images, nil
-}
-
-// RunAndSave はカットキーフレームを生成し、インデックスを付けて指定のパスに保存します。
+// 生成と保存を 1 枚ずつ組にしているのは運用上の理由です。まとめて生成してから保存すると、
+// その間にプロセスが落ちた場合（Cloud Run のタイムアウト、デプロイ、OOM）に生成済み＝
+// 課金済みの画像がメモリごと消え、再実行で全部作り直しになります。1 枚ずつ保存していれば
+// 失われるのは最大 1 枚で、レシピの KeyframeReference を見て続きから再開できます。
 //
 // **すでに KeyframeReference を持つカットは焼き直しません。** レシピを「あるべき状態」
-// として扱い、足りないキーフレームだけを補ってメタデータを保存し直します。これは
-// VideoTimelineRunner.Run が Cut.IsGenerated() のカットを飛ばすのと同じ考え方で、
-// 保存済みレシピを起点に処理を再開しても、すでに払った生成コストを二重に払いません。
-// 全カットが揃っていれば画像生成は一度も呼ばれず、メタデータの保存だけを行います。
+// として扱い、足りないキーフレームだけを補います。これは VideoTimelineRunner.Run が
+// Cut.IsGenerated() のカットを飛ばすのと同じ考え方です。全カットが揃っていれば画像生成は
+// 一度も呼ばれず、メタデータの保存だけを行います。
 //
-// 生成が途中で失敗した場合も、**成功した分の画像とメタデータは保存してから**エラーを
-// 返します。1枚ごとに生成コストが掛かっているため、支払い済みの成果物を捨てず、
-// 再実行時は失敗したカットだけを続きから生成できるようにします。
+// 生成は maxConcurrency 並列で走りますが、保存は各カットの生成直後に行われます。
+// 一部が失敗しても残りは打ち切らず、成功した分の画像とメタデータを保存してから
+// エラーを errors.Join で集約して返します。
 //
 // 焼き直したいカットは、呼び出し側が KeyframeReference を空にしてから渡してください
 // （「空 = 未生成」がこのメソッドの唯一の判定基準です）。EditAndSave は既存画像を
 // 編集ソースにする別経路なので、この判定の対象外です。
-func (r *CutKeyframeRunner) RunAndSave(ctx context.Context, recipe *ports.VideoRecipe, outputPath string) (*ports.VideoRecipe, error) {
+func (r *CutKeyframeRunner) GenerateAndSave(ctx context.Context, recipe *video.Recipe, outputPath string) (*video.Recipe, error) {
 	if recipe == nil {
 		return nil, ports.ErrRecipeRequired
 	}
@@ -147,37 +111,88 @@ func (r *CutKeyframeRunner) RunAndSave(ctx context.Context, recipe *ports.VideoR
 		return nil, err
 	}
 
-	images, genErr := r.Run(ctx, recipe)
-	if images == nil && genErr != nil {
-		return nil, genErr
-	}
-	for i, image := range images {
-		// nil は「このカットは既存のキーフレームをそのまま使う」（または生成失敗）を意味する。
-		if image == nil {
-			continue
-		}
-		keyframePath, err := r.saveKeyframeImage(ctx, basePath, i+1, image)
-		if err != nil {
-			return nil, errors.Join(err, genErr)
-		}
-		recipe.Cuts[i].KeyframeReference = keyframePath
-	}
+	genErr := r.generateAndSaveCuts(ctx, recipe, basePath)
 
 	slog.InfoContext(ctx, "更新された動画メタデータを保存しています", "output_dir", targetDir)
 	if _, err := writeRecipeMetadata(ctx, r.writer, targetDir, recipe); err != nil {
 		return nil, errors.Join(err, genErr)
 	}
 
-	if genErr != nil {
-		return recipe, genErr
+	return recipe, genErr
+}
+
+// generateAndSaveCuts は未生成のカットを並列に処理します。カットごとに
+// 「生成 → 保存 → レシピへ反映」までを 1 つの goroutine が完結させるため、
+// 保存されないまま失われる画像がありません。
+//
+// recipe.Cuts の各要素は担当 goroutine だけが書き込むため（添字が重複しない）、
+// 排他は不要です。
+func (r *CutKeyframeRunner) generateAndSaveCuts(ctx context.Context, recipe *video.Recipe, basePath string) error {
+	pending := pendingKeyframeCutPositions(recipe.Cuts)
+	if len(pending) == 0 {
+		slog.InfoContext(ctx, "全カットにキーフレームがあるため生成をスキップしました",
+			"cuts", len(recipe.Cuts))
+		return nil
 	}
-	return recipe, nil
+
+	slog.InfoContext(ctx, "Starting cut keyframe generation",
+		"cuts", len(pending), "skipped", len(recipe.Cuts)-len(pending),
+		"concurrency", r.maxConcurrency)
+
+	errs := make([]error, len(pending))
+
+	var eg errgroup.Group
+	eg.SetLimit(r.maxConcurrency)
+	for n, position := range pending {
+		eg.Go(func() error {
+			// 呼び出し元のキャンセル後は新しい生成を始めない（保存済みの結果は残す）。
+			if err := ctx.Err(); err != nil {
+				errs[n] = err
+				return nil
+			}
+			errs[n] = r.generateAndSaveCut(ctx, recipe, basePath, position, n+1, len(pending))
+			return nil
+		})
+	}
+	// クロージャは常に nil を返すため Wait もエラーを返しません（個々の失敗は errs に集約）。
+	_ = eg.Wait()
+
+	if err := errors.Join(errs...); err != nil {
+		return fmt.Errorf("cut keyframe generation failed: %w", err)
+	}
+	slog.InfoContext(ctx, "Successfully generated cut keyframes", "count", len(pending))
+	return nil
+}
+
+// generateAndSaveCut は 1 カット分を生成し、保存し、レシピへ反映します。
+// 保存ファイル名にはレシピ内の位置（1 始まり）を使います。生成対象を絞っても
+// 番号が親レシピの並びからずれないようにするためで、部分バッチが別カットの
+// ファイルを上書きするのを防ぎます。
+func (r *CutKeyframeRunner) generateAndSaveCut(
+	ctx context.Context, recipe *video.Recipe, basePath string, position, index, total int,
+) error {
+	image, err := r.generator.GenerateCut(ctx, recipe.Cuts[position], index, total)
+	if err != nil {
+		return err
+	}
+	if image == nil {
+		return fmt.Errorf("cut %d: キーフレーム画像が返りませんでした", recipe.Cuts[position].CutIndex)
+	}
+
+	keyframePath, err := r.saveKeyframeImage(ctx, basePath, position+1, image)
+	if err != nil {
+		return err
+	}
+
+	recipe.Cuts[position].KeyframeReference = keyframePath
+	recipe.Cuts[position].KeyframeSeed = image.UsedSeed
+	return nil
 }
 
 // pendingKeyframeCutPositions は、まだキーフレーム画像を持たないカットの位置（0始まり）を
 // 返します。判定は KeyframeReference が空かどうかだけで、Cut.IsGenerated()（動画生成の
 // 完了）とは別物です。動画が未生成でもキーフレームは焼き済み、という状態が普通にあります。
-func pendingKeyframeCutPositions(cuts []ports.Cut) []int {
+func pendingKeyframeCutPositions(cuts []video.Cut) []int {
 	var pending []int
 	for i := range cuts {
 		if strings.TrimSpace(cuts[i].KeyframeReference) == "" {
@@ -217,7 +232,7 @@ func keyframeExtensionForMime(mimeType string) string {
 
 // saveKeyframeImage は、basePath から index 番目のキーフレームパスを生成し、画像を保存します。
 // RunAndSave / EditAndSave の両方から使われる共通の保存ロジックです。
-func (r *CutKeyframeRunner) saveKeyframeImage(ctx context.Context, basePath string, index int, image *ports.KeyframeImage) (string, error) {
+func (r *CutKeyframeRunner) saveKeyframeImage(ctx context.Context, basePath string, index int, image *video.KeyframeImage) (string, error) {
 	keyframePath, err := generateIndexedPath(basePath, index)
 	if err != nil {
 		return "", fmt.Errorf("cut %d のキーフレーム出力パス生成に失敗しました: %w", index, err)
@@ -245,7 +260,7 @@ func (r *CutKeyframeRunner) saveKeyframeImage(ctx context.Context, basePath stri
 // cutImageEditor is implemented by image generators that can edit an existing single-cut
 // keyframe image using a text instruction, instead of regenerating it from scratch.
 type cutImageEditor interface {
-	EditCut(ctx context.Context, cut ports.Cut, editPrompt string) (*ports.KeyframeImage, error)
+	EditCut(ctx context.Context, cut video.Cut, editPrompt string) (*video.KeyframeImage, error)
 }
 
 // EditAndSave edits the existing keyframe image of recipe.Cuts[cutPosition] using editPrompt
@@ -255,7 +270,7 @@ type cutImageEditor interface {
 // 以前は単一カットのレシピしか受け付けず、呼び出し側が対象カットだけの使い捨てレシピを
 // 組み立ててカットごとにループしていました。レシピ全体と対象位置を受け取ることで、
 // 保存されるメタデータも常に完全なレシピになります。
-func (r *CutKeyframeRunner) EditAndSave(ctx context.Context, recipe *ports.VideoRecipe, cutPosition int, editPrompt string, outputPath string) (*ports.VideoRecipe, error) {
+func (r *CutKeyframeRunner) EditAndSave(ctx context.Context, recipe *video.Recipe, cutPosition int, editPrompt string, outputPath string) (*video.Recipe, error) {
 	if recipe == nil {
 		return nil, ports.ErrRecipeRequired
 	}

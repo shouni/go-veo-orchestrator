@@ -128,17 +128,17 @@ Veo に渡る prompt は `cuts[].visual_anchor`、`cuts[].audio_cue`、`music_re
 
 各 `cut` は `section_index`（1始まり）で、由来となった `music_recipe.sections` の位置を保持します。1セクションが `scene_split` 等で複数カットに分割されても、分割後の全カットが同じ `section_index` を引き継ぎます。呼び出し側は `start_sec` とセクションの時間範囲を突き合わせて逆算せずに、カットの所属セクションを直接判定できます。明示的に設定されていないカットは、`Normalize()` が `start_sec` から自動的に補完します。
 
-## ⚠️ `ports.Cut` の内部構造
+## ⚠️ `video.Cut` の内部構造
 
 `Cut` の JSON はフラットな構造のままですが、Go の構造体としては `AudioSync` / `KeyframeResult` / `VideoResult` / `ChainControl` へ分割され、匿名フィールドとして埋め込まれています。`cut.VideoID` のようなフィールドアクセスは変わりませんが、コンポジットリテラルはグループ単位で書く必要があります。
 
 ```go
 // ✗ フラットには書けません
-ports.Cut{DurationSec: 5, KeyframeReference: "..."}
+video.Cut{DurationSec: 5, KeyframeReference: "..."}
 
 // ✓ グループ単位で書きます
-ports.Cut{
-	AudioSync:      ports.AudioSync{DurationSec: 5},
-	KeyframeResult: ports.KeyframeResult{KeyframeReference: "..."},
+video.Cut{
+	AudioSync:      video.AudioSync{DurationSec: 5},
+	KeyframeResult: video.KeyframeResult{KeyframeReference: "..."},
 }
 ```

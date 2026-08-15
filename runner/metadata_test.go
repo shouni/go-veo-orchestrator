@@ -4,16 +4,16 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/shouni/go-veo-orchestrator/ports"
+	"github.com/shouni/go-veo-orchestrator/video"
 )
 
 func TestBuildRecipeMetadataDoesNotNormalizeRecipe(t *testing.T) {
-	recipe := &ports.VideoRecipe{
+	recipe := &video.Recipe{
 		ProjectTitle: "fallback title",
-		Cuts: []ports.Cut{
+		Cuts: []video.Cut{
 			{
 				VisualAnchor: "explicit cut",
-				AudioSync:    ports.AudioSync{DurationSec: 8},
+				AudioSync:    video.AudioSync{DurationSec: 8},
 			},
 		},
 	}
@@ -23,7 +23,7 @@ func TestBuildRecipeMetadataDoesNotNormalizeRecipe(t *testing.T) {
 		t.Fatalf("buildRecipeMetadata() error = %v", err)
 	}
 
-	var got ports.VideoRecipe
+	var got video.Recipe
 	if err := json.Unmarshal(data, &got); err != nil {
 		t.Fatalf("metadata JSON should be valid: %v", err)
 	}

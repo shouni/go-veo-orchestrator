@@ -1,4 +1,4 @@
-package ports
+package video
 
 import (
 	"fmt"
@@ -7,10 +7,10 @@ import (
 	"github.com/shouni/go-gemini-client/music"
 )
 
-// VideoRecipe は ScriptRunner が生成する動画台本全体の構造です。
+// Recipe は ScriptRunner が生成する動画台本全体の構造です。
 // Lyria の Music Recipe と各カットの Audio Cue / Visual Anchor を同じ JSON に保持し、
 // Veo への音楽同期プロンプトと後段の決定論的な結合処理の入力にします。
-type VideoRecipe struct {
+type Recipe struct {
 	ProjectTitle string `json:"project_title,omitempty"`
 	Description  string `json:"description,omitempty"`
 	// LocationAnchor is the single persistent core setting (location plus any recurring prop —
@@ -18,7 +18,7 @@ type VideoRecipe struct {
 	// her") for the entire video. It is decided once at script-generation time and propagated
 	// onto every Cut by Normalize. Keyframe generation runs each cut independently and in
 	// parallel (see go-veo-orchestrator/keyframe.Generator.Execute), and prompt builders such as
-	// ports.KeyframePrompt.BuildCut only ever see a single Cut, not the parent VideoRecipe — so
+	// ports.KeyframePrompt.BuildCut only ever see a single Cut, not the parent Recipe — so
 	// without this field, a cut whose own VisualAnchor omits the location (e.g. a tight emotional
 	// close-up) has nothing grounding its background, and the image model is free to hallucinate
 	// an unrelated one.
@@ -43,7 +43,7 @@ type Section = music.Section
 // Lyrics は歌詞ドラフトです（music.LyricsDraft の別名）。
 type Lyrics = music.LyricsDraft
 
-// NewVideoRecipeFromMusic は、Music Recipe から動画レシピを組み立てます。
+// NewRecipeFromMusic は、Music Recipe から動画レシピを組み立てます。
 //
 // タイトルの相互補完とセクション→カット展開は Normalize が行うため、この関数の
 // 仕事は音楽レシピを深いコピーで取り込んで正規化することだけです。以前は消費者側が
@@ -51,8 +51,8 @@ type Lyrics = music.LyricsDraft
 // フィールド単位の手書きコピーが Seed / AudioModel / ComposeMode を静かに
 // 取り落としていました。深いコピー（music.Recipe.Clone）を使うことで、音楽側に
 // フィールドが増えても取りこぼしが構造的に起こりません。
-func NewVideoRecipeFromMusic(musicRecipe music.Recipe) *VideoRecipe {
-	vr := &VideoRecipe{MusicRecipe: *musicRecipe.Clone()}
+func NewRecipeFromMusic(musicRecipe music.Recipe) *Recipe {
+	vr := &Recipe{MusicRecipe: *musicRecipe.Clone()}
 	vr.Normalize()
 	return vr
 }
@@ -69,17 +69,24 @@ type AudioSync struct {
 // KeyframeResult は、カットのキーフレーム（静止画）生成結果を保持します。
 type KeyframeResult struct {
 	KeyframeReference string `json:"keyframe_reference,omitempty"`
+	// KeyframeSeed は、保存済みキーフレームの生成に使われたシードです。
+	//
+	// 画像そのものはレシピに載らず GCS 上のファイルとして残るため、シードをここへ
+	// 記録しておかないと「どの条件で焼いた絵か」が失われます。動画生成もこの値を
+	// 引き継いでキーフレームと同じ乱数系列を使います（未記録の 0 の場合は
+	// キャラクター／レシピのシードへフォールバックします）。
+	KeyframeSeed int64 `json:"keyframe_seed,omitempty"`
 }
 
-// VideoResult は、カットの Veo 動画生成結果を保持します。
-type VideoResult struct {
+// Result は、カットの Veo 動画生成結果を保持します。
+type Result struct {
 	VideoURL string    `json:"video_url,omitempty"`
 	VideoID  string    `json:"video_id,omitempty"`
 	Status   CutStatus `json:"status,omitempty"`
 }
 
 // IsGenerated はカットが動画生成済みとして扱えるかを返します。
-func (r VideoResult) IsGenerated() bool {
+func (r Result) IsGenerated() bool {
 	return r.Status == CutStatusGenerated || (r.VideoID != "" && r.VideoURL != "")
 }
 
@@ -100,7 +107,7 @@ type ChainControl struct {
 
 // Cut は動画内の1カットを表します。
 // audio_cue は BGM 上の展開、visual_anchor は映像上の固定指示です。
-// 生成結果・制御フラグは種別ごとに AudioSync / KeyframeResult / VideoResult / ChainControl
+// 生成結果・制御フラグは種別ごとに AudioSync / KeyframeResult / Result / ChainControl
 // へ分割し、匿名フィールドとして埋め込んでいます。JSON はフラットな構造のまま維持され、
 // cut.VideoID のようなフィールドアクセスも変わりません。
 type Cut struct {
@@ -112,8 +119,8 @@ type Cut struct {
 	// 所属を判定できます。
 	SectionIndex int    `json:"section_index,omitempty"`
 	VisualAnchor string `json:"visual_anchor"`
-	// LocationAnchor mirrors VideoRecipe.LocationAnchor for this cut. It is populated by
-	// VideoRecipe.Normalize, not meant to be set independently per cut, and exists only so that
+	// LocationAnchor mirrors Recipe.LocationAnchor for this cut. It is populated by
+	// Recipe.Normalize, not meant to be set independently per cut, and exists only so that
 	// prompt builders operating on a single Cut (ports.KeyframePrompt.BuildCut) can still ground
 	// their keyframe prompt in the video's persistent setting.
 	LocationAnchor string `json:"location_anchor,omitempty"`
@@ -122,7 +129,7 @@ type Cut struct {
 
 	AudioSync
 	KeyframeResult
-	VideoResult
+	Result
 	ChainControl
 }
 
@@ -142,7 +149,7 @@ const (
 )
 
 // Normalize は Music Recipe 由来のカット生成とタイムライン補完を行います。
-func (vr *VideoRecipe) Normalize() {
+func (vr *Recipe) Normalize() {
 	if vr == nil {
 		return
 	}
@@ -226,12 +233,12 @@ func (c *Cut) Normalize(index int, startSec float64) {
 	}
 }
 
-// Validate は VideoRecipe が後段の処理に耐える状態かを検証します。
+// Validate は Recipe が後段の処理に耐える状態かを検証します。
 //
 // Normalize が埋められる欠落は Normalize に任せ、ここでは埋めようのない破綻だけを見ます。
 // AI 生成の台本は JSON Schema で型と必須項目までしか縛れず、cuts が空になることや
 // section_index が音楽のセクション数を超えることは文法制約の外側で起こります。
-func (vr *VideoRecipe) Validate() error {
+func (vr *Recipe) Validate() error {
 	if vr == nil {
 		return fmt.Errorf("%w: video recipe is nil", ErrRecipeInvalid)
 	}

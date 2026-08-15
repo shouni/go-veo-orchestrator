@@ -27,7 +27,7 @@
 
 * **🔁 Resumable Video Chain**
   各 `cut` は `status`、`video_id`、`video_url` を保持します。生成済みカットは再生成せず、保持済み `video_id` を次カットの `PreviousVideoURI` として使用します。
-  キーフレームも同じ考え方で、`keyframe_reference` を持つカットは焼き直しません（`CutKeyframeRunner.Run` / `RunAndSave` の両方）。焼き直したいカットは `keyframe_reference` を空にしてから渡します（`Cut.ResetGeneration(false)`）。
+  キーフレームも同じ考え方で、`keyframe_reference` を持つカットは焼き直しません（`CutKeyframeRunner.Run` / `GenerateAndSave` の両方）。焼き直したいカットは `keyframe_reference` を空にしてから渡します（`Cut.ResetGeneration(false)`）。
 
 * **🧩 Adapter-Oriented Architecture**
   Veo への実通信は `ports.VideoRunner` に閉じ込め、オーケストレーション、キーフレーム生成、メタデータ保存を分離しています。
@@ -39,7 +39,7 @@
 | ワークフロー | 担当インターフェース | 内容 |
 | --- | --- | --- |
 | **1. Scripting** | `ScriptRunner` | Music Recipe JSON を読み込み、歌詞・section・楽曲展開から、カット割り・カメラワーク・推定秒数を含む **Video Recipe** を生成。 |
-| **2. Cut Keyframe Gen** | `CutKeyframeRunner` | 各カットのベースとなるキーフレーム画像を、キャラクター Seed と参照画像を使って生成（`RunAndSave`）。**`keyframe_reference` が既にあるカットは生成しません**（`Run` は該当位置に `nil` を返し、呼び出し側は既存の参照をそのまま使います）。既存キーフレームの局所編集にも対応（`EditAndSave`）。 |
+| **2. Cut Keyframe Gen** | `CutKeyframeRunner` | 各カットのベースとなるキーフレーム画像を、キャラクター Seed と参照画像を使って生成（`GenerateAndSave`）。**`keyframe_reference` が既にあるカットは生成しません**（`Run` は該当位置に `nil` を返し、呼び出し側は既存の参照をそのまま使います）。既存キーフレームの局所編集にも対応（`EditAndSave`）。 |
 | **3. Video Gen** | `VideoTimelineRunner` + `VideoRunner` | `VideoRequestBuilder` が `VideoGenerationRequest` を組み立て、Veo adapter に順次投入。 |
 | **4. Metadata Publish** | `VideoPublishRunner` | `video_id` / `video_url` / `status` 更新済みの `video_music_meta.json` を保存。 |
 
@@ -84,7 +84,7 @@ if _, err := workflows.Publish.Run(ctx, recipe, "gs://bucket/jobs/<jobID>/"); er
 
 | ドキュメント | 内容 |
 | --- | --- |
-| [Music Recipe JSON](docs/music-recipe.md) | 入力フォーマット、`cuts` の自動生成、`section_index`、`ports.Cut` の構造 |
+| [Music Recipe JSON](docs/music-recipe.md) | 入力フォーマット、`cuts` の自動生成、`section_index`、`video.Cut` の構造 |
 | [設定と差し替え (Config / DI)](docs/configuration.md) | `ports.Config` / `ManagerArgs` / `PromptDeps`、キーフレーム生成オプション |
 | [Adapter Boundary](docs/adapter.md) | `ports.VideoRunner` の実装ガイドと `VideoGenerationRequest` の契約 |
 | [Veo 生成モードとカット尺](docs/veo-modes.md) | `ClassifyVeoRequest` による分類、モード別の対応尺、尺プランナー |

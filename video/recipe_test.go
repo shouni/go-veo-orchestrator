@@ -1,9 +1,9 @@
-package ports
+package video
 
 import "testing"
 
 func TestVideoRecipeNormalizeBuildsCutsFromVariableSections(t *testing.T) {
-	recipe := &VideoRecipe{
+	recipe := &Recipe{
 		MusicRecipe: MusicRecipe{
 			Title: "碧き残影、一瞬の奇跡 〜黒き疾風の叙事詩〜",
 			Mood:  "Epic Symphonic Fantasy Rock Ballad, Emotional and Melancholic",
@@ -58,7 +58,7 @@ func TestVideoRecipeNormalizeBuildsCutsFromVariableSections(t *testing.T) {
 }
 
 func TestVideoRecipeNormalizeKeepsMusicRecipeSlicesIsolatedFromCuts(t *testing.T) {
-	recipe := &VideoRecipe{
+	recipe := &Recipe{
 		MusicRecipe: MusicRecipe{
 			Instruments: []string{"piano"},
 			Sections: []Section{
@@ -79,7 +79,7 @@ func TestVideoRecipeNormalizeKeepsMusicRecipeSlicesIsolatedFromCuts(t *testing.T
 }
 
 func TestVideoRecipeNormalizeUsesProjectTitleAsMusicTitleFallback(t *testing.T) {
-	recipe := &VideoRecipe{
+	recipe := &Recipe{
 		ProjectTitle: "fallback title",
 		MusicRecipe: MusicRecipe{
 			Sections: []Section{
@@ -99,7 +99,7 @@ func TestVideoRecipeNormalizeUsesProjectTitleAsMusicTitleFallback(t *testing.T) 
 }
 
 func TestVideoRecipeNormalizeUsesMusicTitleAsProjectTitleFallback(t *testing.T) {
-	recipe := &VideoRecipe{
+	recipe := &Recipe{
 		MusicRecipe: MusicRecipe{
 			Title: "music title",
 			Sections: []Section{
@@ -119,7 +119,7 @@ func TestVideoRecipeNormalizeUsesMusicTitleAsProjectTitleFallback(t *testing.T) 
 }
 
 func TestVideoRecipeNormalizeBuildsCutsFromMusicRecipeSections(t *testing.T) {
-	recipe := &VideoRecipe{
+	recipe := &Recipe{
 		MusicRecipe: MusicRecipe{
 			Sections: []Section{
 				{
@@ -150,7 +150,7 @@ func TestVideoRecipeNormalizeBuildsCutsFromMusicRecipeSections(t *testing.T) {
 // this field existed), Normalize derives it from StartSec against the section time ranges,
 // instead of leaving it at the zero value.
 func TestVideoRecipeNormalizeDerivesSectionIndexFromStartSec(t *testing.T) {
-	recipe := &VideoRecipe{
+	recipe := &Recipe{
 		MusicRecipe: MusicRecipe{
 			Sections: []Section{
 				{Name: "Verse", StartSeconds: 0, EndSeconds: 30},
@@ -177,7 +177,7 @@ func TestVideoRecipeNormalizeDerivesSectionIndexFromStartSec(t *testing.T) {
 // TestVideoRecipeNormalizeKeepsExplicitSectionIndex verifies that an explicitly set
 // SectionIndex is never overwritten by the StartSec-based fallback derivation.
 func TestVideoRecipeNormalizeKeepsExplicitSectionIndex(t *testing.T) {
-	recipe := &VideoRecipe{
+	recipe := &Recipe{
 		MusicRecipe: MusicRecipe{
 			Sections: []Section{
 				{Name: "Verse", StartSeconds: 0, EndSeconds: 30},
@@ -199,12 +199,12 @@ func TestVideoRecipeNormalizeKeepsExplicitSectionIndex(t *testing.T) {
 	}
 }
 
-// TestVideoRecipeNormalizePropagatesLocationAnchorToCuts verifies that VideoRecipe.LocationAnchor
+// TestVideoRecipeNormalizePropagatesLocationAnchorToCuts verifies that Recipe.LocationAnchor
 // is copied onto every cut that doesn't already have one, so prompt builders that only see a
 // single Cut (ports.KeyframePrompt.BuildCut) can still ground their prompt in the recipe's
 // persistent setting.
 func TestVideoRecipeNormalizePropagatesLocationAnchorToCuts(t *testing.T) {
-	recipe := &VideoRecipe{
+	recipe := &Recipe{
 		LocationAnchor: "a misty coastal cliffside road overlooking the ocean at dawn; her bicycle beside her",
 		Cuts: []Cut{
 			{VisualAnchor: "wide establishing shot", AudioSync: AudioSync{DurationSec: 8}},
@@ -225,7 +225,7 @@ func TestVideoRecipeNormalizePropagatesLocationAnchorToCuts(t *testing.T) {
 // LocationAnchor already set (e.g. a section that explicitly moves to a new place) is never
 // overwritten by the recipe-level fallback.
 func TestVideoRecipeNormalizeKeepsExplicitCutLocationAnchor(t *testing.T) {
-	recipe := &VideoRecipe{
+	recipe := &Recipe{
 		LocationAnchor: "a misty coastal cliffside road overlooking the ocean at dawn; her bicycle beside her",
 		Cuts: []Cut{
 			{
@@ -245,7 +245,7 @@ func TestVideoRecipeNormalizeKeepsExplicitCutLocationAnchor(t *testing.T) {
 }
 
 func TestVideoRecipeNormalizeDoesNotOverwriteExplicitCuts(t *testing.T) {
-	recipe := &VideoRecipe{
+	recipe := &Recipe{
 		MusicRecipe: MusicRecipe{
 			Sections: []Section{
 				{
@@ -276,7 +276,7 @@ func TestVideoRecipeNormalizeDoesNotOverwriteExplicitCuts(t *testing.T) {
 // 弾くことを確認します。JSON Schema は型と必須項目までしか縛れないため、これらは
 // 文法制約をすり抜けて後段（Veo のカット生成）まで到達します。
 func TestVideoRecipeValidateRejectsBrokenStructure(t *testing.T) {
-	tests := map[string]*VideoRecipe{
+	tests := map[string]*Recipe{
 		"nil recipe": nil,
 		"no title": {
 			Cuts: Cuts{{CutIndex: 1, VisualAnchor: "a"}},
@@ -303,7 +303,7 @@ func TestVideoRecipeValidateRejectsBrokenStructure(t *testing.T) {
 // TestVideoRecipeValidateAcceptsUnassignedSectionIndex は、section_index の 0 を通すことを
 // 確認します。0 は「未割り当て」を表す正当な値で、Normalize が StartSec から補完します。
 func TestVideoRecipeValidateAcceptsUnassignedSectionIndex(t *testing.T) {
-	recipe := &VideoRecipe{
+	recipe := &Recipe{
 		ProjectTitle: "Title",
 		MusicRecipe:  MusicRecipe{Sections: []Section{{Name: "Verse"}}},
 		Cuts:         Cuts{{CutIndex: 1, SectionIndex: 0, VisualAnchor: "a"}},
@@ -317,7 +317,7 @@ func TestVideoRecipeValidateAcceptsUnassignedSectionIndex(t *testing.T) {
 // TestVideoRecipeValidateAcceptsMusicTitleAsFallback は、project_title が空でも
 // music_recipe 側にタイトルがあれば通ることを確認します。Normalize が補完する関係です。
 func TestVideoRecipeValidateAcceptsMusicTitleAsFallback(t *testing.T) {
-	recipe := &VideoRecipe{
+	recipe := &Recipe{
 		MusicRecipe: MusicRecipe{Title: "Song"},
 		Cuts:        Cuts{{CutIndex: 1, VisualAnchor: "a"}},
 	}

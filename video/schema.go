@@ -1,13 +1,13 @@
-package ports
+package video
 
-// VideoRecipeSchema は VideoScriptRunner が Gemini に構造化出力させる際の
+// RecipeSchema は VideoScriptRunner が Gemini に構造化出力させる際の
 // レスポンススキーマです。ResponseMIMEType "application/json" と併用することで、
 // モデル出力が文法レベルでこのスキーマに制約されます。
 //
 // music_recipe / final_video_url / aspect_ratio、および Cut のうち cut_index /
 // section_index / start_sec / end_sec / keyframe_reference / video_url /
 // video_id / status / is_chain_start / is_section_start は、いずれもパイプラインの
-// 後段（VideoRecipe.Normalize、CutKeyframeRunner、VideoTimelineRunner）が算出・
+// 後段（Recipe.Normalize、CutKeyframeRunner、VideoTimelineRunner）が算出・
 // 付与する値であり、AI に生成させる対象ではないため意図的にスキーマへ含めません。
 //
 // characterIDs は、この呼び出しで有効なキャラクター定義（characterkit.Characters）
@@ -18,7 +18,7 @@ package ports
 // 戻り値は素の JSON Schema（gemini.GenerateOptions.ResponseJSONSchema へ渡す形）です。
 // genai.Schema で組み立てると、スキーマを書くだけのコードが SDK の型に縛られ、
 // go-gemini-client を挟んでいる意味が薄れます。
-func VideoRecipeSchema(characterIDs []string) map[string]any {
+func RecipeSchema(characterIDs []string) map[string]any {
 	return map[string]any{
 		"type": "object",
 		"properties": map[string]any{
@@ -34,7 +34,7 @@ func VideoRecipeSchema(characterIDs []string) map[string]any {
 	}
 }
 
-// cutSchema は VideoRecipeSchema の cuts[] 要素のスキーマです。
+// cutSchema は RecipeSchema の cuts[] 要素のスキーマです。
 func cutSchema(characterIDs []string) map[string]any {
 	characterIDEnum := append([]string{""}, characterIDs...)
 

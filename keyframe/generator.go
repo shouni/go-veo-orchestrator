@@ -6,7 +6,6 @@ package keyframe
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -14,9 +13,9 @@ import (
 	characterkit "github.com/shouni/go-character-kit/character"
 	"github.com/shouni/go-gemini-client/gemini"
 	imagePorts "github.com/shouni/vertex-image-kit/ports"
-	"golang.org/x/sync/errgroup"
 
 	"github.com/shouni/go-veo-orchestrator/ports"
+	"github.com/shouni/go-veo-orchestrator/video"
 )
 
 // defaultNegativeKeyframePrompt は単体カットのキーフレームで「文字」や「フキダシ」を
@@ -25,13 +24,9 @@ const defaultNegativeKeyframePrompt = "speech bubble, dialogue balloon, text, al
 
 // Generator は、キャラクターの一貫性を保ちながら複数カットのキーフレームを生成します。
 //
-// 並列度はこのパッケージが持ちます（WithMaxConcurrency）。注入される画像ジェネレータ
-// 側の一括生成に委ねると、1 枚ごとの進捗ログ（何枚中の何枚目か・所要時間）を出す
-// フックが無くなるためです。1 枚に分単位掛かる処理でそれが読めないと進捗を判断できません。
-//
-// 一方、発射間隔と 1 回あたりの上限時間はここでは持ちません。注入側（workflow の
-// callGuard）が受け持ちます — 同じリミッターを台本のテキスト生成にも共有する必要が
-// あり、クォータはプロジェクト単位だからです。
+// 生成の単位は 1 カットです。並列度は保存を持つ runner.CutKeyframeRunner が、発射間隔と
+// 1 回あたりの上限時間は workflow の callGuard が受け持ちます。このパッケージに残るのは
+// 「1 枚をどう組み立ててどう送るか」だけです。
 type Generator struct {
 	characters     *characterkit.Characters
 	generator      imagePorts.ImageGenerator
@@ -40,7 +35,6 @@ type Generator struct {
 	aspectRatio    string
 	imageSize      string
 	negativePrompt string
-	maxConcurrency int
 }
 
 type keyframeTask struct {
@@ -49,7 +43,7 @@ type keyframeTask struct {
 	// 何枚目か」を出すために持ちます。1枚に分単位で掛かることもあるため、総数が
 	// 無いと進捗が読めません。
 	total int
-	cut   ports.Cut
+	cut   video.Cut
 }
 
 // NewGenerator は Generator の新しいインスタンスを初期化します。
@@ -75,46 +69,18 @@ func NewGenerator(
 	return g
 }
 
-// Execute は、カット列のキーフレームを最大 maxConcurrency 並列で生成します。
+// GenerateCut は 1 カット分のキーフレームを生成します。
 //
-// 戻り値は cuts と同じ長さ・並びで、エラー時も生成できた位置には結果が入ります。
-// キーフレーム 1 枚ごとに生成コストが掛かるため、1 件の失敗で残りを打ち切らず、
-// 支払い済みの画像も捨てません（呼び出し側の RunAndSave は部分結果も保存するので、
-// 再実行は失敗したカットだけを続きから生成します）。エラーは errors.Join で集約されます。
-func (g *Generator) Execute(ctx context.Context, cuts []ports.Cut) ([]*ports.KeyframeImage, error) {
-	if len(cuts) == 0 {
-		return nil, nil
-	}
-
-	images := make([]*ports.KeyframeImage, len(cuts))
-	errs := make([]error, len(cuts))
-
-	concurrency := g.maxConcurrency
-	if concurrency <= 0 {
-		concurrency = 1
-	}
-
-	var eg errgroup.Group
-	eg.SetLimit(concurrency)
-	for i, cut := range cuts {
-		task := keyframeTask{index: i, total: len(cuts), cut: cut}
-		eg.Go(func() error {
-			// 呼び出し元のキャンセル後は新しい生成を始めない（生成済みの結果は保持する）。
-			if err := ctx.Err(); err != nil {
-				errs[i] = err
-				return nil
-			}
-			images[i], errs[i] = g.generateCutKeyframe(ctx, task)
-			return nil
-		})
-	}
-	// クロージャは常に nil を返すため Wait もエラーを返しません（個々の失敗は errs に集約）。
-	_ = eg.Wait()
-
-	return images, errors.Join(errs...)
+// 並列実行はここでは行いません。保存を持つ呼び出し側（runner.CutKeyframeRunner）が
+// 1 枚できるたびに保存できるよう、生成の単位を 1 枚に保っています。まとめて生成して
+// から保存すると、途中で落ちた場合に課金済みの画像がメモリごと失われます。
+//
+// index / total は進捗ログ用（1 始まり）で、生成そのものには影響しません。
+func (g *Generator) GenerateCut(ctx context.Context, cut video.Cut, index, total int) (*video.KeyframeImage, error) {
+	return g.generateCutKeyframe(ctx, keyframeTask{index: index - 1, total: total, cut: cut})
 }
 
-func (g *Generator) generateCutKeyframe(ctx context.Context, task keyframeTask) (*ports.KeyframeImage, error) {
+func (g *Generator) generateCutKeyframe(ctx context.Context, task keyframeTask) (*video.KeyframeImage, error) {
 	char := g.characterForCut(task.cut)
 	if char == nil {
 		return nil, fmt.Errorf("cut %d: キャラクターID '%s' に対応するキャラクターが見つかりません", task.cut.CutIndex, task.cut.CharacterID)
@@ -141,7 +107,7 @@ func (g *Generator) runImageGeneration(
 	startLog, completeLog, actionJP string,
 	cutIndex int,
 	characterID string,
-) (*ports.KeyframeImage, error) {
+) (*video.KeyframeImage, error) {
 	logger.Info(startLog)
 	startTime := time.Now()
 
@@ -160,11 +126,11 @@ func (g *Generator) runImageGeneration(
 
 // keyframeImageFrom は、画像キットのレスポンスをライブラリ自身の型へ写します。
 // image-kit の型を公開 API へ晒さないための境界で、このパッケージだけが両方を知ります。
-func keyframeImageFrom(resp *imagePorts.ImageResponse) *ports.KeyframeImage {
+func keyframeImageFrom(resp *imagePorts.ImageResponse) *video.KeyframeImage {
 	if resp == nil {
 		return nil
 	}
-	return &ports.KeyframeImage{
+	return &video.KeyframeImage{
 		Data:     resp.Data,
 		MimeType: resp.MimeType,
 		UsedSeed: resp.UsedSeed,
@@ -179,7 +145,7 @@ func keyframeImageFrom(resp *imagePorts.ImageResponse) *ports.KeyframeImage {
 // Execute (Gemini's multimodal "Nano Banana" image models support editing an input image via
 // a plain generateContent call), rather than a dedicated edit API — Vertex AI's Imagen
 // mask-based edit/capability models have no supported successor.
-func (g *Generator) EditCut(ctx context.Context, cut ports.Cut, editPrompt string) (*ports.KeyframeImage, error) {
+func (g *Generator) EditCut(ctx context.Context, cut video.Cut, editPrompt string) (*video.KeyframeImage, error) {
 	if cut.KeyframeReference == "" {
 		return nil, fmt.Errorf("cut %d: %w", cut.CutIndex, ports.ErrNoKeyframeToEdit)
 	}
@@ -208,11 +174,11 @@ func (g *Generator) EditCut(ctx context.Context, cut ports.Cut, editPrompt strin
 
 // characterForCut はカットに対応するキャラクターを解決します。
 // cut.CharacterID が未設定、または未知の ID の場合はデフォルトキャラクターに落とします。
-func (g *Generator) characterForCut(cut ports.Cut) *characterkit.Character {
+func (g *Generator) characterForCut(cut video.Cut) *characterkit.Character {
 	return g.characters.GetCharacterWithDefault(cut.CharacterID)
 }
 
-func (g *Generator) buildImageRequest(cut ports.Cut, char *characterkit.Character) imagePorts.ImageRequest {
+func (g *Generator) buildImageRequest(cut video.Cut, char *characterkit.Character) imagePorts.ImageRequest {
 	userPrompt, systemPrompt := g.pb.BuildCut(cut, char)
 	// キャラクターの参照画像が生成対象と異なるアスペクト比（例: 横長3ポーズシートを縦長
 	// キーフレームの参照に使う）だと、色・小物配置・髪型などの細部が生成のたびにブレやすいため、

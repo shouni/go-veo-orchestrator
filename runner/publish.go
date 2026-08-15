@@ -7,6 +7,7 @@ import (
 
 	"github.com/shouni/go-remote-io/remoteio"
 	"github.com/shouni/go-veo-orchestrator/ports"
+	"github.com/shouni/go-veo-orchestrator/video"
 )
 
 // VideoPublisherRunner は Music Recipe とカット情報を動画向けメタデータとして出力します。
@@ -20,7 +21,7 @@ func NewVideoPublisherRunner(writer remoteio.Writer) *VideoPublisherRunner {
 }
 
 // Run は HTML/Markdown ではなく、結合・検証に使う JSON メタデータだけを保存します。
-func (pr *VideoPublisherRunner) Run(ctx context.Context, recipe *ports.VideoRecipe, outputDir string) (*ports.PublishResult, error) {
+func (pr *VideoPublisherRunner) Run(ctx context.Context, recipe *video.Recipe, outputDir string) (*video.PublishResult, error) {
 	if recipe == nil {
 		return nil, ports.ErrRecipeRequired
 	}
@@ -42,13 +43,13 @@ func (pr *VideoPublisherRunner) Run(ctx context.Context, recipe *ports.VideoReci
 		imagePaths = append(imagePaths, path.Join(defaultImageDir, path.Base(cut.KeyframeReference)))
 	}
 
-	return &ports.PublishResult{
+	return &video.PublishResult{
 		MetadataPath: metadataPath,
 		ImagePaths:   imagePaths,
 	}, nil
 }
 
 // BuildMetadata は VideoRecipe を整形済み JSON に変換します。
-func (pr *VideoPublisherRunner) BuildMetadata(recipe *ports.VideoRecipe) ([]byte, error) {
+func (pr *VideoPublisherRunner) BuildMetadata(recipe *video.Recipe) ([]byte, error) {
 	return buildRecipeMetadata(recipe)
 }

@@ -3,13 +3,11 @@ package keyframe
 import (
 	"context"
 	"errors"
-	"fmt"
 	"sync"
 	"testing"
-	"time"
 
 	characterkit "github.com/shouni/go-character-kit/character"
-	"github.com/shouni/go-veo-orchestrator/ports"
+	"github.com/shouni/go-veo-orchestrator/video"
 	imagePorts "github.com/shouni/vertex-image-kit/ports"
 )
 
@@ -41,12 +39,29 @@ func (m *mockImageGenerator) Generate(ctx context.Context, req imagePorts.ImageR
 
 type mockImagePrompt struct{}
 
-func (m *mockImagePrompt) BuildCut(cut ports.Cut, _ *characterkit.Character) (string, string) {
+func (m *mockImagePrompt) BuildCut(cut video.Cut, _ *characterkit.Character) (string, string) {
 	return cut.VisualAnchor, "system"
 }
 
-func (m *mockImagePrompt) BuildEdit(_ ports.Cut, _ *characterkit.Character, editPrompt string) (string, string) {
+func (m *mockImagePrompt) BuildEdit(_ video.Cut, _ *characterkit.Character, editPrompt string) (string, string) {
 	return editPrompt, "edit-system"
+}
+
+// execAll は、旧 Execute のようにカット列をまとめて生成するテスト用ヘルパーです。
+// 本番の並列実行と保存は runner.CutKeyframeRunner が持つため、ここでは逐次で足ります。
+func execAll(ctx context.Context, t *testing.T, g *Generator, cuts []video.Cut) ([]*video.KeyframeImage, error) {
+	t.Helper()
+	images := make([]*video.KeyframeImage, len(cuts))
+	var errs []error
+	for i, cut := range cuts {
+		img, err := g.GenerateCut(ctx, cut, i+1, len(cuts))
+		if err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		images[i] = img
+	}
+	return images, errors.Join(errs...)
 }
 
 // --- Tests ---
@@ -89,7 +104,7 @@ func TestGenerator_Execute(t *testing.T) {
 	)
 
 	t.Run("Sequential Generation and Individual Seeds", func(t *testing.T) {
-		cuts := []ports.Cut{
+		cuts := []video.Cut{
 			{CharacterID: "zundamon", Dialogue: "こんにちはなのだ！"},
 			{CharacterID: "metan", Dialogue: "ごきげんよう。"},
 			{CharacterID: "unknown", Dialogue: "誰かしら？"}, // Defaultのmetanが使われるはず
@@ -101,7 +116,7 @@ func TestGenerator_Execute(t *testing.T) {
 			return &imagePorts.ImageResponse{UsedSeed: *req.Seed}, nil
 		}
 
-		res, err := generator.Execute(ctx, cuts)
+		res, err := execAll(ctx, t, generator, cuts)
 		if err != nil {
 			t.Fatalf("Execute failed: %v", err)
 		}
@@ -127,12 +142,12 @@ func TestGenerator_Execute(t *testing.T) {
 	})
 
 	t.Run("Empty Keyframes Handling", func(t *testing.T) {
-		res, err := generator.Execute(ctx, []ports.Cut{})
+		res, err := execAll(ctx, t, generator, []video.Cut{})
 		if err != nil {
 			t.Fatalf("Execute failed on empty: %v", err)
 		}
-		if res != nil {
-			t.Error("Expected nil response for empty keyframes")
+		if len(res) != 0 {
+			t.Errorf("Expected no images for empty keyframes, got %d", len(res))
 		}
 	})
 
@@ -141,7 +156,7 @@ func TestGenerator_Execute(t *testing.T) {
 	t.Run("参照は解決せずそのまま渡す", func(t *testing.T) {
 		genMock.generateCount = 0
 
-		if _, err := generator.Execute(ctx, []ports.Cut{{CharacterID: "zundamon"}}); err != nil {
+		if _, err := execAll(ctx, t, generator, []video.Cut{{CharacterID: "zundamon"}}); err != nil {
 			t.Fatal(err)
 		}
 
@@ -162,7 +177,7 @@ func TestGenerator_AspectRatio(t *testing.T) {
 	cm := mustNewCharacters(t, []characterkit.Character{
 		{ID: "zundamon", Name: "ずんだもん", VisualCues: []string{"green hair"}, Seed: &zundamonSeed, ReferenceURL: "gs://bucket/zunda.png", IsDefault: true},
 	})
-	cuts := []ports.Cut{{CharacterID: "zundamon"}}
+	cuts := []video.Cut{{CharacterID: "zundamon"}}
 
 	newGeneratorWithAspectRatio := func(opts ...Option) (*Generator, *mockImageGenerator) {
 		genMock := &mockImageGenerator{}
@@ -178,7 +193,7 @@ func TestGenerator_AspectRatio(t *testing.T) {
 			captured = req.AspectRatio
 			return &imagePorts.ImageResponse{}, nil
 		}
-		if _, err := g.Execute(ctx, cuts); err != nil {
+		if _, err := execAll(ctx, t, g, cuts); err != nil {
 			t.Fatalf("Execute failed: %v", err)
 		}
 		if captured != CutAspectRatio {
@@ -193,7 +208,7 @@ func TestGenerator_AspectRatio(t *testing.T) {
 			captured = req.AspectRatio
 			return &imagePorts.ImageResponse{}, nil
 		}
-		if _, err := g.Execute(ctx, cuts); err != nil {
+		if _, err := execAll(ctx, t, g, cuts); err != nil {
 			t.Fatalf("Execute failed: %v", err)
 		}
 		if captured != "9:16" {
@@ -208,7 +223,7 @@ func TestGenerator_AspectRatio(t *testing.T) {
 			captured = req.AspectRatio
 			return &imagePorts.ImageResponse{}, nil
 		}
-		if _, err := g.Execute(ctx, cuts); err != nil {
+		if _, err := execAll(ctx, t, g, cuts); err != nil {
 			t.Fatalf("Execute failed: %v", err)
 		}
 		if captured != CutAspectRatio {
@@ -234,7 +249,7 @@ func TestGenerator_ReferenceURLPerAspectRatio(t *testing.T) {
 			IsDefault: true,
 		},
 	})
-	cuts := []ports.Cut{{CharacterID: "tsumugi"}}
+	cuts := []video.Cut{{CharacterID: "tsumugi"}}
 
 	newGenerator := func(opts ...Option) (*Generator, *mockImageGenerator) {
 		genMock := &mockImageGenerator{}
@@ -250,7 +265,7 @@ func TestGenerator_ReferenceURLPerAspectRatio(t *testing.T) {
 			captured = req.Images[0].ReferenceURL
 			return &imagePorts.ImageResponse{}, nil
 		}
-		if _, err := g.Execute(ctx, cuts); err != nil {
+		if _, err := execAll(ctx, t, g, cuts); err != nil {
 			t.Fatalf("Execute failed: %v", err)
 		}
 		if captured != "gs://bucket/tsumugi-9x16.png" {
@@ -265,7 +280,7 @@ func TestGenerator_ReferenceURLPerAspectRatio(t *testing.T) {
 			captured = req.Images[0].ReferenceURL
 			return &imagePorts.ImageResponse{}, nil
 		}
-		if _, err := g.Execute(ctx, cuts); err != nil {
+		if _, err := execAll(ctx, t, g, cuts); err != nil {
 			t.Fatalf("Execute failed: %v", err)
 		}
 		if captured != "gs://bucket/tsumugi-16x9.png" {
@@ -292,7 +307,7 @@ func TestGenerator_EditCut(t *testing.T) {
 			return &imagePorts.ImageResponse{Data: []byte("edited"), UsedSeed: *req.Seed}, nil
 		}
 
-		cut := ports.Cut{CutIndex: 2, CharacterID: "zundamon", KeyframeResult: ports.KeyframeResult{KeyframeReference: "gs://bucket/jobs/j1/images/keyframe_2.png"}}
+		cut := video.Cut{CutIndex: 2, CharacterID: "zundamon", KeyframeResult: video.KeyframeResult{KeyframeReference: "gs://bucket/jobs/j1/images/keyframe_2.png"}}
 		resp, err := generator.EditCut(ctx, cut, "腕には絆創膏を1〜2枚のみにしてください")
 		if err != nil {
 			t.Fatalf("EditCut failed: %v", err)
@@ -315,7 +330,7 @@ func TestGenerator_EditCut(t *testing.T) {
 	})
 
 	t.Run("Errors when cut has no existing keyframe", func(t *testing.T) {
-		cut := ports.Cut{CutIndex: 1, CharacterID: "zundamon"}
+		cut := video.Cut{CutIndex: 1, CharacterID: "zundamon"}
 		if _, err := generator.EditCut(ctx, cut, "edit"); err == nil {
 			t.Fatal("expected error for cut with no KeyframeReference")
 		}
@@ -323,109 +338,9 @@ func TestGenerator_EditCut(t *testing.T) {
 
 	t.Run("Errors when character is unknown and no default exists", func(t *testing.T) {
 		g := NewGenerator(mustNewCharacters(t, nil), genMock, pbMock, "gemini-2.0-flash")
-		cut := ports.Cut{CutIndex: 1, CharacterID: "no-such-character", KeyframeResult: ports.KeyframeResult{KeyframeReference: "gs://bucket/keyframe.png"}}
+		cut := video.Cut{CutIndex: 1, CharacterID: "no-such-character", KeyframeResult: video.KeyframeResult{KeyframeReference: "gs://bucket/keyframe.png"}}
 		if _, err := g.EditCut(ctx, cut, "edit"); err == nil {
 			t.Fatal("expected error for unknown character with no default")
 		}
 	})
-}
-
-// TestGenerator_MaxConcurrency は WithMaxConcurrency がカット間の同時実行数を実際に
-// 制限することを確認します。以前この設定は Config にありながらどこからも読まれず、
-// 設定した値が黙って捨てられていました。
-func TestGenerator_MaxConcurrency(t *testing.T) {
-	ctx := context.Background()
-	cm := mustNewCharacters(t, []characterkit.Character{
-		{ID: "main", Name: "Main", VisualCues: []string{"blue"}, ReferenceURL: "gs://bucket/main.png", IsDefault: true},
-	})
-
-	cuts := make([]ports.Cut, 8)
-	for i := range cuts {
-		cuts[i] = ports.Cut{CharacterID: "main"}
-	}
-
-	for _, limit := range []int{1, 3} {
-		t.Run(fmt.Sprintf("limit=%d", limit), func(t *testing.T) {
-			var mu sync.Mutex
-			inFlight, peak := 0, 0
-
-			genMock := &mockImageGenerator{}
-			genMock.generateFunc = func(_ context.Context, _ imagePorts.ImageRequest) (*imagePorts.ImageResponse, error) {
-				mu.Lock()
-				inFlight++
-				if inFlight > peak {
-					peak = inFlight
-				}
-				mu.Unlock()
-
-				time.Sleep(20 * time.Millisecond)
-
-				mu.Lock()
-				inFlight--
-				mu.Unlock()
-				return &imagePorts.ImageResponse{}, nil
-			}
-
-			g := NewGenerator(cm, genMock, &mockImagePrompt{}, "model", WithMaxConcurrency(limit))
-			res, err := g.Execute(ctx, cuts)
-			if err != nil {
-				t.Fatalf("Execute failed: %v", err)
-			}
-			if len(res) != len(cuts) {
-				t.Fatalf("got %d images, want %d", len(res), len(cuts))
-			}
-
-			mu.Lock()
-			defer mu.Unlock()
-			if peak > limit {
-				t.Errorf("peak concurrency = %d, want <= %d", peak, limit)
-			}
-			if limit > 1 && peak < 2 {
-				t.Errorf("peak concurrency = %d, want parallel execution", peak)
-			}
-		})
-	}
-}
-
-// TestGenerator_ExecutePreservesOrderAndPartialSuccess は、1件の失敗で残りを打ち切らず、
-// 成功した位置の結果を保持し、並びが入力と一致することを確認します。並列実行なので
-// 順序は goroutine の完了順ではなくインデックスで決まる必要があります。
-func TestGenerator_ExecutePreservesOrderAndPartialSuccess(t *testing.T) {
-	ctx := context.Background()
-	cm := mustNewCharacters(t, []characterkit.Character{
-		{ID: "main", Name: "Main", VisualCues: []string{"blue"}, ReferenceURL: "gs://bucket/main.png", IsDefault: true},
-	})
-
-	cuts := []ports.Cut{
-		{CharacterID: "main", VisualAnchor: "first"},
-		{CharacterID: "main", VisualAnchor: "boom"},
-		{CharacterID: "main", VisualAnchor: "third"},
-	}
-
-	genMock := &mockImageGenerator{}
-	genMock.generateFunc = func(_ context.Context, req imagePorts.ImageRequest) (*imagePorts.ImageResponse, error) {
-		if req.Prompt == "boom" {
-			return nil, errors.New("boom")
-		}
-		return &imagePorts.ImageResponse{Prompt: req.Prompt}, nil
-	}
-
-	g := NewGenerator(cm, genMock, &mockImagePrompt{}, "model", WithMaxConcurrency(3))
-	res, err := g.Execute(ctx, cuts)
-	if err == nil {
-		t.Fatal("expected an aggregated error for the failing cut")
-	}
-
-	if len(res) != 3 {
-		t.Fatalf("got %d results, want 3", len(res))
-	}
-	if res[0] == nil || res[0].Prompt != "first" {
-		t.Errorf("res[0] = %v, want the first cut's result", res[0])
-	}
-	if res[1] != nil {
-		t.Errorf("res[1] = %v, want nil for the failing cut", res[1])
-	}
-	if res[2] == nil || res[2].Prompt != "third" {
-		t.Errorf("res[2] = %v, want the third cut kept despite the earlier failure", res[2])
-	}
 }

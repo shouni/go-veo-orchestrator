@@ -53,4 +53,4 @@
 
 保存側は `runner.NewCutKeyframeRunner` の `runner.WithCacheControl` で、キーフレーム画像に付ける `Cache-Control` を差し替えられます（既定は `DefaultKeyframeCacheControl` = `public, max-age=1800`。生成物を公開したくないデプロイでは `private` などを指定してください）。
 
-キーフレームの生成結果はライブラリ自身の型 `ports.KeyframeImage`（`Data` / `MimeType` / `UsedSeed` / `Model` / `Prompt`）で返ります。vertex-image-kit の型を公開面に出さないための境界で、利用側は画像キットを import せずに済みます。
+キーフレームの生成結果はライブラリ自身の型 `video.KeyframeImage`（`Data` / `MimeType` / `UsedSeed` / `Model` / `Prompt`）で返ります。vertex-image-kit の型を公開面に出さないための境界で、利用側は画像キットを import せずに済みます。

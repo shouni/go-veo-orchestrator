@@ -1,4 +1,4 @@
-package ports
+package video
 
 // KeyframeImage は、生成されたキーフレーム画像 1 枚とそのメタデータです。
 //

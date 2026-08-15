@@ -1,4 +1,4 @@
-package ports
+package video
 
 import "testing"
 
@@ -29,7 +29,7 @@ func cutProperties(t *testing.T, schema map[string]any) map[string]any {
 }
 
 func TestVideoRecipeSchemaExcludesPipelineFields(t *testing.T) {
-	schema := VideoRecipeSchema(nil)
+	schema := RecipeSchema(nil)
 
 	props := properties(t, schema)
 	for _, excluded := range []string{"music_recipe", "final_video_url", "aspect_ratio"} {
@@ -51,7 +51,7 @@ func TestVideoRecipeSchemaExcludesPipelineFields(t *testing.T) {
 }
 
 func TestVideoRecipeSchemaAllowsPerCutAudioReference(t *testing.T) {
-	schema := VideoRecipeSchema(nil)
+	schema := RecipeSchema(nil)
 
 	if _, ok := cutProperties(t, schema)["audio_reference"]; !ok {
 		t.Error("cut properties[\"audio_reference\"] should be present so the model can copy a cut-specific GCS audio URI from the source recipe")
@@ -59,7 +59,7 @@ func TestVideoRecipeSchemaAllowsPerCutAudioReference(t *testing.T) {
 }
 
 func TestVideoRecipeSchemaCharacterIDEnumAllowsEmptyForScenery(t *testing.T) {
-	schema := VideoRecipeSchema([]string{"zundamon", "metan"})
+	schema := RecipeSchema([]string{"zundamon", "metan"})
 
 	characterID, ok := cutProperties(t, schema)["character_id"].(map[string]any)
 	if !ok {
@@ -82,7 +82,7 @@ func TestVideoRecipeSchemaCharacterIDEnumAllowsEmptyForScenery(t *testing.T) {
 }
 
 func TestVideoRecipeSchemaRequiresProjectTitleAndCuts(t *testing.T) {
-	schema := VideoRecipeSchema(nil)
+	schema := RecipeSchema(nil)
 
 	required, ok := schema["required"].([]string)
 	if !ok {
@@ -103,7 +103,7 @@ func TestVideoRecipeSchemaRequiresProjectTitleAndCuts(t *testing.T) {
 // TestVideoRecipeSchemaIsPlainJSONSchema は、スキーマが素の JSON Schema であることを確認します。
 // genai.Schema へ戻すと、スキーマ定義のためだけに SDK 依存が復活します。
 func TestVideoRecipeSchemaIsPlainJSONSchema(t *testing.T) {
-	schema := VideoRecipeSchema(nil)
+	schema := RecipeSchema(nil)
 
 	if got := schema["type"]; got != "object" {
 		t.Errorf("schema type = %v, want %q", got, "object")

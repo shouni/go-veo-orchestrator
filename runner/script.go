@@ -13,6 +13,7 @@ import (
 	characterkit "github.com/shouni/go-character-kit/character"
 	"github.com/shouni/go-gemini-client/gemini"
 	"github.com/shouni/go-veo-orchestrator/ports"
+	"github.com/shouni/go-veo-orchestrator/video"
 )
 
 const (
@@ -68,7 +69,7 @@ func (r *VideoScriptRunner) characterIDs() []string {
 }
 
 // Run は Music Recipe JSON を読み込み、Gemini を用いて動画台本 JSON を生成します。
-func (r *VideoScriptRunner) Run(ctx context.Context, sourceURL string, mode string) (*ports.VideoRecipe, error) {
+func (r *VideoScriptRunner) Run(ctx context.Context, sourceURL string, mode string) (*video.Recipe, error) {
 	slog.InfoContext(ctx, "ScriptRunner: 処理を開始", "url", sanitizeURL(sourceURL))
 
 	// 1. ソースからテキストを取得
@@ -108,10 +109,10 @@ const maxScriptAttempts = 3
 // JSON Schema は型と必須項目までしか縛れないため、cuts が空になる、section_index が
 // 音楽のセクション数を超える、といった破綻は素通りします。ここで弾かないと、
 // パイプラインで最も高価な Veo のカット生成まで進んでから失敗します。
-func (r *VideoScriptRunner) generateRecipe(ctx context.Context, finalPrompt string, sourceRecipe *ports.VideoRecipe) (*ports.VideoRecipe, error) {
+func (r *VideoScriptRunner) generateRecipe(ctx context.Context, finalPrompt string, sourceRecipe *video.Recipe) (*video.Recipe, error) {
 	opts := gemini.GenerateOptions{
 		ResponseMIMEType:   "application/json",
-		ResponseJSONSchema: ports.VideoRecipeSchema(r.characterIDs()),
+		ResponseJSONSchema: video.RecipeSchema(r.characterIDs()),
 	}
 
 	var lastErr error
@@ -189,7 +190,7 @@ func (r *VideoScriptRunner) readContent(ctx context.Context, sourceURL string) (
 
 // parseResponse は AI の応答から JSON 候補を抽出し、動画レシピとして内容を持つ
 // 最初の候補を採用します。説明用の JSON ブロックが混在する応答にも対応します。
-func (r *VideoScriptRunner) parseResponse(ctx context.Context, raw string) (*ports.VideoRecipe, error) {
+func (r *VideoScriptRunner) parseResponse(ctx context.Context, raw string) (*video.Recipe, error) {
 	candidates := extractJSONCandidates(raw)
 	if len(candidates) == 0 {
 		slog.WarnContext(ctx, "AIの応答からJSONを抽出できませんでした。応答全体を対象にパースを試みます。",
@@ -199,7 +200,7 @@ func (r *VideoScriptRunner) parseResponse(ctx context.Context, raw string) (*por
 
 	var parseErr error
 	for _, jsonStr := range candidates {
-		var recipe ports.VideoRecipe
+		var recipe video.Recipe
 		if err := json.Unmarshal([]byte(jsonStr), &recipe); err != nil {
 			if parseErr == nil {
 				parseErr = err
@@ -221,16 +222,16 @@ func (r *VideoScriptRunner) parseResponse(ctx context.Context, raw string) (*por
 		truncateString(raw, maxErrorResponseLength), ports.ErrInvalidAIResponse)
 }
 
-func parseSourceRecipe(raw string) (*ports.VideoRecipe, error) {
+func parseSourceRecipe(raw string) (*video.Recipe, error) {
 	var parseErr error
 	for _, jsonStr := range extractJSONCandidates(raw) {
-		var recipe ports.VideoRecipe
+		var recipe video.Recipe
 		if err := json.Unmarshal([]byte(jsonStr), &recipe); err == nil && hasVideoRecipeContent(&recipe) {
 			recipe.Normalize()
 			return &recipe, nil
 		}
 
-		var musicRecipe ports.MusicRecipe
+		var musicRecipe video.MusicRecipe
 		if err := json.Unmarshal([]byte(jsonStr), &musicRecipe); err != nil {
 			if parseErr == nil {
 				parseErr = err
@@ -241,7 +242,7 @@ func parseSourceRecipe(raw string) (*ports.VideoRecipe, error) {
 			continue
 		}
 
-		newRecipe := ports.VideoRecipe{
+		newRecipe := video.Recipe{
 			MusicRecipe: musicRecipe,
 		}
 		newRecipe.Normalize()
@@ -254,14 +255,14 @@ func parseSourceRecipe(raw string) (*ports.VideoRecipe, error) {
 	return nil, nil
 }
 
-func hasVideoRecipeContent(recipe *ports.VideoRecipe) bool {
+func hasVideoRecipeContent(recipe *video.Recipe) bool {
 	return recipe.ProjectTitle != "" ||
 		recipe.Description != "" ||
 		len(recipe.Cuts) > 0 ||
 		hasMusicRecipeContent(&recipe.MusicRecipe)
 }
 
-func hasMusicRecipeContent(recipe *ports.MusicRecipe) bool {
+func hasMusicRecipeContent(recipe *video.MusicRecipe) bool {
 	return recipe.Title != "" ||
 		recipe.Theme != "" ||
 		recipe.Mood != "" ||

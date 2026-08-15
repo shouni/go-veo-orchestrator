@@ -5,11 +5,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"sort"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/shouni/go-remote-io/remoteio"
 	"github.com/shouni/go-veo-orchestrator/ports"
+	"github.com/shouni/go-veo-orchestrator/video"
 )
 
 // fakeWriter records every Write call so tests can assert on the saved paths/content.
@@ -33,42 +36,45 @@ func (w *fakeWriter) Write(_ context.Context, path string, contentReader io.Read
 // fakeCutImageGenerator implements both ports.CutImageGenerator and cutImageEditor so tests
 // can control EditAndSave's behavior independently of the real keyframe.Generator.
 type fakeCutImageGenerator struct {
-	editFunc func(ctx context.Context, cut ports.Cut, editPrompt string) (*ports.KeyframeImage, error)
+	editFunc func(ctx context.Context, cut video.Cut, editPrompt string) (*video.KeyframeImage, error)
 }
 
-func (f *fakeCutImageGenerator) Execute(_ context.Context, _ []ports.Cut) ([]*ports.KeyframeImage, error) {
+func (f *fakeCutImageGenerator) GenerateCut(_ context.Context, _ video.Cut, _, _ int) (*video.KeyframeImage, error) {
 	return nil, fmt.Errorf("not implemented")
 }
 
-func (f *fakeCutImageGenerator) EditCut(ctx context.Context, cut ports.Cut, editPrompt string) (*ports.KeyframeImage, error) {
+func (f *fakeCutImageGenerator) EditCut(ctx context.Context, cut video.Cut, editPrompt string) (*video.KeyframeImage, error) {
 	if f.editFunc != nil {
 		return f.editFunc(ctx, cut, editPrompt)
 	}
-	return &ports.KeyframeImage{Data: []byte("edited"), MimeType: "image/png"}, nil
+	return &video.KeyframeImage{Data: []byte("edited"), MimeType: "image/png"}, nil
 }
 
 // nonEditingCutImageGenerator implements ports.CutImageGenerator only, to exercise the
 // "generator does not support editing" error path.
 type nonEditingCutImageGenerator struct{}
 
-func (nonEditingCutImageGenerator) Execute(_ context.Context, _ []ports.Cut) ([]*ports.KeyframeImage, error) {
+func (nonEditingCutImageGenerator) GenerateCut(_ context.Context, _ video.Cut, _, _ int) (*video.KeyframeImage, error) {
 	return nil, fmt.Errorf("not implemented")
 }
 
-// recordingCutImageGenerator implements ports.CutImageGenerator and records how many times
-// Execute was called, so tests can drive Run/RunAndSave independently of EditAndSave.
+// recordingCutImageGenerator implements ports.CutImageGenerator and records how many cuts
+// it was asked to generate, so tests can drive GenerateAndSave independently of EditAndSave.
 type recordingCutImageGenerator struct {
-	images []*ports.KeyframeImage
+	images []*video.KeyframeImage
 	err    error
 	calls  int
 }
 
-func (g *recordingCutImageGenerator) Execute(_ context.Context, _ []ports.Cut) ([]*ports.KeyframeImage, error) {
+func (g *recordingCutImageGenerator) GenerateCut(_ context.Context, _ video.Cut, index, _ int) (*video.KeyframeImage, error) {
 	g.calls++
 	if g.err != nil {
 		return nil, g.err
 	}
-	return g.images, nil
+	if index-1 < len(g.images) {
+		return g.images[index-1], nil
+	}
+	return &video.KeyframeImage{Data: []byte("img"), MimeType: "image/png"}, nil
 }
 
 func TestCutKeyframeRunner_EditAndSave(t *testing.T) {
@@ -76,22 +82,22 @@ func TestCutKeyframeRunner_EditAndSave(t *testing.T) {
 
 	t.Run("edits the single cut and saves keyframe + metadata", func(t *testing.T) {
 		var captured struct {
-			cut        ports.Cut
+			cut        video.Cut
 			editPrompt string
 		}
 		gen := &fakeCutImageGenerator{
-			editFunc: func(_ context.Context, cut ports.Cut, editPrompt string) (*ports.KeyframeImage, error) {
+			editFunc: func(_ context.Context, cut video.Cut, editPrompt string) (*video.KeyframeImage, error) {
 				captured.cut = cut
 				captured.editPrompt = editPrompt
-				return &ports.KeyframeImage{Data: []byte("edited-bytes"), MimeType: "image/png"}, nil
+				return &video.KeyframeImage{Data: []byte("edited-bytes"), MimeType: "image/png"}, nil
 			},
 		}
 		writer := newFakeWriter()
 		r := NewCutKeyframeRunner(gen, writer)
 
-		recipe := &ports.VideoRecipe{
-			Cuts: []ports.Cut{
-				{CutIndex: 2, CharacterID: "zundamon", KeyframeResult: ports.KeyframeResult{KeyframeReference: "gs://bucket/jobs/j1/images/keyframe_2.png"}},
+		recipe := &video.Recipe{
+			Cuts: []video.Cut{
+				{CutIndex: 2, CharacterID: "zundamon", KeyframeResult: video.KeyframeResult{KeyframeReference: "gs://bucket/jobs/j1/images/keyframe_2.png"}},
 			},
 		}
 
@@ -114,17 +120,17 @@ func TestCutKeyframeRunner_EditAndSave(t *testing.T) {
 	})
 
 	t.Run("edits the targeted cut of a multi-cut recipe", func(t *testing.T) {
-		var captured ports.Cut
+		var captured video.Cut
 		gen := &fakeCutImageGenerator{
-			editFunc: func(_ context.Context, cut ports.Cut, _ string) (*ports.KeyframeImage, error) {
+			editFunc: func(_ context.Context, cut video.Cut, _ string) (*video.KeyframeImage, error) {
 				captured = cut
-				return &ports.KeyframeImage{Data: []byte("edited"), MimeType: "image/png"}, nil
+				return &video.KeyframeImage{Data: []byte("edited"), MimeType: "image/png"}, nil
 			},
 		}
 		r := NewCutKeyframeRunner(gen, newFakeWriter())
-		recipe := &ports.VideoRecipe{Cuts: []ports.Cut{
-			{CutIndex: 1, KeyframeResult: ports.KeyframeResult{KeyframeReference: "gs://bucket/k1.png"}},
-			{CutIndex: 2, KeyframeResult: ports.KeyframeResult{KeyframeReference: "gs://bucket/k2.png"}},
+		recipe := &video.Recipe{Cuts: []video.Cut{
+			{CutIndex: 1, KeyframeResult: video.KeyframeResult{KeyframeReference: "gs://bucket/k1.png"}},
+			{CutIndex: 2, KeyframeResult: video.KeyframeResult{KeyframeReference: "gs://bucket/k2.png"}},
 		}}
 
 		if _, err := r.EditAndSave(ctx, recipe, 1, "edit", "gs://bucket/out/"); err != nil {
@@ -140,7 +146,7 @@ func TestCutKeyframeRunner_EditAndSave(t *testing.T) {
 
 	t.Run("errors when cut position is out of range", func(t *testing.T) {
 		r := NewCutKeyframeRunner(&fakeCutImageGenerator{}, newFakeWriter())
-		recipe := &ports.VideoRecipe{Cuts: []ports.Cut{{CutIndex: 1}}}
+		recipe := &video.Recipe{Cuts: []video.Cut{{CutIndex: 1}}}
 
 		if _, err := r.EditAndSave(ctx, recipe, 5, "edit", "gs://bucket/out/"); err == nil {
 			t.Fatal("expected error for out-of-range cut position")
@@ -149,7 +155,7 @@ func TestCutKeyframeRunner_EditAndSave(t *testing.T) {
 
 	t.Run("errors when cut has no existing keyframe", func(t *testing.T) {
 		r := NewCutKeyframeRunner(&fakeCutImageGenerator{}, newFakeWriter())
-		recipe := &ports.VideoRecipe{Cuts: []ports.Cut{{CutIndex: 1}}}
+		recipe := &video.Recipe{Cuts: []video.Cut{{CutIndex: 1}}}
 
 		if _, err := r.EditAndSave(ctx, recipe, 0, "edit", "gs://bucket/out/"); err == nil {
 			t.Fatal("expected error for cut with no KeyframeReference")
@@ -158,7 +164,7 @@ func TestCutKeyframeRunner_EditAndSave(t *testing.T) {
 
 	t.Run("errors when generator does not support editing", func(t *testing.T) {
 		r := NewCutKeyframeRunner(nonEditingCutImageGenerator{}, newFakeWriter())
-		recipe := &ports.VideoRecipe{Cuts: []ports.Cut{{CutIndex: 1, KeyframeResult: ports.KeyframeResult{KeyframeReference: "gs://bucket/k.png"}}}}
+		recipe := &video.Recipe{Cuts: []video.Cut{{CutIndex: 1, KeyframeResult: video.KeyframeResult{KeyframeReference: "gs://bucket/k.png"}}}}
 
 		_, err := r.EditAndSave(ctx, recipe, 0, "edit", "gs://bucket/out/")
 		if !errors.Is(err, ports.ErrEditingNotSupported) {
@@ -180,18 +186,18 @@ func TestCutKeyframeRunner_RunAndSave(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("saves indexed keyframes and updated metadata", func(t *testing.T) {
-		images := []*ports.KeyframeImage{
+		images := []*video.KeyframeImage{
 			{Data: []byte("img-1"), MimeType: "image/png"},
 			{Data: []byte("img-2"), MimeType: "image/png"},
 		}
 		gen := &recordingCutImageGenerator{images: images}
 		writer := newFakeWriter()
 		r := NewCutKeyframeRunner(gen, writer)
-		recipe := &ports.VideoRecipe{Cuts: []ports.Cut{{CutIndex: 1}, {CutIndex: 2}}}
+		recipe := &video.Recipe{Cuts: []video.Cut{{CutIndex: 1}, {CutIndex: 2}}}
 
-		got, err := r.RunAndSave(ctx, recipe, "gs://bucket/jobs/j1/")
+		got, err := r.GenerateAndSave(ctx, recipe, "gs://bucket/jobs/j1/")
 		if err != nil {
-			t.Fatalf("RunAndSave() error = %v", err)
+			t.Fatalf("GenerateAndSave() error = %v", err)
 		}
 		if got.Cuts[0].KeyframeReference == "" || got.Cuts[1].KeyframeReference == "" {
 			t.Fatal("expected KeyframeReference to be set for all cuts")
@@ -204,24 +210,12 @@ func TestCutKeyframeRunner_RunAndSave(t *testing.T) {
 		}
 	})
 
-	t.Run("errors when image count does not match cut count", func(t *testing.T) {
-		gen := &recordingCutImageGenerator{
-			images: []*ports.KeyframeImage{{Data: []byte("only-one"), MimeType: "image/png"}},
-		}
-		r := NewCutKeyframeRunner(gen, newFakeWriter())
-		recipe := &ports.VideoRecipe{Cuts: []ports.Cut{{CutIndex: 1}, {CutIndex: 2}}}
-
-		if _, err := r.RunAndSave(ctx, recipe, "gs://bucket/out/"); err == nil {
-			t.Fatal("expected error for image/cut count mismatch")
-		}
-	})
-
 	t.Run("wraps generator failure", func(t *testing.T) {
 		gen := &recordingCutImageGenerator{err: fmt.Errorf("upstream failure")}
 		r := NewCutKeyframeRunner(gen, newFakeWriter())
-		recipe := &ports.VideoRecipe{Cuts: []ports.Cut{{CutIndex: 1}}}
+		recipe := &video.Recipe{Cuts: []video.Cut{{CutIndex: 1}}}
 
-		if _, err := r.RunAndSave(ctx, recipe, "gs://bucket/out/"); err == nil {
+		if _, err := r.GenerateAndSave(ctx, recipe, "gs://bucket/out/"); err == nil {
 			t.Fatal("expected error when generator fails")
 		}
 	})
@@ -229,7 +223,7 @@ func TestCutKeyframeRunner_RunAndSave(t *testing.T) {
 	t.Run("returns ErrRecipeRequired for nil recipe", func(t *testing.T) {
 		r := NewCutKeyframeRunner(&recordingCutImageGenerator{}, newFakeWriter())
 
-		_, err := r.RunAndSave(ctx, nil, "gs://bucket/out/")
+		_, err := r.GenerateAndSave(ctx, nil, "gs://bucket/out/")
 		if !errors.Is(err, ports.ErrRecipeRequired) {
 			t.Fatalf("expected ErrRecipeRequired, got %v", err)
 		}
@@ -237,31 +231,44 @@ func TestCutKeyframeRunner_RunAndSave(t *testing.T) {
 }
 
 // capturingCutImageGenerator records the cuts it was asked to generate, so tests can assert
-// which cuts RunAndSave decided still needed a keyframe.
+// which cuts GenerateAndSave decided still needed a keyframe. Generation runs in parallel,
+// so the recording is mutex-guarded and the order is not meaningful — assert on membership.
 type capturingCutImageGenerator struct {
-	seen  [][]ports.Cut
-	image func(cut ports.Cut) *ports.KeyframeImage
+	mu    sync.Mutex
+	seen  []video.Cut
+	image func(cut video.Cut) *video.KeyframeImage
 }
 
-func (g *capturingCutImageGenerator) Execute(_ context.Context, cuts []ports.Cut) ([]*ports.KeyframeImage, error) {
-	g.seen = append(g.seen, append([]ports.Cut(nil), cuts...))
-	images := make([]*ports.KeyframeImage, 0, len(cuts))
-	for _, cut := range cuts {
-		if g.image != nil {
-			images = append(images, g.image(cut))
-			continue
-		}
-		images = append(images, &ports.KeyframeImage{Data: []byte("generated"), MimeType: "image/png"})
+func (g *capturingCutImageGenerator) GenerateCut(_ context.Context, cut video.Cut, _, _ int) (*video.KeyframeImage, error) {
+	g.mu.Lock()
+	g.seen = append(g.seen, cut)
+	g.mu.Unlock()
+
+	if g.image != nil {
+		return g.image(cut), nil
 	}
-	return images, nil
+	return &video.KeyframeImage{Data: []byte("generated"), MimeType: "image/png"}, nil
 }
 
-func keyframeCut(index int, keyframeReference string) ports.Cut {
-	return ports.Cut{
+// seenCutIndexes returns the CutIndex values passed to GenerateCut, sorted so assertions do
+// not depend on goroutine scheduling.
+func (g *capturingCutImageGenerator) seenCutIndexes() []int {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	out := make([]int, 0, len(g.seen))
+	for _, cut := range g.seen {
+		out = append(out, cut.CutIndex)
+	}
+	sort.Ints(out)
+	return out
+}
+
+func keyframeCut(index int, keyframeReference string) video.Cut {
+	return video.Cut{
 		CutIndex:       index,
 		VisualAnchor:   fmt.Sprintf("anchor %d", index),
-		AudioSync:      ports.AudioSync{DurationSec: 8},
-		KeyframeResult: ports.KeyframeResult{KeyframeReference: keyframeReference},
+		AudioSync:      video.AudioSync{DurationSec: 8},
+		KeyframeResult: video.KeyframeResult{KeyframeReference: keyframeReference},
 	}
 }
 
@@ -274,24 +281,21 @@ func TestCutKeyframeRunner_RunAndSaveSkipsExistingKeyframes(t *testing.T) {
 	t.Run("generates only the cuts missing a keyframe", func(t *testing.T) {
 		generator := &capturingCutImageGenerator{}
 		writer := newFakeWriter()
-		recipe := &ports.VideoRecipe{
+		recipe := &video.Recipe{
 			ProjectTitle: "test",
-			Cuts: []ports.Cut{
+			Cuts: []video.Cut{
 				keyframeCut(1, "gs://bucket/jobs/job-1/images/keyframe_1.png"),
 				keyframeCut(2, ""),
 				keyframeCut(3, "gs://bucket/jobs/job-1/images/keyframe_3.png"),
 			},
 		}
 
-		updated, err := NewCutKeyframeRunner(generator, writer).RunAndSave(ctx, recipe, "gs://bucket/jobs/job-2/")
+		updated, err := NewCutKeyframeRunner(generator, writer).GenerateAndSave(ctx, recipe, "gs://bucket/jobs/job-2/")
 		if err != nil {
-			t.Fatalf("RunAndSave() error = %v", err)
+			t.Fatalf("GenerateAndSave() error = %v", err)
 		}
-		if len(generator.seen) != 1 {
-			t.Fatalf("generator called %d times, want 1", len(generator.seen))
-		}
-		if got := generator.seen[0]; len(got) != 1 || got[0].CutIndex != 2 {
-			t.Fatalf("generated cuts = %+v, want only cut 2", got)
+		if got := generator.seenCutIndexes(); len(got) != 1 || got[0] != 2 {
+			t.Fatalf("generated cuts = %v, want only cut 2", got)
 		}
 		// 既存のキーフレームは書き換えない。
 		if updated.Cuts[0].KeyframeReference != "gs://bucket/jobs/job-1/images/keyframe_1.png" {
@@ -309,18 +313,18 @@ func TestCutKeyframeRunner_RunAndSaveSkipsExistingKeyframes(t *testing.T) {
 	t.Run("skips generation entirely when every cut has a keyframe", func(t *testing.T) {
 		generator := &capturingCutImageGenerator{}
 		writer := newFakeWriter()
-		recipe := &ports.VideoRecipe{
+		recipe := &video.Recipe{
 			ProjectTitle: "test",
-			Cuts: []ports.Cut{
+			Cuts: []video.Cut{
 				keyframeCut(1, "gs://bucket/jobs/job-1/images/keyframe_1.png"),
 				keyframeCut(2, "gs://bucket/jobs/job-1/images/keyframe_2.png"),
 			},
 		}
 
-		if _, err := NewCutKeyframeRunner(generator, writer).RunAndSave(ctx, recipe, "gs://bucket/jobs/job-2/"); err != nil {
-			t.Fatalf("RunAndSave() error = %v", err)
+		if _, err := NewCutKeyframeRunner(generator, writer).GenerateAndSave(ctx, recipe, "gs://bucket/jobs/job-2/"); err != nil {
+			t.Fatalf("GenerateAndSave() error = %v", err)
 		}
-		if len(generator.seen) != 0 {
+		if got := generator.seenCutIndexes(); len(got) != 0 {
 			t.Errorf("generator was called %d times, want 0", len(generator.seen))
 		}
 		// メタデータは生成をスキップしても必ず書く。呼び出し側はこのファイルを目印に
@@ -333,14 +337,14 @@ func TestCutKeyframeRunner_RunAndSaveSkipsExistingKeyframes(t *testing.T) {
 	t.Run("regenerates a cut whose keyframe reference was cleared", func(t *testing.T) {
 		generator := &capturingCutImageGenerator{}
 		writer := newFakeWriter()
-		recipe := &ports.VideoRecipe{
+		recipe := &video.Recipe{
 			ProjectTitle: "test",
-			Cuts:         []ports.Cut{keyframeCut(1, "")},
+			Cuts:         []video.Cut{keyframeCut(1, "")},
 		}
 
-		updated, err := NewCutKeyframeRunner(generator, writer).RunAndSave(ctx, recipe, "gs://bucket/jobs/job-1/")
+		updated, err := NewCutKeyframeRunner(generator, writer).GenerateAndSave(ctx, recipe, "gs://bucket/jobs/job-1/")
 		if err != nil {
-			t.Fatalf("RunAndSave() error = %v", err)
+			t.Fatalf("GenerateAndSave() error = %v", err)
 		}
 		if len(generator.seen) != 1 {
 			t.Fatalf("generator called %d times, want 1 (clearing the reference means regenerate)", len(generator.seen))
@@ -368,35 +372,44 @@ func containsPathFragment(writes map[string][]byte, fragment string) bool {
 	return false
 }
 
-// TestCutKeyframeRunner_RunSkipsExistingKeyframes pins the same rule on Run that RunAndSave
-// follows, with the alignment contract VideoTimelineRunner depends on: the returned slice
-// matches recipe.Cuts position for position, and cuts that already had an image come back nil.
-func TestCutKeyframeRunner_RunSkipsExistingKeyframes(t *testing.T) {
+// TestCutKeyframeRunner_SavesEachKeyframeAsItIsGenerated pins the operational guarantee that
+// replaced the old generate-all-then-save-all flow: a keyframe is written to storage and
+// recorded on the recipe as soon as it is produced. Batching the writes meant that a crash
+// mid-run (Cloud Run timeout, deploy, OOM) lost every generated — and already billed — image.
+//
+// It also pins that the seed each image was generated with lands on the cut, since the image
+// itself never reaches the recipe and the video stage reuses that seed.
+func TestCutKeyframeRunner_SavesEachKeyframeAsItIsGenerated(t *testing.T) {
 	ctx := context.Background()
-	generator := &capturingCutImageGenerator{}
-	recipe := &ports.VideoRecipe{
+	writer := newFakeWriter()
+	recipe := &video.Recipe{
 		ProjectTitle: "test",
-		Cuts: []ports.Cut{
-			keyframeCut(1, "gs://bucket/jobs/job-1/images/keyframe_1.png"),
-			keyframeCut(2, ""),
-			keyframeCut(3, "gs://bucket/jobs/job-1/images/keyframe_3.png"),
+		Cuts:         []video.Cut{keyframeCut(1, ""), keyframeCut(2, "")},
+	}
+
+	// 既定の並列度は1なので、カット2の生成時点でカット1は必ず完了している。
+	var firstSavedBeforeSecond bool
+	generator := &capturingCutImageGenerator{
+		image: func(cut video.Cut) *video.KeyframeImage {
+			if cut.CutIndex == 2 {
+				firstSavedBeforeSecond = recipe.Cuts[0].KeyframeReference != ""
+			}
+			return &video.KeyframeImage{
+				Data: []byte("generated"), MimeType: "image/png", UsedSeed: int64(100 + cut.CutIndex),
+			}
 		},
 	}
 
-	images, err := NewCutKeyframeRunner(generator, newFakeWriter()).Run(ctx, recipe)
+	updated, err := NewCutKeyframeRunner(generator, writer).GenerateAndSave(ctx, recipe, "gs://bucket/jobs/job-1/")
 	if err != nil {
-		t.Fatalf("Run() error = %v", err)
+		t.Fatalf("GenerateAndSave() error = %v", err)
 	}
-	if len(images) != len(recipe.Cuts) {
-		t.Fatalf("len(images) = %d, want %d (must stay aligned with the cuts)", len(images), len(recipe.Cuts))
+
+	if !firstSavedBeforeSecond {
+		t.Error("cut 1 must already be saved and referenced before cut 2 starts generating")
 	}
-	if images[0] != nil || images[2] != nil {
-		t.Error("cuts that already had a keyframe should come back nil, not a fresh image")
-	}
-	if images[1] == nil {
-		t.Error("the cut without a keyframe was not generated")
-	}
-	if len(generator.seen) != 1 || len(generator.seen[0]) != 1 || generator.seen[0][0].CutIndex != 2 {
-		t.Errorf("generated cuts = %+v, want only cut 2", generator.seen)
+	if updated.Cuts[0].KeyframeSeed != 101 || updated.Cuts[1].KeyframeSeed != 102 {
+		t.Errorf("KeyframeSeed = %d/%d, want the seed each image was generated with",
+			updated.Cuts[0].KeyframeSeed, updated.Cuts[1].KeyframeSeed)
 	}
 }

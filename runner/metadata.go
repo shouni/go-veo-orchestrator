@@ -8,11 +8,12 @@ import (
 
 	"github.com/shouni/go-remote-io/remoteio"
 	"github.com/shouni/go-veo-orchestrator/ports"
+	"github.com/shouni/go-veo-orchestrator/video"
 )
 
 const metadataContentType = "application/json"
 
-func buildRecipeMetadata(recipe *ports.VideoRecipe) ([]byte, error) {
+func buildRecipeMetadata(recipe *video.Recipe) ([]byte, error) {
 	if recipe == nil {
 		return nil, ports.ErrRecipeRequired
 	}
@@ -24,7 +25,7 @@ func buildRecipeMetadata(recipe *ports.VideoRecipe) ([]byte, error) {
 	return data, nil
 }
 
-func writeRecipeMetadata(ctx context.Context, writer remoteio.Writer, outputDir string, recipe *ports.VideoRecipe) (string, error) {
+func writeRecipeMetadata(ctx context.Context, writer remoteio.Writer, outputDir string, recipe *video.Recipe) (string, error) {
 	if writer == nil {
 		return "", fmt.Errorf("writer is required")
 	}

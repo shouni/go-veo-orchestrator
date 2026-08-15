@@ -1,4 +1,4 @@
-package ports
+package video
 
 import (
 	"reflect"
@@ -110,7 +110,7 @@ func TestCutEffectiveDurationSec(t *testing.T) {
 func TestCutResetGeneration(t *testing.T) {
 	base := Cut{
 		KeyframeResult: KeyframeResult{KeyframeReference: "gs://bucket/kf.png"},
-		VideoResult:    VideoResult{VideoID: "gs://bucket/cut.mp4", VideoURL: "gs://bucket/cut.mp4", Status: CutStatusGenerated},
+		Result:         Result{VideoID: "gs://bucket/cut.mp4", VideoURL: "gs://bucket/cut.mp4", Status: CutStatusGenerated},
 		ChainControl:   ChainControl{IsChainStart: true, IsSectionStart: true},
 	}
 

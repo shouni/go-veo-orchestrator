@@ -1,4 +1,7 @@
-package ports
+// Package video は、動画レシピのドメインモデル（Recipe・Cut とその操作）と、
+// 生成リクエスト／レスポンスのデータ型を定義します。このリポジトリで最下層の
+// パッケージで、リポジトリ内の何にも依存しません。
+package video
 
 import (
 	"sort"

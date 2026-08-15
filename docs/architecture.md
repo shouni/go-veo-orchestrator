@@ -23,12 +23,12 @@ go-veo-orchestrator/
 
 | | 生成 | 保存 |
 | --- | --- | --- |
-| キーフレーム | `CutKeyframeRunner.Run` | **同じ Runner が行う**（`RunAndSave` / `EditAndSave`） |
+| キーフレーム | `CutKeyframeRunner.Run` | **同じ Runner が行う**（`GenerateAndSave` / `EditAndSave`） |
 | 動画 | `VideoTimelineRunner.Run` | **行わない**。呼び出し側が `VideoPublishRunner`（`Workflows.Publish`）を呼びます |
 
 **キーフレームの保存を Runner が持つ理由**: 保存名 `keyframe_<レシピ内の位置>.png` がカットの並びと結びついているためです。呼び出し側に出すと、位置→ファイル名の対応と `keyframe_reference` の設定を再実装させることになり、部分生成時に `keyframe_1.png` が別のカットを指す事故を招きます。
 
-**動画の保存を持たない理由**: 生成直後に保存すると、生成と保存の間に処理を挟む呼び出し側が困るからです。例えば継続チェーンを結合して `final_video_url` を埋めてから保存したい場合、タイムライン側が書いたメタデータには必ずその値が欠けます。（以前は `VideoTimelineRunner.RunAndSave` がありましたが、この理由でどの呼び出し元も使っておらず、削除しました。）
+**動画の保存を持たない理由**: 生成直後に保存すると、生成と保存の間に処理を挟む呼び出し側が困るからです。例えば継続チェーンを結合して `final_video_url` を埋めてから保存したい場合、タイムライン側が書いたメタデータには必ずその値が欠けます。（以前は `VideoTimelineRunner.GenerateAndSave` がありましたが、この理由でどの呼び出し元も使っておらず、削除しました。）
 
 ## 🔄 シーケンスフロー
 
@@ -72,5 +72,5 @@ sequenceDiagram
   Note over WF,Publisher: 3) メタデータの保存は Publish が担当（生成とは別ステップ）
   WF->>Publisher: Run(ctx, recipe, outputDir)
   Publisher->>Writer: Write(ctx, video_music_meta.json, updatedVideoRecipeJSON, remoteio.WithContentType("application/json"), ...)
-  Publisher-->>WF: *ports.PublishResult
+  Publisher-->>WF: *video.PublishResult
 ```

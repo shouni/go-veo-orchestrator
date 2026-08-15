@@ -1,4 +1,4 @@
-package ports
+package video
 
 import (
 	"testing"
@@ -33,7 +33,7 @@ func TestNewVideoRecipeFromMusicKeepsEveryField(t *testing.T) {
 		},
 	}
 
-	vr := NewVideoRecipeFromMusic(src)
+	vr := NewRecipeFromMusic(src)
 
 	if vr.ProjectTitle != "Song" {
 		t.Errorf("ProjectTitle = %q, want cross-filled title", vr.ProjectTitle)
@@ -60,25 +60,6 @@ func TestNewVideoRecipeFromMusicKeepsEveryField(t *testing.T) {
 	}
 	if *vr.MusicRecipe.Seed != 42 {
 		t.Error("Seed pointer is shared with the source (shallow copy)")
-	}
-}
-
-func TestVeoModelCapabilities(t *testing.T) {
-	tests := []struct {
-		model string
-		want  VeoCapabilities
-	}{
-		{"veo-3.0-generate-001", VeoCapabilities{ReferenceImages: true, LastFrame: false}},
-		{"veo-3.1-generate-001", VeoCapabilities{ReferenceImages: true, LastFrame: true}},
-		{"veo-3.1-fast-generate-001", VeoCapabilities{ReferenceImages: false, LastFrame: true}},
-		{"veo-2.0-generate-001", VeoCapabilities{ReferenceImages: false, LastFrame: true}},
-		{"", VeoCapabilities{}},
-		{"other-model", VeoCapabilities{}},
-	}
-	for _, tt := range tests {
-		if got := VeoModelCapabilities(tt.model); got != tt.want {
-			t.Errorf("VeoModelCapabilities(%q) = %+v, want %+v", tt.model, got, tt.want)
-		}
 	}
 }
 

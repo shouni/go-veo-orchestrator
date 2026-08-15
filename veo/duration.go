@@ -1,4 +1,8 @@
-package ports
+// Package veo は、Veo API の制約（生成モードの判定・モードごとに許される尺・
+// カット尺の計画）を扱います。動画生成そのものは行わず、リクエストがどのモードへ
+// 解釈されるかと、そのモードで許される尺だけを決めます。実際の Veo 呼び出しは
+// 呼び出し側が注入する ports.VideoRunner の仕事です。
+package veo
 
 import (
 	"math"
@@ -9,14 +13,14 @@ import (
 // 生成モードごとに離散的な尺しか受け付けないため、カット尺の計画・正規化・検証は
 // すべてこの値を基準に行います。
 const (
-	// VeoMaxCutDurationSec は image_to_video が受け付ける最大カット尺（秒）です。
-	VeoMaxCutDurationSec = 8.0
+	// MaxCutDurationSec は image_to_video が受け付ける最大カット尺（秒）です。
+	MaxCutDurationSec = 8.0
 
-	// VeoVideoExtensionDurationSec は video_extension（video-to-video、前カット動画を
+	// VideoExtensionDurationSec は video_extension（video-to-video、前カット動画を
 	// PreviousVideoID として引き継ぐ生成）が受け付ける唯一のカット尺（秒）です。
-	VeoVideoExtensionDurationSec = 7.0
+	VideoExtensionDurationSec = 7.0
 
-	// VeoContinuationMaxDurationSec は、1本の継続チェーンの累積尺（秒）がこの値に達する
+	// ContinuationMaxDurationSec は、1本の継続チェーンの累積尺（秒）がこの値に達する
 	// 手前で新しいチェーンへリセットするための閾値です。
 	//
 	// video_extension が「前の動画」として受け付けられる累積尺の API 上の上限は30秒です
@@ -26,7 +30,7 @@ const (
 	// ドリフトして蓄積します（実ジョブで確認: 継続1回目で彩度+20%、以降のラウンドでも
 	// コントラストが単調に増加し続けた）。そのため API 上限の30秒ではなく、より低い
 	// この値で早めにリセットし、1チェーンあたりの継続回数＝ドリフトの蓄積量を抑えます。
-	VeoContinuationMaxDurationSec = 24.0
+	ContinuationMaxDurationSec = 24.0
 )
 
 // imageToVideoDurations などは、各生成モードで Veo が受け付ける尺（秒）の昇順リストです。
@@ -34,7 +38,7 @@ const (
 var (
 	imageToVideoDurations     = []float64{4, 6, 8}
 	referenceToVideoDurations = []float64{8}
-	videoExtensionDurations   = []float64{VeoVideoExtensionDurationSec}
+	videoExtensionDurations   = []float64{VideoExtensionDurationSec}
 )
 
 // ImageToVideoDurationsSec は image_to_video / frames_to_video が受け付けるカット尺（秒）を
@@ -49,13 +53,13 @@ func ReferenceToVideoDurationsSec() []float64 {
 
 // DurationsForMode は、指定された生成モードで Veo が受け付けるカット尺（秒）を昇順で
 // 返します。frames_to_video は image 入力を伴うため image_to_video と同じ集合です。
-func DurationsForMode(mode VeoGenerationMode) []float64 {
+func DurationsForMode(mode GenerationMode) []float64 {
 	switch mode {
-	case VeoModeReferenceToVideo:
+	case ModeReferenceToVideo:
 		return ReferenceToVideoDurationsSec()
-	case VeoModeVideoExtension:
+	case ModeVideoExtension:
 		return append([]float64(nil), videoExtensionDurations...)
-	case VeoModeImageToVideo, VeoModeFramesToVideo:
+	case ModeImageToVideo, ModeFramesToVideo:
 		return ImageToVideoDurationsSec()
 	default:
 		return ImageToVideoDurationsSec()
@@ -64,7 +68,7 @@ func DurationsForMode(mode VeoGenerationMode) []float64 {
 
 // IsSupportedDuration は、durationSec が mode で Veo に受け付けられる尺かを返します。
 // 尺は整数秒の離散値なので、浮動小数の丸め誤差を許容して比較します。
-func IsSupportedDuration(durationSec float64, mode VeoGenerationMode) bool {
+func IsSupportedDuration(durationSec float64, mode GenerationMode) bool {
 	for _, candidate := range DurationsForMode(mode) {
 		if math.Abs(durationSec-candidate) < durationEpsilon {
 			return true
@@ -96,20 +100,20 @@ func SnapDuration(durationSec float64, candidates []float64) float64 {
 // として生成できる合計尺（秒）の候補を昇順で返します。bases はチェーン先頭カットに
 // 許される尺（image_to_video なら {4,6,8}、reference_to_video なら {8}）です。
 //
-// 各候補は「ベース尺 + VeoVideoExtensionDurationSec × 継続回数」で、累積尺が
-// VeoContinuationMaxDurationSec を超える手前まで伸ばした値です。既定の
+// 各候補は「ベース尺 + VideoExtensionDurationSec × 継続回数」で、累積尺が
+// ContinuationMaxDurationSec を超える手前まで伸ばした値です。既定の
 // image_to_video ベースでは {4,6,8,11,13,15,18,20,22} になります。
 // チェーン単位で尺を計画する呼び出し側が、実現可能な合計尺の候補として使います。
 func ChainDurations(bases []float64) []float64 {
 	seen := make(map[float64]bool, len(bases))
 	out := make([]float64, 0, len(bases))
 	for _, base := range bases {
-		for d := base; ; d += VeoVideoExtensionDurationSec {
+		for d := base; ; d += VideoExtensionDurationSec {
 			if !seen[d] {
 				seen[d] = true
 				out = append(out, d)
 			}
-			if d+VeoVideoExtensionDurationSec > VeoContinuationMaxDurationSec {
+			if d+VideoExtensionDurationSec > ContinuationMaxDurationSec {
 				break
 			}
 		}

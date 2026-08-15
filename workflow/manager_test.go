@@ -11,6 +11,7 @@ import (
 	"github.com/shouni/go-gemini-client/gemini"
 	"github.com/shouni/go-remote-io/remoteio"
 	"github.com/shouni/go-veo-orchestrator/ports"
+	"github.com/shouni/go-veo-orchestrator/video"
 )
 
 func TestNewBuildsWorkflows(t *testing.T) {
@@ -31,7 +32,7 @@ func TestNewBuildsWorkflows(t *testing.T) {
 	if workflows.Video == nil {
 		t.Fatal("Video runner should not be nil even without a VideoRunner dependency")
 	}
-	if _, err := workflows.Video.Run(context.Background(), &ports.VideoRecipe{}); !errors.Is(err, ports.ErrVideoRunnerNotConfigured) {
+	if _, err := workflows.Video.Run(context.Background(), &video.Recipe{}); !errors.Is(err, ports.ErrVideoRunnerNotConfigured) {
 		t.Fatalf("expected ErrVideoRunnerNotConfigured when no VideoRunner is configured, got %v", err)
 	}
 }
@@ -122,10 +123,10 @@ func (fakeScriptPrompt) Build(string, *ports.TemplateData) (string, error) {
 
 type fakeKeyframePrompt struct{}
 
-func (fakeKeyframePrompt) BuildCut(ports.Cut, *characterkit.Character) (string, string) {
+func (fakeKeyframePrompt) BuildCut(video.Cut, *characterkit.Character) (string, string) {
 	return "user", "system"
 }
 
-func (fakeKeyframePrompt) BuildEdit(ports.Cut, *characterkit.Character, string) (string, string) {
+func (fakeKeyframePrompt) BuildEdit(video.Cut, *characterkit.Character, string) (string, string) {
 	return "edit-user", "edit-system"
 }

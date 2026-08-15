@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/shouni/go-veo-orchestrator/ports"
+	"github.com/shouni/go-veo-orchestrator/video"
 )
 
 func TestVideoPublisherRunner_Run(t *testing.T) {
@@ -15,10 +16,10 @@ func TestVideoPublisherRunner_Run(t *testing.T) {
 	t.Run("writes metadata and collects image paths", func(t *testing.T) {
 		writer := newFakeWriter()
 		pr := NewVideoPublisherRunner(writer)
-		recipe := &ports.VideoRecipe{
+		recipe := &video.Recipe{
 			ProjectTitle: "test",
-			Cuts: []ports.Cut{
-				{CutIndex: 1, KeyframeResult: ports.KeyframeResult{KeyframeReference: "gs://bucket/jobs/j1/images/keyframe_1.png"}},
+			Cuts: []video.Cut{
+				{CutIndex: 1, KeyframeResult: video.KeyframeResult{KeyframeReference: "gs://bucket/jobs/j1/images/keyframe_1.png"}},
 				{CutIndex: 2},
 			},
 		}
@@ -49,7 +50,7 @@ func TestVideoPublisherRunner_Run(t *testing.T) {
 
 	t.Run("errors when writer is nil", func(t *testing.T) {
 		pr := NewVideoPublisherRunner(nil)
-		recipe := &ports.VideoRecipe{Cuts: []ports.Cut{{CutIndex: 1}}}
+		recipe := &video.Recipe{Cuts: []video.Cut{{CutIndex: 1}}}
 
 		if _, err := pr.Run(ctx, recipe, "gs://bucket/out/"); err == nil {
 			t.Fatal("expected error when writer is nil")
@@ -59,14 +60,14 @@ func TestVideoPublisherRunner_Run(t *testing.T) {
 
 func TestVideoPublisherRunner_BuildMetadata(t *testing.T) {
 	pr := NewVideoPublisherRunner(newFakeWriter())
-	recipe := &ports.VideoRecipe{ProjectTitle: "meta test", Cuts: []ports.Cut{{CutIndex: 1}}}
+	recipe := &video.Recipe{ProjectTitle: "meta test", Cuts: []video.Cut{{CutIndex: 1}}}
 
 	data, err := pr.BuildMetadata(recipe)
 	if err != nil {
 		t.Fatalf("BuildMetadata() error = %v", err)
 	}
 
-	var got ports.VideoRecipe
+	var got video.Recipe
 	if err := json.Unmarshal(data, &got); err != nil {
 		t.Fatalf("unmarshal result: %v", err)
 	}

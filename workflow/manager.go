@@ -10,6 +10,7 @@ import (
 	characterkit "github.com/shouni/go-character-kit/character"
 	"github.com/shouni/go-gemini-client/gemini"
 	"github.com/shouni/go-remote-io/remoteio"
+	"github.com/shouni/vertex-image-kit/generator"
 	imagePorts "github.com/shouni/vertex-image-kit/ports"
 
 	"github.com/shouni/go-veo-orchestrator/ports"
@@ -36,12 +37,6 @@ type ManagerArgs struct {
 	PromptDeps  *PromptDeps
 }
 
-// generationUnit は画像生成とリソース構成をまとめた内部ユニットです。
-type generationUnit struct {
-	imageGenerator imagePorts.ImageGenerator
-	model          string
-}
-
 // manager は、ワークフローの各工程を担う Runner 群を構築・管理します。
 type manager struct {
 	cfg            ports.Config
@@ -49,7 +44,7 @@ type manager struct {
 	writer         remoteio.Writer
 	aiClient       gemini.Generator
 	videoRunner    ports.VideoRunner
-	generationUnit *generationUnit
+	imageGenerator imagePorts.ImageGenerator
 	promptDeps     *PromptDeps
 }
 
@@ -82,11 +77,11 @@ func New(args ManagerArgs) (*ports.Workflows, error) {
 		promptDeps:  args.PromptDeps,
 	}
 
-	unit, err := m.buildGenerationUnit(args.AIClient, cfg.ImageModel, guard)
+	imageGenerator, err := buildImageGenerator(args.AIClient, guard)
 	if err != nil {
-		return nil, fmt.Errorf("GenerationUnit の構築に失敗: %w", err)
+		return nil, err
 	}
-	m.generationUnit = unit
+	m.imageGenerator = imageGenerator
 
 	return m.buildAllRunners()
 }
@@ -116,4 +111,20 @@ func validateArgs(args *ManagerArgs) error {
 	}
 
 	return nil
+}
+
+// buildImageGenerator は画像生成の実行体を組み立てます。
+//
+// 参照画像は gs:// URI をそのまま Vertex AI へ渡すため、GCS リーダーも HTTP
+// クライアントもキャッシュも要りません。発射間隔と1回あたりの上限時間は
+// vertex-image-kit のオプション（WithRateLimit / WithRequestTimeout）ではなく
+// callGuard で掛けます — 同じリミッターを台本のテキスト生成にも共有する必要が
+// あり、クォータはプロジェクト単位なので画像だけ絞っても足りないためです。
+func buildImageGenerator(client gemini.Generator, guard callGuard) (imagePorts.ImageGenerator, error) {
+	gen, err := generator.New(client)
+	if err != nil {
+		return nil, fmt.Errorf("画像生成エンジンの初期化に失敗しました: %w", err)
+	}
+	// 同一内容の画像生成の同時実行を1回にまとめる（重複タスク・リトライ対策）
+	return &singleflightImageGenerator{inner: gen, guard: guard}, nil
 }
