@@ -33,6 +33,8 @@ github.com/gorilla/websocket v1.5.3 h1:saDtZ6Pbx/0u+bgYQ3q96pZgCzfhKXGPqt7kZ72aN
 github.com/gorilla/websocket v1.5.3/go.mod h1:YR8l580nyteQvAITg2hZ9XVh4b55+EU/adAjf1fMHhE=
 github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 h1:Jamvg5psRIccs7FGNTlIRMkT8wgtp5eCXdBlqhYGL6U=
 github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
+github.com/shouni/gemini-image-kit v1.14.1 h1:MLgPi+oPsorXOuLKC+esdUibXeCAfi0ZGnhKN3z1LbU=
+github.com/shouni/gemini-image-kit v1.14.1/go.mod h1:lo79/tCv2vhK4jhZBxRQoWhv9ReeovpXVRx1Rnouu7U=
 github.com/shouni/go-character-kit v1.1.2 h1:l4s3TSP5Xerl5FyqaY4/PYdEEyUviPYH7Ss+KeJpGt0=
 github.com/shouni/go-character-kit v1.1.2/go.mod h1:P+RtKl6YoGQrEROnjpsFHw91cwXdO12wPFDsNUsNHfA=
 github.com/shouni/go-gemini-client v1.17.2 h1:inYUuF1pc6Dixy7El6wAOOM9jbc+0aZDSw0EnHNNDHo=
@@ -43,8 +45,6 @@ github.com/shouni/go-utils v1.5.1 h1:bw+YrAbUbtrT9WRbnwWHipwRo9ZY8dyPy2/bBdorDD8
 github.com/shouni/go-utils v1.5.1/go.mod h1:MRR3X08kWJ+sSS2+KRuvWEikXui5Tixg9vta6r30SnE=
 github.com/shouni/netarmor v1.2.1 h1:EwSvhPKOA+rVMceIHn+YpqlWn3bHKovrSOi1MX6ajdY=
 github.com/shouni/netarmor v1.2.1/go.mod h1:WxojUH0M+Z2lqZH2vw572A1zn5l1VkH7V47rnTnZmVY=
-github.com/shouni/vertex-image-kit v1.0.1 h1:IKom2YWJVz8OM2uFV3X8O+9i9YQUYFEwG9GgaG6vzsI=
-github.com/shouni/vertex-image-kit v1.0.1/go.mod h1:aodSBfe7We6+kuP6jMh9zHPaGJ9tVUYA8TuWfi/jknc=
 github.com/stretchr/objx v0.5.2 h1:xuMeJ0Sdp5ZMRXx/aWO6RZxdr3beISkG5/G/aIRr3pY=
 github.com/stretchr/objx v0.5.2/go.mod h1:FRsXN1f5AsAjCGJKqEizvkpNtU+EGNCLh3NxZ/8L+MA=
 github.com/stretchr/testify v1.11.1 h1:7s2iGBzp5EwR7/aIZr8ao5+dra3wiQyKjjFuvgVKu7U=

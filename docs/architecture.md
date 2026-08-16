@@ -49,7 +49,7 @@ sequenceDiagram
   participant App as 呼び出し側
   participant KFRunner as runner.CutKeyframeRunner
   participant KeyframeGen as keyframe.Generator
-  participant ImageKit as vertex-image-kit
+  participant ImageKit as gemini-image-kit
   participant Writer as remoteio.Writer
 
   App->>KFRunner: GenerateAndSave(ctx, recipe, outputPath)

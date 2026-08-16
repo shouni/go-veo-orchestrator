@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
+	imagePorts "github.com/shouni/gemini-image-kit/ports"
 	"github.com/shouni/go-gemini-client/gemini"
-	imagePorts "github.com/shouni/vertex-image-kit/ports"
 )
 
 // countingImageGenerator counts how many times the underlying API would actually be called.
@@ -244,7 +244,7 @@ func (g *countingTextGenerator) callCount() int {
 }
 
 // TestGuardCoversTextGenerationToo pins the reason these guards live in workflow instead of
-// being delegated to vertex-image-kit's WithRateLimit: Gemini quota is per project, not per
+// being delegated to the image kit's WithRateLimit: Gemini quota is per project, not per
 // operation kind, so script generation has to sit behind the same limiter as image generation.
 // Guarding only the image path would leave text free to exhaust the same quota.
 func TestGuardCoversTextGenerationToo(t *testing.T) {

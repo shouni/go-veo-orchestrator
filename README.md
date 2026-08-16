@@ -12,7 +12,7 @@
 
 **Go Veo Orchestrator** は、**Music Recipe（音楽レシピ / 楽曲構成書）** から動画カット列を構造化し、Google の動画生成 AI **Veo (Vertex AI / Gemini API)** へ渡すためのバックエンドオーケストレーターです。
 
-[Vertex Image Kit](https://github.com/shouni/vertex-image-kit) を使ってカットごとのキーフレームを生成し、`VideoRunner` adapter を通じて Veo に **Prompt / Keyframe / Audio / PreviousVideoURI / Seed** を渡します。
+[Gemini Image Kit](https://github.com/shouni/gemini-image-kit) を使ってカットごとのキーフレームを生成し、`VideoRunner` adapter を通じて Veo に **Prompt / Keyframe / Audio / PreviousVideoURI / Seed** を渡します。
 
 `video_id` を次カットの `PreviousVideoURI` として引き継ぐことで、Video-to-Video の文脈を保った連続カット生成を行います。
 
@@ -106,7 +106,7 @@ if _, err := workflows.Publish.Run(ctx, recipe, "gs://bucket/jobs/<jobID>/"); er
 
 ## 🤝 依存関係 (Dependencies)
 
-* [shouni/vertex-image-kit](https://github.com/shouni/vertex-image-kit) - Vertex AI 上の静止画・キーフレーム生成コア基盤（参照画像は `gs://` URI のまま渡します）
+* [shouni/gemini-image-kit](https://github.com/shouni/gemini-image-kit) - 静止画・キーフレーム生成のコア基盤（`GCSResolver` を注入し、参照画像は `gs://` URI のまま Vertex AI へ渡します）
 * [shouni/go-gemini-client](https://github.com/shouni/go-gemini-client) - Gemini API / Vertex AI クライアント（台本生成の構造化出力に使用）
 * [shouni/go-character-kit](https://github.com/shouni/go-character-kit) - キャラクター資産（characters.json）管理
 * [shouni/go-remote-io](https://github.com/shouni/go-remote-io) - GCS / ローカル対応の読み書き抽象化
