@@ -58,7 +58,7 @@ func TestNewRejectsMissingRequiredConfig(t *testing.T) {
 	}
 }
 
-// Close のテストは vertex-image-kit への移行で削除しました。画像キャッシュと
+// Close のテストは、画像キャッシュを抱えなくなった時点で削除しました。画像キャッシュと
 // その定期クリーンアップ goroutine が無くなり、Workflows に解放すべき資源が
 // 残っていないためです（Close 自体も削除しました）。
 
@@ -97,7 +97,7 @@ func newTestCharacters(list []characterkit.Character) (*characterkit.Characters,
 // 以前は File API 管理（UploadFile / DeleteFile）とバックエンド判定も実装していました。
 // ManagerArgs.AIClient が gemini.Model を要求していたためですが、キットが File API を
 // 使わなくなり gemini.Generator で足りるようになったので、使わないメソッドは消せます。
-// BackendInspector を実装しないため、vertex-image-kit のバックエンド判定
+// BackendInspector を実装しないため、画像キットのバックエンド判定
 // （オプショナルインターフェース）は素通りします。
 type fakeGenerativeModel struct{}
 

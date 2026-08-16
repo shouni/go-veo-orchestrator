@@ -6,14 +6,14 @@ import (
 	"sync"
 	"testing"
 
+	imagePorts "github.com/shouni/gemini-image-kit/ports"
 	characterkit "github.com/shouni/go-character-kit/character"
 	"github.com/shouni/go-veo-orchestrator/video"
-	imagePorts "github.com/shouni/vertex-image-kit/ports"
 )
 
 // --- Mocks ---
 
-// mockImageGenerator は vertex-image-kit の ImageGenerator を模したテストダブルです。
+// mockImageGenerator は gemini-image-kit の ImageGenerator を模したテストダブルです。
 // このパッケージの生成は逐次ですが、runner 側のテストからも並列に叩かれるため
 // mu で保護します。
 type mockImageGenerator struct {
@@ -152,7 +152,7 @@ func TestGenerator_GenerateCut(t *testing.T) {
 		}
 	})
 
-	// 参照は gs:// URI のまま vertex-image-kit へ渡り、Vertex AI が直接解決します。
+	// 参照は gs:// URI のまま渡り、Vertex AI が直接解決します（GCSResolver）。
 	// ここでは「参照元 URL をそのまま渡していること」だけを見ます。
 	t.Run("参照は解決せずそのまま渡す", func(t *testing.T) {
 		genMock.generateCount = 0

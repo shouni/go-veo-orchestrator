@@ -8,8 +8,8 @@ import (
 	"strconv"
 	"time"
 
+	imagePorts "github.com/shouni/gemini-image-kit/ports"
 	"github.com/shouni/go-gemini-client/gemini"
-	imagePorts "github.com/shouni/vertex-image-kit/ports"
 	"golang.org/x/sync/singleflight"
 )
 
@@ -20,7 +20,7 @@ import (
 // ワークフロー全体で 1 つのインスタンスを共有し、台本のテキスト生成とキーフレームの
 // 画像生成の両方に同じガードを掛けます。クォータはプロジェクト単位で操作の種類ごとでは
 // ないため、片方だけ絞っても意味がないからです。これが、発射間隔と上限時間を
-// vertex-image-kit のオプション（WithRateLimit / WithRequestTimeout）ではなく
+// 画像キットのオプション（WithRateLimit / WithRequestTimeout）ではなく
 // ここに置いている理由でもあります。
 type callGuard struct {
 	// limiter は発射間隔のリミッターです。nil は制限なしを意味します。

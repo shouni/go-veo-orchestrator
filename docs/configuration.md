@@ -59,7 +59,7 @@
 
 保存側の `Cache-Control` は `runner.WithCacheControl` で差し替えられます（既定は `public, max-age=1800`。生成物を公開したくないデプロイでは `private` などを指定してください）。
 
-キーフレームの生成結果はライブラリ自身の型 `video.KeyframeImage`（`Data` / `MimeType` / `UsedSeed` / `Model` / `Prompt`）で扱います。vertex-image-kit の型を公開面に出さないための境界で、利用側は画像キットを import せずに済みます。
+キーフレームの生成結果はライブラリ自身の型 `video.KeyframeImage`（`Data` / `MimeType` / `UsedSeed` / `Model` / `Prompt`）で扱います。画像キットの型を公開面に出さないための境界で、利用側は画像キットを import せずに済みます。
 
 ## 画作りの既定値は持ちません
 

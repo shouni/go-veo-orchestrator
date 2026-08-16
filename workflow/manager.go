@@ -7,11 +7,11 @@ package workflow
 import (
 	"fmt"
 
+	"github.com/shouni/gemini-image-kit/generator"
+	imagePorts "github.com/shouni/gemini-image-kit/ports"
 	characterkit "github.com/shouni/go-character-kit/character"
 	"github.com/shouni/go-gemini-client/gemini"
 	"github.com/shouni/go-remote-io/remoteio"
-	"github.com/shouni/vertex-image-kit/generator"
-	imagePorts "github.com/shouni/vertex-image-kit/ports"
 
 	"github.com/shouni/go-veo-orchestrator/ports"
 )
@@ -116,11 +116,15 @@ func validateArgs(args *ManagerArgs) error {
 
 // buildImageGenerator は画像生成の実行体を組み立てます。
 //
-// 参照画像は gs:// URI をそのまま Vertex AI へ渡すため、GCS リーダーも HTTP
-// クライアントもキャッシュも要りません。generator.New にオプションを渡していないのも
-// 意図どおりで、発射間隔と上限時間は callGuard 側で掛けます。
+// 参照画像は gs:// URI をそのまま Vertex AI へ渡すため、解決経路は GCSResolver 単体で
+// 足ります。この resolver は取得もアップロードもキャッシュもしないので、GCS リーダーも
+// HTTP クライアントもキャッシュも渡しません。取得系の resolver を足したくなったら、
+// それは参照が gs:// でなくなった合図です。
+//
+// generator.New にオプションを渡していないのも意図どおりで、発射間隔と上限時間は
+// callGuard 側で掛けます（理由は singleflight.go の callGuard を参照）。
 func buildImageGenerator(client gemini.Generator, guard callGuard) (imagePorts.ImageGenerator, error) {
-	gen, err := generator.New(client)
+	gen, err := generator.New(client, generator.NewGCSResolver())
 	if err != nil {
 		return nil, fmt.Errorf("画像生成エンジンの初期化に失敗しました: %w", err)
 	}

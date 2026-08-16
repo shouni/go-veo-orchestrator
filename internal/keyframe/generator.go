@@ -1,5 +1,5 @@
 // Package keyframe は、カット情報とキャラクター定義から動画のキーフレーム画像を
-// 生成するロジックを提供します。参照画像は gs:// URI のまま vertex-image-kit へ
+// 生成するロジックを提供します。参照画像は gs:// URI のまま gemini-image-kit へ
 // 渡すため、このパッケージはカットごとの参照元 URL とプロンプトの組み立て、および
 // カット間の並列実行に専念します。
 package keyframe
@@ -10,9 +10,9 @@ import (
 	"log/slog"
 	"time"
 
+	imagePorts "github.com/shouni/gemini-image-kit/ports"
 	characterkit "github.com/shouni/go-character-kit/character"
 	"github.com/shouni/go-gemini-client/gemini"
-	imagePorts "github.com/shouni/vertex-image-kit/ports"
 
 	"github.com/shouni/go-veo-orchestrator/ports"
 	"github.com/shouni/go-veo-orchestrator/video"
