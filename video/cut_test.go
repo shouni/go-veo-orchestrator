@@ -7,16 +7,18 @@ import (
 	characterkit "github.com/shouni/go-character-kit/character"
 )
 
-func testCharacters() *characterkit.Characters {
-	chars := &characterkit.Characters{
-		List: []characterkit.Character{
-			{ID: "zundamon", ReferenceURL: "gs://bucket/characters/zundamon.png"},
-			{ID: "no-ref"},
+func testCharacters(t *testing.T) *characterkit.Characters {
+	t.Helper()
+	chars, err := characterkit.NewCharacters([]characterkit.Character{
+		{
+			ID:           "zundamon",
+			Name:         "Zundamon",
+			ReferenceURL: "gs://bucket/characters/zundamon.png",
+			VisualCues:   []string{"green hair"},
 		},
-	}
-	chars.ByID = map[string]*characterkit.Character{
-		"zundamon": &chars.List[0],
-		"no-ref":   &chars.List[1],
+	})
+	if err != nil {
+		t.Fatalf("NewCharacters() error = %v", err)
 	}
 	return chars
 }
@@ -38,7 +40,7 @@ func TestCutsUniqueCharacterIDs(t *testing.T) {
 // the cut's own keyframe, blanks skipped, and nil when the cut has neither (so the adapter
 // falls back to image_to_video).
 func TestCutReferenceImages(t *testing.T) {
-	chars := testCharacters()
+	chars := testCharacters(t)
 	tests := []struct {
 		name       string
 		cut        Cut
@@ -52,8 +54,8 @@ func TestCutReferenceImages(t *testing.T) {
 			want:       []string{"gs://bucket/characters/zundamon.png", "gs://bucket/kf.png"},
 		},
 		{
-			name:       "keyframe only when the character has no art",
-			cut:        Cut{CharacterID: "no-ref", KeyframeResult: KeyframeResult{KeyframeReference: "gs://bucket/kf.png"}},
+			name:       "keyframe only when the character is unknown",
+			cut:        Cut{CharacterID: "unknown", KeyframeResult: KeyframeResult{KeyframeReference: "gs://bucket/kf.png"}},
 			characters: chars,
 			want:       []string{"gs://bucket/kf.png"},
 		},
@@ -71,7 +73,7 @@ func TestCutReferenceImages(t *testing.T) {
 		},
 		{
 			name:       "blank keyframe is skipped",
-			cut:        Cut{CharacterID: "no-ref", KeyframeResult: KeyframeResult{KeyframeReference: "   "}},
+			cut:        Cut{CharacterID: "unknown", KeyframeResult: KeyframeResult{KeyframeReference: "   "}},
 			characters: chars,
 			want:       nil,
 		},

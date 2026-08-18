@@ -58,11 +58,11 @@ func NewVideoScriptRunner(
 
 // characterIDs は、スキーマの character_id enum に使うキャラクターID一覧を返します。
 func (r *VideoScriptRunner) characterIDs() []string {
-	if r.characters == nil {
+	if r.characters.Len() == 0 {
 		return nil
 	}
-	ids := make([]string, 0, len(r.characters.List))
-	for _, c := range r.characters.List {
+	ids := make([]string, 0, r.characters.Len())
+	for _, c := range r.characters.All() {
 		ids = append(ids, c.ID)
 	}
 	return ids

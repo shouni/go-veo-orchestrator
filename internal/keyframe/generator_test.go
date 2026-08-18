@@ -313,7 +313,10 @@ func TestGenerator_EditCut(t *testing.T) {
 	})
 
 	t.Run("Errors when character is unknown and no default exists", func(t *testing.T) {
-		g := NewGenerator(mustNewCharacters(t, nil), genMock, pbMock, "gemini-2.0-flash")
+		noDefault := mustNewCharacters(t, []characterkit.Character{
+			{ID: "zundamon", Name: "ずんだもん", VisualCues: []string{"green hair"}, ReferenceURL: "gs://bucket/zunda.png"},
+		})
+		g := NewGenerator(noDefault, genMock, pbMock, "gemini-2.0-flash")
 		cut := video.Cut{CutIndex: 1, CharacterID: "no-such-character", KeyframeResult: video.KeyframeResult{KeyframeReference: "gs://bucket/keyframe.png"}}
 		if _, err := g.EditCut(ctx, cut, "edit"); err == nil {
 			t.Fatal("expected error for unknown character with no default")
