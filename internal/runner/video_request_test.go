@@ -9,16 +9,25 @@ import (
 	"github.com/shouni/go-veo-orchestrator/video"
 )
 
-func newTestCharacters() *characterkit.Characters {
-	chars := &characterkit.Characters{
-		List: []characterkit.Character{
-			{ID: "zundamon", Name: "ずんだもん", ReferenceURL: "gs://bucket/characters/zundamon.png"},
-			{ID: "no-ref", Name: "参照なし"},
+func newTestCharacters(t *testing.T) *characterkit.Characters {
+	t.Helper()
+	chars, err := characterkit.NewCharacters([]characterkit.Character{
+		{
+			ID:           "zundamon",
+			Name:         "ずんだもん",
+			ReferenceURL: "gs://bucket/characters/zundamon.png",
+			VisualCues:   []string{"green hair"},
 		},
-	}
-	chars.ByID = map[string]*characterkit.Character{
-		"zundamon": &chars.List[0],
-		"no-ref":   &chars.List[1],
+		{
+			// Seed を持たないキャラクター（シードのフォールバック検証用）。
+			ID:           "metan",
+			Name:         "めたん",
+			ReferenceURL: "gs://bucket/characters/metan.png",
+			VisualCues:   []string{"purple hair"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewCharacters() error = %v", err)
 	}
 	return chars
 }
@@ -42,7 +51,7 @@ func assertStrings(t *testing.T, label string, got, want []string) {
 // 対応している場合に立ち絵とキーフレームが referenceImages として組み立てられることを
 // 検証します。
 func TestVideoRequestBuilderWithCharactersBuildsReferenceImages(t *testing.T) {
-	builder := NewVideoRequestBuilderWithCharacters(newTestCharacters())
+	builder := NewVideoRequestBuilderWithCharacters(newTestCharacters(t))
 	cut := video.Cut{
 		CutIndex:       1,
 		VisualAnchor:   "anchor",
@@ -72,7 +81,7 @@ func TestVideoRequestBuilderWithCharactersBuildsReferenceImages(t *testing.T) {
 // image_to_video のキーフレーム入力へフォールバックすることを検証します。adapter が
 // 同じ判定でフォールバックするため、組み立て段階から実際に送られる内容と揃えます。
 func TestVideoRequestBuilderReferenceImagesNeedsModelSupport(t *testing.T) {
-	builder := NewVideoRequestBuilderWithCharacters(newTestCharacters())
+	builder := NewVideoRequestBuilderWithCharacters(newTestCharacters(t))
 	cut := video.Cut{
 		CutIndex:       1,
 		VisualAnchor:   "anchor",
@@ -95,7 +104,7 @@ func TestVideoRequestBuilderReferenceImagesNeedsModelSupport(t *testing.T) {
 // （gs:// の PreviousVideoURI）がある場合に画像入力を一切送らないことを検証します。
 // Veo は video と referenceImages / image を同時に受け付けません。
 func TestVideoRequestBuilderOmitsImageInputsWithPreviousVideo(t *testing.T) {
-	builder := NewVideoRequestBuilderWithCharacters(newTestCharacters())
+	builder := NewVideoRequestBuilderWithCharacters(newTestCharacters(t))
 	recipe := &video.Recipe{ProjectTitle: "test"}
 	cut := video.Cut{
 		CutIndex:       2,
@@ -128,7 +137,7 @@ func TestVideoRequestBuilderOmitsImageInputsWithPreviousVideo(t *testing.T) {
 }
 
 // TestVideoRequestBuilderReferenceImagesWithoutCharacterArt は、キャラクターが解決できない
-// （未設定・未知ID・立ち絵なし）場合でも、カット自身のキーフレームが referenceImages として
+// （未設定・未知ID）場合でも、カット自身のキーフレームが referenceImages として
 // 使われることを検証します。video.CutReferenceImages が referenceImages の唯一の組み立て
 // 規則で、リクエストの生成モード判定もこの同じリストを見ます。
 func TestVideoRequestBuilderReferenceImagesWithoutCharacterArt(t *testing.T) {
@@ -144,13 +153,8 @@ func TestVideoRequestBuilderReferenceImagesWithoutCharacterArt(t *testing.T) {
 		},
 		{
 			name:    "unknown character",
-			builder: NewVideoRequestBuilderWithCharacters(newTestCharacters()),
+			builder: NewVideoRequestBuilderWithCharacters(newTestCharacters(t)),
 			cut:     video.Cut{CharacterID: "unknown"},
-		},
-		{
-			name:    "character without reference url",
-			builder: NewVideoRequestBuilderWithCharacters(newTestCharacters()),
-			cut:     video.Cut{CharacterID: "no-ref"},
 		},
 	}
 	recipe := &video.Recipe{ProjectTitle: "test"}
@@ -208,9 +212,8 @@ func TestVideoRequestBuilderLastFrameNeedsModelSupport(t *testing.T) {
 // 得られない場合にキャラクターのシード（キーフレーム生成が使うのと同じ値）へ、それも
 // 無ければレシピ全体のシードへフォールバックすることを検証します。
 func TestVideoRequestBuilderFallsBackToCharacterSeed(t *testing.T) {
-	chars := newTestCharacters()
 	charSeed := int64(4242)
-	chars.List[0].Seed = &charSeed
+	chars := newTestCharacters(t).WithSeedOverride("zundamon", charSeed)
 	recipeSeed := int64(777)
 	recipe := &video.Recipe{
 		ProjectTitle: "test",
@@ -228,7 +231,7 @@ func TestVideoRequestBuilderFallsBackToCharacterSeed(t *testing.T) {
 
 	withoutChar := builder.Build(BuildInput{
 		Recipe: recipe,
-		Cut:    video.Cut{CutIndex: 2, CharacterID: "no-ref", AudioSync: video.AudioSync{DurationSec: 8}},
+		Cut:    video.Cut{CutIndex: 2, CharacterID: "metan", AudioSync: video.AudioSync{DurationSec: 8}},
 	})
 	if withoutChar.Seed != recipeSeed {
 		t.Fatalf("Seed = %d, want recipe seed %d", withoutChar.Seed, recipeSeed)

@@ -214,8 +214,12 @@ func TestVideoScriptRunner_RunConstrainsCharacterIDEnum(t *testing.T) {
 	ai := &fakeContentGenerator{
 		resp: &gemini.Response{Text: `{"project_title":"Generated","cuts":[{"visual_anchor":"a","character_id":"zundamon"}]}`},
 	}
-	characters := &characterkit.Characters{
-		List: []characterkit.Character{{ID: "zundamon"}, {ID: "metan"}},
+	characters, err := characterkit.NewCharacters([]characterkit.Character{
+		{ID: "zundamon", Name: "ずんだもん", VisualCues: []string{"green hair"}, ReferenceURL: "gs://bucket/zunda.png"},
+		{ID: "metan", Name: "めたん", VisualCues: []string{"purple hair"}, ReferenceURL: "gs://bucket/metan.png"},
+	})
+	if err != nil {
+		t.Fatalf("NewCharacters() error = %v", err)
 	}
 
 	r := NewVideoScriptRunner(&fakeScriptPrompt{prompt: "p"}, ai, reader, "model", characters)
