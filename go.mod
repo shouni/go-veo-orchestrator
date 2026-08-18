@@ -5,8 +5,8 @@ go 1.26.6
 require (
 	github.com/shouni/gemini-image-kit v1.14.1
 	github.com/shouni/go-character-kit v1.2.0
-	github.com/shouni/go-gemini-client v1.17.2
-	github.com/shouni/go-remote-io v1.8.1
+	github.com/shouni/go-gemini-client v1.17.3
+	github.com/shouni/go-remote-io v1.8.2
 	github.com/shouni/go-utils v1.5.1
 	golang.org/x/sync v0.22.0
 )
@@ -25,7 +25,7 @@ require (
 	github.com/googleapis/enterprise-certificate-proxy v0.3.21 // indirect
 	github.com/googleapis/gax-go/v2 v2.23.0 // indirect
 	github.com/gorilla/websocket v1.5.3 // indirect
-	github.com/shouni/netarmor v1.2.1 // indirect
+	github.com/shouni/netarmor v1.2.3 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.70.0 // indirect
 	go.opentelemetry.io/otel v1.45.0 // indirect
@@ -38,7 +38,7 @@ require (
 	golang.org/x/time v0.15.0 // indirect
 	google.golang.org/api v0.293.0 // indirect
 	google.golang.org/genai v1.68.0 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20260810153831-ec0a7760b754 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20260817212433-ac3dfec99bb1 // indirect
 	google.golang.org/grpc v1.83.0 // indirect
 	google.golang.org/protobuf v1.36.12 // indirect
 )
