@@ -3,7 +3,7 @@ package runner
 import (
 	"path"
 
-	"github.com/shouni/go-utils/urlpath"
+	"github.com/shouni/go-remote-io/remoteio"
 )
 
 const (
@@ -17,13 +17,13 @@ func defaultKeyframePath() string {
 }
 
 func resolveOutputPath(baseDir, fileName string) (string, error) {
-	return urlpath.ResolvePath(baseDir, fileName)
+	return remoteio.ResolvePath(baseDir, fileName)
 }
 
 func resolveBaseURL(rawPath string) string {
-	return urlpath.ResolveBaseDir(rawPath)
+	return remoteio.ResolveBaseDir(rawPath)
 }
 
 func generateIndexedPath(basePath string, index int) (string, error) {
-	return urlpath.GenerateIndexedPath(basePath, index)
+	return remoteio.GenerateIndexedPath(basePath, index)
 }
