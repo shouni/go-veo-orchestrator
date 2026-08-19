@@ -42,3 +42,6 @@ cache/
 
 # --- Docker ---
 .docker/
+
+# Claude Code local settings
+.claude/settings.local.json
