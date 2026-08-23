@@ -3,9 +3,9 @@ module github.com/shouni/go-veo-orchestrator
 go 1.26.6
 
 require (
-	github.com/shouni/gemini-image-kit v1.14.3
+	github.com/shouni/gemini-image-kit v1.15.0
 	github.com/shouni/go-character-kit v1.2.0
-	github.com/shouni/go-gemini-client v1.17.5
+	github.com/shouni/go-gemini-client v1.18.0
 	github.com/shouni/go-remote-io v1.9.0
 	golang.org/x/sync v0.22.0
 )
