@@ -138,24 +138,3 @@ func TestCutKeyframeRunner_GenerateAndSavePersistsPartialResults(t *testing.T) {
 		t.Fatalf("writes = %d, want keyframe + metadata", writer.writeCount())
 	}
 }
-
-// TestKeyframeExtensionForMime は、保存ファイルの拡張子が実際の MIME type に追従する
-// ことを検証します（以前は .png 固定で JPEG でも .png の名前が付いていました）。
-func TestKeyframeExtensionForMime(t *testing.T) {
-	tests := []struct {
-		mime string
-		want string
-	}{
-		{"image/png", ".png"},
-		{"image/jpeg", ".jpg"},
-		{"image/webp", ".webp"},
-		{"image/gif", ".gif"},
-		{"", ".png"},
-		{"application/octet-stream", ".png"},
-	}
-	for _, tt := range tests {
-		if got := keyframeExtensionForMime(tt.mime); got != tt.want {
-			t.Errorf("keyframeExtensionForMime(%q) = %q, want %q", tt.mime, got, tt.want)
-		}
-	}
-}

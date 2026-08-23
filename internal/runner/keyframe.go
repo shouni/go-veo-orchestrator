@@ -11,6 +11,7 @@ import (
 	"path"
 	"strings"
 
+	imagePorts "github.com/shouni/gemini-image-kit/ports"
 	"github.com/shouni/go-remote-io/remoteio"
 	"github.com/shouni/go-veo-orchestrator/ports"
 	"github.com/shouni/go-veo-orchestrator/video"
@@ -215,23 +216,6 @@ func resolveKeyframeBasePath(outputPath string) (targetDir string, basePath stri
 	return targetDir, basePath, nil
 }
 
-// keyframeExtensionForMime は、画像の MIME type から保存ファイルの拡張子を返します。
-// 以前は .png 固定で、モデルが JPEG/WebP を返すと中身と拡張子が食い違っていました。
-// 未知の MIME type は既定の .png のままにします（Content-Type は別途正しく付くため
-// 実害は拡張子の見た目だけ）。
-func keyframeExtensionForMime(mimeType string) string {
-	switch strings.ToLower(strings.TrimSpace(mimeType)) {
-	case "image/jpeg":
-		return ".jpg"
-	case "image/webp":
-		return ".webp"
-	case "image/gif":
-		return ".gif"
-	default:
-		return ".png"
-	}
-}
-
 // saveKeyframeImage は、basePath から index 番目のキーフレームパスを生成し、画像を保存します。
 // GenerateAndSave / EditAndSave の両方から使われる共通の保存ロジックです。
 func (r *CutKeyframeRunner) saveKeyframeImage(ctx context.Context, basePath string, index int, image *video.KeyframeImage) (string, error) {
@@ -240,7 +224,7 @@ func (r *CutKeyframeRunner) saveKeyframeImage(ctx context.Context, basePath stri
 		return "", fmt.Errorf("cut %d のキーフレーム出力パス生成に失敗しました: %w", index, err)
 	}
 	// 実際の画像形式に合わせて拡張子を付け替える（basePath は .png 基準）。
-	if ext := keyframeExtensionForMime(image.MimeType); ext != path.Ext(keyframePath) {
+	if ext := imagePorts.ExtensionByMIMEType(image.MimeType); ext != path.Ext(keyframePath) {
 		keyframePath = strings.TrimSuffix(keyframePath, path.Ext(keyframePath)) + ext
 	}
 
