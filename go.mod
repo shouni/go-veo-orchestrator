@@ -3,6 +3,7 @@ module github.com/shouni/go-veo-orchestrator
 go 1.26.6
 
 require (
+	github.com/google/go-cmp v0.7.0
 	github.com/shouni/gemini-image-kit v1.15.0
 	github.com/shouni/go-character-kit v1.2.0
 	github.com/shouni/go-gemini-client v1.18.0
@@ -19,7 +20,6 @@ require (
 	github.com/felixge/httpsnoop v1.1.0 // indirect
 	github.com/go-logr/logr v1.4.4 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
-	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/google/s2a-go v0.1.9 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.3.21 // indirect
 	github.com/googleapis/gax-go/v2 v2.24.0 // indirect

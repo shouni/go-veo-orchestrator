@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/shouni/go-remote-io/remoteio"
@@ -440,46 +441,48 @@ func TestCutKeyframeRunner_MaxConcurrency(t *testing.T) {
 
 	for _, limit := range []int{1, 3} {
 		t.Run(fmt.Sprintf("limit=%d", limit), func(t *testing.T) {
-			var mu sync.Mutex
-			inFlight, peak := 0, 0
+			// バブル内では生成の time.Sleep が仮想時間を進めるだけになり、枠が
+			// 埋まるまで次のカットが走り出さないことが保証されます。実時間に
+			// 依存しないので、上限ちょうどまで重なることを期待できます。
+			synctest.Test(t, func(t *testing.T) {
+				var mu sync.Mutex
+				inFlight, peak := 0, 0
 
-			gen := &capturingCutImageGenerator{
-				image: func(_ video.Cut) *video.KeyframeImage {
-					mu.Lock()
-					inFlight++
-					if inFlight > peak {
-						peak = inFlight
-					}
-					mu.Unlock()
+				gen := &capturingCutImageGenerator{
+					image: func(_ video.Cut) *video.KeyframeImage {
+						mu.Lock()
+						inFlight++
+						if inFlight > peak {
+							peak = inFlight
+						}
+						mu.Unlock()
 
-					time.Sleep(20 * time.Millisecond)
+						time.Sleep(20 * time.Millisecond)
 
-					mu.Lock()
-					inFlight--
-					mu.Unlock()
-					return &video.KeyframeImage{Data: []byte("img"), MimeType: "image/png"}
-				},
-			}
+						mu.Lock()
+						inFlight--
+						mu.Unlock()
+						return &video.KeyframeImage{Data: []byte("img"), MimeType: "image/png"}
+					},
+				}
 
-			cuts := make([]video.Cut, 8)
-			for i := range cuts {
-				cuts[i] = keyframeCut(i+1, "")
-			}
-			recipe := &video.Recipe{ProjectTitle: "concurrency", Cuts: cuts}
+				cuts := make([]video.Cut, 8)
+				for i := range cuts {
+					cuts[i] = keyframeCut(i+1, "")
+				}
+				recipe := &video.Recipe{ProjectTitle: "concurrency", Cuts: cuts}
 
-			r := NewCutKeyframeRunner(gen, newFakeWriter(), WithMaxConcurrency(limit))
-			if _, err := r.GenerateAndSave(ctx, recipe, "gs://bucket/jobs/j1/"); err != nil {
-				t.Fatalf("GenerateAndSave() error = %v", err)
-			}
+				r := NewCutKeyframeRunner(gen, newFakeWriter(), WithMaxConcurrency(limit))
+				if _, err := r.GenerateAndSave(ctx, recipe, "gs://bucket/jobs/j1/"); err != nil {
+					t.Fatalf("GenerateAndSave() error = %v", err)
+				}
 
-			mu.Lock()
-			defer mu.Unlock()
-			if peak > limit {
-				t.Errorf("peak concurrency = %d, want <= %d", peak, limit)
-			}
-			if limit > 1 && peak < 2 {
-				t.Errorf("peak concurrency = %d, want the cuts to actually overlap", peak)
-			}
+				mu.Lock()
+				defer mu.Unlock()
+				if peak != limit {
+					t.Errorf("peak concurrency = %d, want exactly %d (少なければ重なっておらず、多ければ上限を超えている)", peak, limit)
+				}
+			})
 		})
 	}
 }
@@ -489,38 +492,41 @@ func TestCutKeyframeRunner_MaxConcurrency(t *testing.T) {
 // results are written straight into recipe.Cuts, so a position mix-up would silently attach
 // cut 3's image to cut 1 — a failure that only shows up as the wrong picture in a finished video.
 func TestCutKeyframeRunner_ParallelGenerationKeepsCutAlignment(t *testing.T) {
-	ctx := context.Background()
+	// 遅延は仮想時間で消化されます。完了順のずれは保たれたまま、実時間は消費しません。
+	synctest.Test(t, func(t *testing.T) {
+		ctx := context.Background()
 
-	// 逆順に遅延させ、完了順を入力順とわざとずらす。
-	gen := &capturingCutImageGenerator{
-		image: func(cut video.Cut) *video.KeyframeImage {
-			time.Sleep(time.Duration(5-cut.CutIndex) * 10 * time.Millisecond)
-			return &video.KeyframeImage{
-				Data: []byte("img"), MimeType: "image/png", UsedSeed: int64(1000 + cut.CutIndex),
+		// 逆順に遅延させ、完了順を入力順とわざとずらす。
+		gen := &capturingCutImageGenerator{
+			image: func(cut video.Cut) *video.KeyframeImage {
+				time.Sleep(time.Duration(5-cut.CutIndex) * 10 * time.Millisecond)
+				return &video.KeyframeImage{
+					Data: []byte("img"), MimeType: "image/png", UsedSeed: int64(1000 + cut.CutIndex),
+				}
+			},
+		}
+
+		cuts := make([]video.Cut, 4)
+		for i := range cuts {
+			cuts[i] = keyframeCut(i+1, "")
+		}
+		recipe := &video.Recipe{ProjectTitle: "alignment", Cuts: cuts}
+
+		r := NewCutKeyframeRunner(gen, newFakeWriter(), WithMaxConcurrency(4))
+		updated, err := r.GenerateAndSave(ctx, recipe, "gs://bucket/jobs/j1/")
+		if err != nil {
+			t.Fatalf("GenerateAndSave() error = %v", err)
+		}
+
+		for i, cut := range updated.Cuts {
+			if want := int64(1000 + cut.CutIndex); cut.KeyframeSeed != want {
+				t.Errorf("cut %d: KeyframeSeed = %d, want %d (result landed on the wrong cut)",
+					cut.CutIndex, cut.KeyframeSeed, want)
 			}
-		},
-	}
-
-	cuts := make([]video.Cut, 4)
-	for i := range cuts {
-		cuts[i] = keyframeCut(i+1, "")
-	}
-	recipe := &video.Recipe{ProjectTitle: "alignment", Cuts: cuts}
-
-	r := NewCutKeyframeRunner(gen, newFakeWriter(), WithMaxConcurrency(4))
-	updated, err := r.GenerateAndSave(ctx, recipe, "gs://bucket/jobs/j1/")
-	if err != nil {
-		t.Fatalf("GenerateAndSave() error = %v", err)
-	}
-
-	for i, cut := range updated.Cuts {
-		if want := int64(1000 + cut.CutIndex); cut.KeyframeSeed != want {
-			t.Errorf("cut %d: KeyframeSeed = %d, want %d (result landed on the wrong cut)",
-				cut.CutIndex, cut.KeyframeSeed, want)
+			// 保存名はレシピ内の位置で決まる。詰めたり入れ替えたりしてはいけない。
+			if want := fmt.Sprintf("keyframe_%d", i+1); !strings.Contains(cut.KeyframeReference, want) {
+				t.Errorf("cut %d: reference %q, want it to contain %q", cut.CutIndex, cut.KeyframeReference, want)
+			}
 		}
-		// 保存名はレシピ内の位置で決まる。詰めたり入れ替えたりしてはいけない。
-		if want := fmt.Sprintf("keyframe_%d", i+1); !strings.Contains(cut.KeyframeReference, want) {
-			t.Errorf("cut %d: reference %q, want it to contain %q", cut.CutIndex, cut.KeyframeReference, want)
-		}
-	}
+	})
 }
