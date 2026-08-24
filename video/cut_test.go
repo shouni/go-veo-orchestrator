@@ -1,8 +1,9 @@
 package video
 
 import (
-	"reflect"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
 
 	characterkit "github.com/shouni/go-character-kit/character"
 )
@@ -31,8 +32,8 @@ func TestCutsUniqueCharacterIDs(t *testing.T) {
 		{CharacterID: ""},
 	}
 	want := []string{"metan", "zundamon"}
-	if got := cuts.UniqueCharacterIDs(); !reflect.DeepEqual(got, want) {
-		t.Fatalf("UniqueCharacterIDs() = %v, want %v", got, want)
+	if diff := cmp.Diff(want, cuts.UniqueCharacterIDs()); diff != "" {
+		t.Fatalf("UniqueCharacterIDs() mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -81,8 +82,8 @@ func TestCutReferenceImages(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := CutReferenceImages(tt.cut, tt.characters)
-			if !reflect.DeepEqual(got, tt.want) {
-				t.Fatalf("CutReferenceImages() = %v, want %v", got, tt.want)
+			if diff := cmp.Diff(tt.want, got); diff != "" {
+				t.Fatalf("CutReferenceImages() mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}

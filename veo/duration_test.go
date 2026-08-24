@@ -1,8 +1,9 @@
 package veo
 
 import (
-	"reflect"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
 )
 
 // TestDurationsForMode verifies each Veo generation mode reports the durations it actually
@@ -21,8 +22,8 @@ func TestDurationsForMode(t *testing.T) {
 		{GenerationMode("unknown"), []float64{4, 6, 8}},
 	}
 	for _, tt := range tests {
-		if got := DurationsForMode(tt.mode); !reflect.DeepEqual(got, tt.want) {
-			t.Errorf("DurationsForMode(%s) = %v, want %v", tt.mode, got, tt.want)
+		if diff := cmp.Diff(tt.want, DurationsForMode(tt.mode)); diff != "" {
+			t.Errorf("DurationsForMode(%s) mismatch (-want +got):\n%s", tt.mode, diff)
 		}
 	}
 }
@@ -100,8 +101,8 @@ func TestSnapDuration(t *testing.T) {
 func TestChainDurations(t *testing.T) {
 	got := ChainDurations(ImageToVideoDurationsSec())
 	want := []float64{4, 6, 8, 11, 13, 15, 18, 20, 22}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("ChainDurations(image_to_video) = %v, want %v", got, want)
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Fatalf("ChainDurations(image_to_video) mismatch (-want +got):\n%s", diff)
 	}
 	if longest := got[len(got)-1]; longest+VideoExtensionDurationSec <= ContinuationMaxDurationSec {
 		t.Errorf("longest chain %v could still be extended without reaching the cap %v", longest, ContinuationMaxDurationSec)
@@ -109,8 +110,8 @@ func TestChainDurations(t *testing.T) {
 
 	got = ChainDurations(ReferenceToVideoDurationsSec())
 	want = []float64{8, 15, 22}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("ChainDurations(reference_to_video) = %v, want %v", got, want)
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Fatalf("ChainDurations(reference_to_video) mismatch (-want +got):\n%s", diff)
 	}
 
 	if got := ChainDurations(nil); len(got) != 0 {
