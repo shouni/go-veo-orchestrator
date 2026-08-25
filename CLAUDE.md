@@ -115,3 +115,7 @@ A cut that fails does not discard the images already paid for: partial successes
 - `github.com/shouni/go-character-kit` — `characterkit.Characters`/`Character` (Seed, ReferenceURL(s)) for cross-cut character consistency.
 - `github.com/shouni/go-gemini-client` — `music.Recipe` (aliased as `video.MusicRecipe`) is the input music/lyrics recipe format — it lives in the leaf `music` package, so importing it does not drag in the `lyria` workflow. AI clients are taken as `gemini.Generator` for both script and image generation — the narrowest genai-free interface, one method: nothing in this repo imports `google.golang.org/genai`. Structured output uses plain JSON Schema via `GenerateOptions.ResponseJSONSchema` (`video.RecipeSchema` returns `map[string]any`), not `genai.Schema`.
 - `github.com/shouni/go-remote-io` — `remoteio.Writer` used for persisting `video_music_meta.json` and keyframe outputs.
+
+## Conventions
+
+- **Error text**: sentinel errors are English with a package prefix (`review: diff is empty`) so a deeply wrapped error still names its origin; the context added by `fmt.Errorf` wrapping is Japanese. Existing English wrap text is not being retrofitted — apply the rule to code you touch.
