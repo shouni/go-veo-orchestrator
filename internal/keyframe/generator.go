@@ -12,7 +12,6 @@ import (
 
 	imagePorts "github.com/shouni/gemini-image-kit/ports"
 	characterkit "github.com/shouni/go-character-kit/character"
-	"github.com/shouni/go-gemini-client/gemini"
 
 	"github.com/shouni/go-veo-orchestrator/ports"
 	"github.com/shouni/go-veo-orchestrator/video"
@@ -191,12 +190,10 @@ func (g *Generator) buildGenerationOptions(prompt, systemPrompt string, seed *in
 		Model:          g.model,
 		Prompt:         prompt,
 		NegativePrompt: g.negativePrompt,
-		GenerateOptions: gemini.GenerateOptions{
-			SystemPrompt: systemPrompt,
-			AspectRatio:  g.aspectRatio,
-			ImageSize:    g.imageSize,
-			Seed:         seed,
-		},
+		SystemPrompt:   systemPrompt,
+		AspectRatio:    g.aspectRatio,
+		ImageSize:      g.imageSize,
+		Seed:           seed,
 	}
 }
 

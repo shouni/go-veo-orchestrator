@@ -227,7 +227,7 @@ func splitChainCutIntoSupportedDurations(cut video.Cut, allowedBases []float64) 
 	// [ベース, 7秒 × extensions] のサブ尺列を組み立てる。
 	durations := make([]float64, 0, extensions+1)
 	durations = append(durations, base)
-	for i := 0; i < extensions; i++ {
+	for range extensions {
 		durations = append(durations, VideoExtensionDurationSec)
 	}
 	return buildSubCutsFromDurations(cut, durations)
@@ -276,7 +276,7 @@ func isChainBase(cut video.Cut) bool {
 // SplitDialogueLines は歌詞テキストを空行を除いた行スライスへ分解します。
 func SplitDialogueLines(dialogue string) []string {
 	var lines []string
-	for _, line := range strings.Split(dialogue, "\n") {
+	for line := range strings.SplitSeq(dialogue, "\n") {
 		if line = strings.TrimSpace(line); line != "" {
 			lines = append(lines, line)
 		}

@@ -95,10 +95,10 @@ func TestCutEffectiveDurationSec(t *testing.T) {
 		cut  Cut
 		want float64
 	}{
-		{"explicit duration wins", Cut{AudioSync: AudioSync{DurationSec: 8, StartSec: 10, EndSec: 30}}, 8},
-		{"derived from the timeline", Cut{AudioSync: AudioSync{StartSec: 10, EndSec: 16}}, 6},
+		{"explicit duration wins", Cut{DurationSec: 8, StartSec: 10, EndSec: 30}, 8},
+		{"derived from the timeline", Cut{StartSec: 10, EndSec: 16}, 6},
 		{"neither set", Cut{}, 0},
-		{"end before start", Cut{AudioSync: AudioSync{StartSec: 20, EndSec: 10}}, 0},
+		{"end before start", Cut{StartSec: 20, EndSec: 10}, 0},
 	}
 	for _, tt := range tests {
 		if got := tt.cut.EffectiveDurationSec(); got != tt.want {
@@ -112,9 +112,9 @@ func TestCutEffectiveDurationSec(t *testing.T) {
 // means the caller reuses the stored one.
 func TestCutResetGeneration(t *testing.T) {
 	base := Cut{
-		KeyframeResult: KeyframeResult{KeyframeReference: "gs://bucket/kf.png"},
-		Result:         Result{VideoID: "gs://bucket/cut.mp4", VideoURL: "gs://bucket/cut.mp4", Status: CutStatusGenerated},
-		ChainControl:   ChainControl{IsChainStart: true, IsSectionStart: true},
+		KeyframeReference: "gs://bucket/kf.png",
+		VideoID:           "gs://bucket/cut.mp4", VideoURL: "gs://bucket/cut.mp4", Status: CutStatusGenerated,
+		IsChainStart: true, IsSectionStart: true,
 	}
 
 	dropped := base
@@ -180,7 +180,7 @@ func TestCutsNextLastFrameReference(t *testing.T) {
 			name: "next cut starts a section",
 			cuts: Cuts{
 				{CharacterID: "zundamon", KeyframeResult: kf("gs://a.png")},
-				{CharacterID: "zundamon", KeyframeResult: kf("gs://b.png"), ChainControl: ChainControl{IsSectionStart: true}},
+				{CharacterID: "zundamon", KeyframeResult: kf("gs://b.png"), IsSectionStart: true},
 			},
 			want: "",
 		},

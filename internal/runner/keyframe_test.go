@@ -114,7 +114,7 @@ func TestCutKeyframeRunner_EditAndSave(t *testing.T) {
 
 		recipe := &video.Recipe{
 			Cuts: []video.Cut{
-				{CutIndex: 2, CharacterID: "zundamon", KeyframeResult: video.KeyframeResult{KeyframeReference: "gs://bucket/jobs/j1/images/keyframe_2.png"}},
+				{CutIndex: 2, CharacterID: "zundamon", KeyframeReference: "gs://bucket/jobs/j1/images/keyframe_2.png"},
 			},
 		}
 
@@ -146,8 +146,8 @@ func TestCutKeyframeRunner_EditAndSave(t *testing.T) {
 		}
 		r := NewCutKeyframeRunner(gen, newFakeWriter())
 		recipe := &video.Recipe{Cuts: []video.Cut{
-			{CutIndex: 1, KeyframeResult: video.KeyframeResult{KeyframeReference: "gs://bucket/k1.png"}},
-			{CutIndex: 2, KeyframeResult: video.KeyframeResult{KeyframeReference: "gs://bucket/k2.png"}},
+			{CutIndex: 1, KeyframeReference: "gs://bucket/k1.png"},
+			{CutIndex: 2, KeyframeReference: "gs://bucket/k2.png"},
 		}}
 
 		if _, err := r.EditAndSave(ctx, recipe, 1, "edit", "gs://bucket/out/"); err != nil {
@@ -181,7 +181,7 @@ func TestCutKeyframeRunner_EditAndSave(t *testing.T) {
 
 	t.Run("errors when generator does not support editing", func(t *testing.T) {
 		r := NewCutKeyframeRunner(nonEditingCutImageGenerator{}, newFakeWriter())
-		recipe := &video.Recipe{Cuts: []video.Cut{{CutIndex: 1, KeyframeResult: video.KeyframeResult{KeyframeReference: "gs://bucket/k.png"}}}}
+		recipe := &video.Recipe{Cuts: []video.Cut{{CutIndex: 1, KeyframeReference: "gs://bucket/k.png"}}}
 
 		_, err := r.EditAndSave(ctx, recipe, 0, "edit", "gs://bucket/out/")
 		if !errors.Is(err, ports.ErrEditingNotSupported) {
@@ -282,10 +282,10 @@ func (g *capturingCutImageGenerator) seenCutIndexes() []int {
 
 func keyframeCut(index int, keyframeReference string) video.Cut {
 	return video.Cut{
-		CutIndex:       index,
-		VisualAnchor:   fmt.Sprintf("anchor %d", index),
-		AudioSync:      video.AudioSync{DurationSec: 8},
-		KeyframeResult: video.KeyframeResult{KeyframeReference: keyframeReference},
+		CutIndex:          index,
+		VisualAnchor:      fmt.Sprintf("anchor %d", index),
+		DurationSec:       8,
+		KeyframeReference: keyframeReference,
 	}
 }
 

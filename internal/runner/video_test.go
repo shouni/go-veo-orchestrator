@@ -61,24 +61,20 @@ func TestVideoTimelineRunner_RunChainsPreviousVideoURI(t *testing.T) {
 		MusicRecipe:  video.MusicRecipe{Mood: "symphonic rock"},
 		Cuts: []video.Cut{
 			{
-				CutIndex:     1,
-				VisualAnchor: "slow dolly in",
-				AudioSync: video.AudioSync{
-					DurationSec:    8,
-					AudioCue:       "intro pad",
-					AudioReference: "gs://audio/seg_1.mp3",
-				},
+				CutIndex:       1,
+				VisualAnchor:   "slow dolly in",
+				DurationSec:    8,
+				AudioCue:       "intro pad",
+				AudioReference: "gs://audio/seg_1.mp3",
 				// キーフレーム生成時のシードはカットに記録され、動画生成へ引き継がれる。
-				KeyframeResult: video.KeyframeResult{KeyframeSeed: 101},
+				KeyframeSeed: 101,
 			},
 			{
 				CutIndex:     2,
 				VisualAnchor: "fast orbit camera",
-				AudioSync: video.AudioSync{
-					// gs:// チェーン文脈があるため video_extension（7秒固定）になる。
-					DurationSec: 7,
-					AudioCue:    "heavy chorus",
-				},
+				// gs:// チェーン文脈があるため video_extension（7秒固定）になる。
+				DurationSec: 7,
+				AudioCue:    "heavy chorus",
 			},
 		},
 	}
@@ -132,19 +128,19 @@ func TestVideoTimelineRunner_RunResetsChainAtChainStart(t *testing.T) {
 			{
 				CutIndex:     1,
 				VisualAnchor: "chain head",
-				AudioSync:    video.AudioSync{DurationSec: 8},
+				DurationSec:  8,
 			},
 			{
 				CutIndex:     2,
 				VisualAnchor: "continues from cut 1",
 				// gs:// チェーン文脈があるため video_extension（7秒固定）になる。
-				AudioSync: video.AudioSync{DurationSec: 7},
+				DurationSec: 7,
 			},
 			{
 				CutIndex:     3,
 				VisualAnchor: "new chain start (section boundary)",
-				AudioSync:    video.AudioSync{DurationSec: 8},
-				ChainControl: video.ChainControl{IsChainStart: true},
+				DurationSec:  8,
+				IsChainStart: true,
 			},
 		},
 	}
@@ -174,17 +170,17 @@ func TestVideoTimelineRunner_RunUsesSavedKeyframeReferences(t *testing.T) {
 		ProjectTitle: "saved keyframes",
 		Cuts: []video.Cut{
 			{
-				CutIndex:       1,
-				VisualAnchor:   "first saved keyframe",
-				AudioSync:      video.AudioSync{DurationSec: 8},
-				KeyframeResult: video.KeyframeResult{KeyframeReference: "gs://images/cut_1.png"},
+				CutIndex:          1,
+				VisualAnchor:      "first saved keyframe",
+				DurationSec:       8,
+				KeyframeReference: "gs://images/cut_1.png",
 			},
 			{
 				CutIndex:     2,
 				VisualAnchor: "second saved keyframe",
 				// gs:// チェーン文脈があるため video_extension（7秒固定）になる。
-				AudioSync:      video.AudioSync{DurationSec: 7},
-				KeyframeResult: video.KeyframeResult{KeyframeReference: "gs://images/cut_2.png"},
+				DurationSec:       7,
+				KeyframeReference: "gs://images/cut_2.png",
 			},
 		},
 	}
@@ -213,18 +209,16 @@ func TestVideoTimelineRunner_RunSkipsGeneratedCutAndChainsItsVideoID(t *testing.
 			{
 				CutIndex:     1,
 				VisualAnchor: "resume from existing context",
-				AudioSync:    video.AudioSync{DurationSec: 8},
-				Result: video.Result{
-					VideoID:  "gs://bucket/existing-video-1.mp4",
-					VideoURL: "gs://videos/cut_1.mp4",
-					Status:   video.CutStatusGenerated,
-				},
+				DurationSec:  8,
+				VideoID:      "gs://bucket/existing-video-1.mp4",
+				VideoURL:     "gs://videos/cut_1.mp4",
+				Status:       video.CutStatusGenerated,
 			},
 			{
 				CutIndex:     2,
 				VisualAnchor: "continue from existing context",
 				// gs:// のチェーン文脈があるため video_extension（7秒固定）になる。
-				AudioSync: video.AudioSync{DurationSec: 7},
+				DurationSec: 7,
 			},
 		},
 	}
@@ -253,18 +247,16 @@ func TestVideoTimelineRunner_RunRejectsUnsupportedExtensionDuration(t *testing.T
 		ProjectTitle: "bad extension duration",
 		Cuts: []video.Cut{
 			{
-				CutIndex:  1,
-				AudioSync: video.AudioSync{DurationSec: 8},
-				Result: video.Result{
-					VideoID:  "gs://bucket/existing-video-1.mp4",
-					VideoURL: "gs://videos/cut_1.mp4",
-					Status:   video.CutStatusGenerated,
-				},
+				CutIndex:    1,
+				DurationSec: 8,
+				VideoID:     "gs://bucket/existing-video-1.mp4",
+				VideoURL:    "gs://videos/cut_1.mp4",
+				Status:      video.CutStatusGenerated,
 			},
 			{
-				CutIndex:       2,
-				AudioSync:      video.AudioSync{DurationSec: 8}, // video_extension は7秒固定なので拒否される
-				KeyframeResult: video.KeyframeResult{KeyframeReference: "gs://images/cut_2.png"},
+				CutIndex:          2,
+				DurationSec:       8, // video_extension は7秒固定なので拒否される
+				KeyframeReference: "gs://images/cut_2.png",
 			},
 		},
 	}
@@ -300,28 +292,28 @@ func TestVideoTimelineRunner_RunPassesNextKeyframeAsLastFrame(t *testing.T) {
 		ProjectTitle: "last frame",
 		Cuts: []video.Cut{
 			{
-				CutIndex:       1,
-				VisualAnchor:   "a",
-				CharacterID:    "zundamon",
-				AudioSync:      video.AudioSync{DurationSec: 8},
-				KeyframeResult: video.KeyframeResult{KeyframeReference: "gs://images/cut_1.png"},
+				CutIndex:          1,
+				VisualAnchor:      "a",
+				CharacterID:       "zundamon",
+				DurationSec:       8,
+				KeyframeReference: "gs://images/cut_1.png",
 			},
 			{
-				CutIndex:       2,
-				VisualAnchor:   "b",
-				CharacterID:    "zundamon",
-				AudioSync:      video.AudioSync{DurationSec: 8},
-				KeyframeResult: video.KeyframeResult{KeyframeReference: "gs://images/cut_2.png"},
+				CutIndex:          2,
+				VisualAnchor:      "b",
+				CharacterID:       "zundamon",
+				DurationSec:       8,
+				KeyframeReference: "gs://images/cut_2.png",
 				// チェーン文脈を持ち込まない（lastFrame は image 入力とセットのときだけ有効）。
-				ChainControl: video.ChainControl{IsChainStart: true},
+				IsChainStart: true,
 			},
 			{
-				CutIndex:       3,
-				VisualAnchor:   "c",
-				CharacterID:    "zundamon",
-				AudioSync:      video.AudioSync{DurationSec: 8},
-				KeyframeResult: video.KeyframeResult{KeyframeReference: "gs://images/cut_3.png"},
-				ChainControl:   video.ChainControl{IsChainStart: true, IsSectionStart: true},
+				CutIndex:          3,
+				VisualAnchor:      "c",
+				CharacterID:       "zundamon",
+				DurationSec:       8,
+				KeyframeReference: "gs://images/cut_3.png",
+				IsChainStart:      true, IsSectionStart: true,
 			},
 		},
 	}
@@ -351,10 +343,10 @@ func TestVideoTimelineRunner_RunRejectsUnsupportedDuration(t *testing.T) {
 		ProjectTitle: "bad duration",
 		Cuts: []video.Cut{
 			{
-				CutIndex:       1,
-				VisualAnchor:   "a",
-				AudioSync:      video.AudioSync{DurationSec: 12},
-				KeyframeResult: video.KeyframeResult{KeyframeReference: "gs://images/cut_1.png"},
+				CutIndex:          1,
+				VisualAnchor:      "a",
+				DurationSec:       12,
+				KeyframeReference: "gs://images/cut_1.png",
 			},
 		},
 	}
@@ -384,7 +376,7 @@ func TestVideoTimelineRunner_DoesNotGenerateKeyframes(t *testing.T) {
 	recipe := &video.Recipe{
 		ProjectTitle: "no keyframes",
 		Cuts: []video.Cut{
-			{CutIndex: 1, AudioSync: video.AudioSync{DurationSec: 8}},
+			{CutIndex: 1, DurationSec: 8},
 		},
 	}
 

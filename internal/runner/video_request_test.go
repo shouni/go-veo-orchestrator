@@ -53,11 +53,11 @@ func assertStrings(t *testing.T, label string, got, want []string) {
 func TestVideoRequestBuilderWithCharactersBuildsReferenceImages(t *testing.T) {
 	builder := NewVideoRequestBuilderWithCharacters(newTestCharacters(t))
 	cut := video.Cut{
-		CutIndex:       1,
-		VisualAnchor:   "anchor",
-		CharacterID:    "zundamon",
-		AudioSync:      video.AudioSync{DurationSec: 8},
-		KeyframeResult: video.KeyframeResult{KeyframeReference: "gs://bucket/jobs/job-1/images/cut_1.png"},
+		CutIndex:          1,
+		VisualAnchor:      "anchor",
+		CharacterID:       "zundamon",
+		DurationSec:       8,
+		KeyframeReference: "gs://bucket/jobs/job-1/images/cut_1.png",
 	}
 
 	req := builder.Build(BuildInput{
@@ -83,11 +83,11 @@ func TestVideoRequestBuilderWithCharactersBuildsReferenceImages(t *testing.T) {
 func TestVideoRequestBuilderReferenceImagesNeedsModelSupport(t *testing.T) {
 	builder := NewVideoRequestBuilderWithCharacters(newTestCharacters(t))
 	cut := video.Cut{
-		CutIndex:       1,
-		VisualAnchor:   "anchor",
-		CharacterID:    "zundamon",
-		AudioSync:      video.AudioSync{DurationSec: 8},
-		KeyframeResult: video.KeyframeResult{KeyframeReference: "gs://bucket/kf.png"},
+		CutIndex:          1,
+		VisualAnchor:      "anchor",
+		CharacterID:       "zundamon",
+		DurationSec:       8,
+		KeyframeReference: "gs://bucket/kf.png",
 	}
 
 	req := builder.Build(BuildInput{Recipe: &video.Recipe{ProjectTitle: "test"}, Cut: cut})
@@ -107,11 +107,11 @@ func TestVideoRequestBuilderOmitsImageInputsWithPreviousVideo(t *testing.T) {
 	builder := NewVideoRequestBuilderWithCharacters(newTestCharacters(t))
 	recipe := &video.Recipe{ProjectTitle: "test"}
 	cut := video.Cut{
-		CutIndex:       2,
-		VisualAnchor:   "anchor",
-		CharacterID:    "zundamon",
-		AudioSync:      video.AudioSync{DurationSec: 7},
-		KeyframeResult: video.KeyframeResult{KeyframeReference: "gs://bucket/jobs/job-1/images/cut_2.png"},
+		CutIndex:          2,
+		VisualAnchor:      "anchor",
+		CharacterID:       "zundamon",
+		DurationSec:       7,
+		KeyframeReference: "gs://bucket/jobs/job-1/images/cut_2.png",
 	}
 
 	// (a) gs:// の PreviousVideoURI あり → video_extension なので画像入力は落ちる。
@@ -182,10 +182,10 @@ func TestVideoRequestBuilderLastFrameNeedsModelSupport(t *testing.T) {
 	builder := NewVideoRequestBuilder()
 	recipe := &video.Recipe{ProjectTitle: "test"}
 	cut := video.Cut{
-		CutIndex:       1,
-		VisualAnchor:   "anchor",
-		AudioSync:      video.AudioSync{DurationSec: 8},
-		KeyframeResult: video.KeyframeResult{KeyframeReference: "gs://bucket/cut_1.png"},
+		CutIndex:          1,
+		VisualAnchor:      "anchor",
+		DurationSec:       8,
+		KeyframeReference: "gs://bucket/cut_1.png",
 	}
 
 	supported := builder.Build(BuildInput{

@@ -187,10 +187,8 @@ func cutsFromSections(sections []music.Section) []Cut {
 			CutIndex:     i + 1,
 			SectionIndex: i + 1,
 			VisualAnchor: section.Name,
-			AudioSync: AudioSync{
-				DurationSec: duration,
-				AudioCue:    section.Prompt,
-			},
+			DurationSec:  duration,
+			AudioCue:     section.Prompt,
 		})
 	}
 	return cuts

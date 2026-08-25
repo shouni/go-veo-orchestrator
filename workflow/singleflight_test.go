@@ -47,7 +47,7 @@ func (g *countingImageGenerator) callCount() int {
 
 func imageRequest(prompt string) imagePorts.ImageRequest {
 	return imagePorts.ImageRequest{
-		GenerationOptions: imagePorts.GenerationOptions{Model: "m", Prompt: prompt},
+		Model: "m", Prompt: prompt,
 	}
 }
 
@@ -64,11 +64,9 @@ func TestSingleflightImageGeneratorCollapsesIdenticalCalls(t *testing.T) {
 		responses := make([]*imagePorts.ImageResponse, callers)
 		errs := make([]error, callers)
 		for i := range callers {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
+			wg.Go(func() {
 				responses[i], errs[i] = g.Generate(context.Background(), imageRequest("same"))
-			}()
+			})
 		}
 
 		// 全員が in-flight に入るのを待ってから解放する。Wait はバブル内の他の

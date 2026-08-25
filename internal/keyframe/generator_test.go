@@ -283,7 +283,7 @@ func TestGenerator_EditCut(t *testing.T) {
 			return &imagePorts.ImageResponse{Data: []byte("edited"), UsedSeed: *req.Seed}, nil
 		}
 
-		cut := video.Cut{CutIndex: 2, CharacterID: "zundamon", KeyframeResult: video.KeyframeResult{KeyframeReference: "gs://bucket/jobs/j1/images/keyframe_2.png"}}
+		cut := video.Cut{CutIndex: 2, CharacterID: "zundamon", KeyframeReference: "gs://bucket/jobs/j1/images/keyframe_2.png"}
 		resp, err := generator.EditCut(ctx, cut, "腕には絆創膏を1〜2枚のみにしてください")
 		if err != nil {
 			t.Fatalf("EditCut failed: %v", err)
@@ -317,7 +317,7 @@ func TestGenerator_EditCut(t *testing.T) {
 			{ID: "zundamon", Name: "ずんだもん", VisualCues: []string{"green hair"}, ReferenceURL: "gs://bucket/zunda.png"},
 		})
 		g := NewGenerator(noDefault, genMock, pbMock, "gemini-2.0-flash")
-		cut := video.Cut{CutIndex: 1, CharacterID: "no-such-character", KeyframeResult: video.KeyframeResult{KeyframeReference: "gs://bucket/keyframe.png"}}
+		cut := video.Cut{CutIndex: 1, CharacterID: "no-such-character", KeyframeReference: "gs://bucket/keyframe.png"}
 		if _, err := g.EditCut(ctx, cut, "edit"); err == nil {
 			t.Fatal("expected error for unknown character with no default")
 		}
