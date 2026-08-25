@@ -6,7 +6,7 @@ require (
 	github.com/google/go-cmp v0.7.0
 	github.com/shouni/gemini-image-kit v1.15.1
 	github.com/shouni/go-character-kit v1.2.0
-	github.com/shouni/go-gemini-client v1.18.1
+	github.com/shouni/go-gemini-client v1.19.0
 	github.com/shouni/go-remote-io v1.9.0
 	golang.org/x/sync v0.22.0
 )
