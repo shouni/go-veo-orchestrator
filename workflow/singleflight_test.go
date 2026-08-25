@@ -9,6 +9,7 @@ import (
 	"time"
 
 	imagePorts "github.com/shouni/gemini-image-kit/ports"
+	"github.com/shouni/go-gemini-client/callguard"
 	"github.com/shouni/go-gemini-client/gemini"
 )
 
@@ -168,72 +169,6 @@ func TestSingleflightImageGeneratorDetachesSharedExecution(t *testing.T) {
 	})
 }
 
-// TestCallGuardAppliesTimeoutToExecution pins that RequestTimeout bounds one call.
-func TestCallGuardAppliesTimeoutToExecution(t *testing.T) {
-	// バブル内では time.Sleep が仮想時間を進めるだけなので、上限時間の経過を実時間なしに再現できます。
-	synctest.Test(t, func(t *testing.T) {
-		inner := &countingImageGenerator{block: make(chan struct{})}
-		g := &singleflightImageGenerator{
-			inner: inner,
-			guard: callGuard{timeout: 20 * time.Millisecond},
-		}
-
-		done := make(chan struct{})
-		go func() {
-			defer close(done)
-			// stub は ctx を見ないので、ここでは渡された ctx が期限切れになることを確認する。
-			time.Sleep(60 * time.Millisecond)
-			inner.mu.Lock()
-			ctx := inner.cancel
-			inner.mu.Unlock()
-			if ctx == nil {
-				t.Error("inner generator was never called")
-				return
-			}
-			if err := ctx.Err(); !errors.Is(err, context.DeadlineExceeded) {
-				t.Errorf("execution ctx err = %v, want DeadlineExceeded", err)
-			}
-			close(inner.block)
-		}()
-
-		if _, err := g.Generate(context.Background(), imageRequest("same")); err != nil {
-			t.Fatalf("Generate() error = %v", err)
-		}
-		<-done
-	})
-}
-
-// TestCallGuardWaitsForRateOutsideTimeout pins the ordering that keeps a busy queue from
-// manufacturing timeouts: the rate-limit wait happens before the per-call deadline starts.
-// If the wait were inside, a short RequestTimeout plus a long RateInterval would fail every
-// call after the first, and the error would point at the API instead of at the settings.
-func TestCallGuardWaitsForRateOutsideTimeout(t *testing.T) {
-	// 同上。発射間隔ぶんの待ちも仮想時間で消化されます。
-	synctest.Test(t, func(t *testing.T) {
-		const interval = 40 * time.Millisecond
-		inner := &countingImageGenerator{}
-		g := &singleflightImageGenerator{
-			inner: inner,
-			guard: callGuard{
-				limiter: newRateLimiter(interval),
-				timeout: 20 * time.Millisecond, // 発射間隔より短い上限
-			},
-		}
-		ctx := context.Background()
-
-		if _, err := g.Generate(ctx, imageRequest("first")); err != nil {
-			t.Fatalf("first Generate() error = %v", err)
-		}
-		// 2回目は interval 待たされる。待機が上限の内側なら、ここで DeadlineExceeded になる。
-		if _, err := g.Generate(ctx, imageRequest("second")); err != nil {
-			t.Fatalf("second Generate() error = %v, want the rate wait to sit outside the timeout", err)
-		}
-		if got := inner.callCount(); got != 2 {
-			t.Errorf("underlying calls = %d, want 2", got)
-		}
-	})
-}
-
 // countingTextGenerator counts text-generation calls.
 type countingTextGenerator struct {
 	mu    sync.Mutex
@@ -262,8 +197,7 @@ func (g *countingTextGenerator) callCount() int {
 func TestGuardCoversTextGenerationToo(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		const interval = 30 * time.Millisecond
-		limiter := newRateLimiter(interval)
-		guard := callGuard{limiter: limiter}
+		guard := callguard.New(callguard.WithRateInterval(interval))
 
 		text := &countingTextGenerator{}
 		image := &countingImageGenerator{}

@@ -10,6 +10,7 @@ import (
 	"github.com/shouni/gemini-image-kit/generator"
 	imagePorts "github.com/shouni/gemini-image-kit/ports"
 	characterkit "github.com/shouni/go-character-kit/character"
+	"github.com/shouni/go-gemini-client/callguard"
 	"github.com/shouni/go-gemini-client/gemini"
 	"github.com/shouni/go-remote-io/remoteio"
 
@@ -64,10 +65,12 @@ func New(args ManagerArgs) (*ports.Workflows, error) {
 		return nil, err
 	}
 
-	guard := callGuard{
-		limiter: newRateLimiter(cfg.RateInterval),
-		timeout: cfg.RequestTimeout,
-	}
+	// 発射間隔と 1 回あたりの上限時間はワークフロー全体で 1 つのガードに集約する
+	// （クォータはプロジェクト単位で、操作の種類ごとではないため）。
+	guard := callguard.New(
+		callguard.WithRateInterval(cfg.RateInterval),
+		callguard.WithExecTimeout(cfg.RequestTimeout),
+	)
 
 	m := &manager{
 		cfg:         cfg,
@@ -123,7 +126,7 @@ func validateArgs(args *ManagerArgs) error {
 //
 // generator.New にオプションを渡していないのも意図どおりで、発射間隔と上限時間は
 // callGuard 側で掛けます（理由は singleflight.go の callGuard を参照）。
-func buildImageGenerator(client gemini.Generator, guard callGuard) (imagePorts.ImageGenerator, error) {
+func buildImageGenerator(client gemini.Generator, guard *callguard.Guard) (imagePorts.ImageGenerator, error) {
 	gen, err := generator.New(client, generator.NewGCSResolver())
 	if err != nil {
 		return nil, fmt.Errorf("画像生成エンジンの初期化に失敗しました: %w", err)

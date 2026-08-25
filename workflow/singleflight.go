@@ -4,30 +4,21 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"fmt"
-	"strconv"
-	"time"
 
 	imagePorts "github.com/shouni/gemini-image-kit/ports"
+	"github.com/shouni/go-gemini-client/callguard"
 	"github.com/shouni/go-gemini-client/gemini"
-	"golang.org/x/sync/singleflight"
 )
 
-// callGuard は、singleflight デコレータが共有する呼び出しガードです。
-// AI API を叩く実行そのものに、発射間隔（Config.RateInterval）と1回あたりの
-// 上限時間（Config.RequestTimeout）を適用します。
+// 本ファイルは、台本のテキスト生成とキーフレームの画像生成に呼び出しガードを被せる
+// デコレータと、リクエスト内容からキーを作る部分を持ちます。発射間隔・上限時間・
+// 同時実行の重複排除そのものは callguard が持っており、go-comic-kit や
+// go-gemini-client/lyria と同じ実装を共有します。
 //
-// ワークフロー全体で 1 つのインスタンスを共有し、台本のテキスト生成とキーフレームの
-// 画像生成の両方に同じガードを掛けます。クォータはプロジェクト単位で操作の種類ごとでは
-// ないため、片方だけ絞っても意味がないからです。これが、発射間隔と上限時間を
-// 画像キットのオプション（WithRateLimit / WithRequestTimeout）ではなく
-// ここに置いている理由でもあります。
-type callGuard struct {
-	// limiter は発射間隔のリミッターです。nil は制限なしを意味します。
-	limiter *rateLimiter
-	// timeout は1回の呼び出しの上限時間です。0 以下は無制限を意味します。
-	timeout time.Duration
-}
+// ガード（callguard.Guard）はワークフロー全体で 1 つを共有し、テキスト生成にも画像生成にも
+// 同じものを掛けます。クォータはプロジェクト単位で操作の種類ごとではないため、片方だけ
+// 絞っても意味がないからです。これが、発射間隔と上限時間を画像キットのオプション
+// （WithRateLimit / WithRequestTimeout）ではなくここに置いている理由でもあります。
 
 // singleflightImageGenerator は、同一内容の画像生成リクエストの同時実行を1回にまとめる
 // デコレータです。Cloud Tasks の at-least-once 配信やリトライによる重複呼び出しから、
@@ -35,8 +26,8 @@ type callGuard struct {
 // 恒久的な重複排除は recipe の keyframe_reference によるジョブ側の冪等性で行います。
 type singleflightImageGenerator struct {
 	inner imagePorts.ImageGenerator
-	guard callGuard
-	group singleflight.Group
+	guard *callguard.Guard
+	group callguard.Group
 }
 
 var _ imagePorts.ImageGenerator = (*singleflightImageGenerator)(nil)
@@ -44,7 +35,7 @@ var _ imagePorts.ImageGenerator = (*singleflightImageGenerator)(nil)
 // Generate はリクエスト内容のハッシュをキーに同時実行をまとめます。
 func (g *singleflightImageGenerator) Generate(ctx context.Context, req imagePorts.ImageRequest) (*imagePorts.ImageResponse, error) {
 	key := imageRequestKey(&req)
-	resp, err := doSingleflight(ctx, &g.group, g.guard, key, func(execCtx context.Context) (*imagePorts.ImageResponse, error) {
+	resp, err := callguard.Do(ctx, &g.group, g.guard, key, func(execCtx context.Context) (*imagePorts.ImageResponse, error) {
 		return g.inner.Generate(execCtx, req)
 	})
 	if err != nil {
@@ -57,8 +48,8 @@ func (g *singleflightImageGenerator) Generate(ctx context.Context, req imagePort
 // 1回にまとめる gemini.Generator のデコレータです。
 type singleflightGenerator struct {
 	inner gemini.Generator
-	guard callGuard
-	group singleflight.Group
+	guard *callguard.Guard
+	group callguard.Group
 }
 
 var _ gemini.Generator = (*singleflightGenerator)(nil)
@@ -66,7 +57,7 @@ var _ gemini.Generator = (*singleflightGenerator)(nil)
 // GenerateWithAttachments はリクエスト内容のハッシュをキーに同時実行をまとめます。
 func (g *singleflightGenerator) GenerateWithAttachments(ctx context.Context, modelName string, prompt string, attachments []gemini.Attachment, opts gemini.GenerateOptions) (*gemini.Response, error) {
 	key := textRequestKey(modelName, prompt, attachments, &opts)
-	resp, err := doSingleflight(ctx, &g.group, g.guard, key, func(execCtx context.Context) (*gemini.Response, error) {
+	resp, err := callguard.Do(ctx, &g.group, g.guard, key, func(execCtx context.Context) (*gemini.Response, error) {
 		return g.inner.GenerateWithAttachments(execCtx, modelName, prompt, attachments, opts)
 	})
 	if err != nil {
@@ -79,6 +70,10 @@ func (g *singleflightGenerator) GenerateWithAttachments(ctx context.Context, mod
 }
 
 // imageRequestKey は画像生成リクエストの内容から singleflight 用キーを作ります。
+//
+// go-comic-kit の同名関数は ImageURI.FileAPIURI もキーに含めますが、こちらは含めません。
+// このキットの参照解決は GCSResolver 単体（gs:// をそのまま Vertex AI へ渡す）で、
+// File API へ上げる経路が無く、FileAPIURI が常に空だからです。
 func imageRequestKey(req *imagePorts.ImageRequest) string {
 	parts := []string{
 		req.Model,
@@ -87,12 +82,12 @@ func imageRequestKey(req *imagePorts.ImageRequest) string {
 		req.NegativePrompt,
 		req.AspectRatio,
 		req.ImageSize,
-		singleflightSeedKey(req.Seed),
+		callguard.SeedKey(req.Seed),
 	}
 	for _, img := range req.Images {
 		parts = append(parts, img.ReferenceURL)
 	}
-	return singleflightKey("image", parts...)
+	return callguard.Key("image", parts...)
 }
 
 // textRequestKey はテキスト生成リクエストの内容から singleflight 用キーを作ります。
@@ -100,7 +95,7 @@ func imageRequestKey(req *imagePorts.ImageRequest) string {
 // 添付は URI かバイト列のどちらかなので、URI はそのまま、バイト列は中身のハッシュを
 // キーに含めます。長さだけで代用すると、同じサイズの別画像が同じキーになります。
 func textRequestKey(modelName string, prompt string, attachments []gemini.Attachment, opts *gemini.GenerateOptions) string {
-	keyParts := []string{modelName, opts.ResponseMIMEType, singleflightSeedKey(opts.Seed), prompt}
+	keyParts := []string{modelName, opts.ResponseMIMEType, callguard.SeedKey(opts.Seed), prompt}
 	for _, attachment := range attachments {
 		keyParts = append(keyParts, attachment.MIMEType, attachment.URI)
 		if len(attachment.Data) > 0 {
@@ -108,69 +103,7 @@ func textRequestKey(modelName string, prompt string, attachments []gemini.Attach
 			keyParts = append(keyParts, hex.EncodeToString(sum[:]))
 		}
 	}
-	return singleflightKey("text", keyParts...)
-}
-
-// singleflightKey は namespace と可変長の部品から衝突しにくい singleflight 用キーを作ります。
-// 各部品を長さプレフィックス付きでハッシュするため、部品の境界の曖昧さがありません。
-func singleflightKey(namespace string, parts ...string) string {
-	hasher := sha256.New()
-	for _, part := range parts {
-		hasher.Write([]byte(strconv.Itoa(len(part))))
-		hasher.Write([]byte{0})
-		hasher.Write([]byte(part))
-		hasher.Write([]byte{0})
-	}
-
-	return namespace + ":" + hex.EncodeToString(hasher.Sum(nil))
-}
-
-// singleflightSeedKey は nil と実値を区別できる seed 用キー部品を作ります。
-func singleflightSeedKey(seed *int64) string {
-	if seed == nil {
-		return "seed:nil"
-	}
-	return "seed:" + strconv.FormatInt(*seed, 10)
-}
-
-// doSingleflight は同じ key の同時実行をまとめ、呼び出し元のキャンセルも尊重します。
-// 実行用 context は共有実行のクロージャ内で呼び出し元から切り離して（WithoutCancel）
-// 生成するため、どの呼び出し元がキャンセルしても、相乗りしている他の呼び出し元が
-// 巻き添えになりません（実行の打ち切りは guard.timeout でのみ行われます）。
-//
-// 発射間隔の待機は guard.timeout の外側で行います。待たされた時間を1回あたりの
-// 上限時間に数えると、混雑しているだけでタイムアウトしてしまうためです。
-func doSingleflight[T any](ctx context.Context, group *singleflight.Group, guard callGuard, key string, fn func(execCtx context.Context) (T, error)) (T, error) {
-	ch := group.DoChan(key, func() (any, error) {
-		baseCtx := context.WithoutCancel(ctx)
-		if err := guard.limiter.wait(baseCtx); err != nil {
-			return nil, err
-		}
-		if guard.timeout <= 0 {
-			return fn(baseCtx)
-		}
-		execCtx, cancel := context.WithTimeout(baseCtx, guard.timeout)
-		defer cancel()
-		return fn(execCtx)
-	})
-
-	select {
-	case <-ctx.Done():
-		var zero T
-		return zero, ctx.Err()
-	case result := <-ch:
-		if result.Err != nil {
-			var zero T
-			return zero, result.Err
-		}
-
-		value, ok := result.Val.(T)
-		if !ok {
-			var zero T
-			return zero, fmt.Errorf("singleflight result type mismatch for key %s", key)
-		}
-		return value, nil
-	}
+	return callguard.Key("text", keyParts...)
 }
 
 // cloneImageResponse は singleflight で共有される応答を呼び出し元が安全に扱えるよう複製します。
