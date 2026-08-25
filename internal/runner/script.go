@@ -276,41 +276,33 @@ func hasMusicRecipeContent(recipe *video.MusicRecipe) bool {
 }
 
 // extractJSONCandidates は文字列から JSON として解釈しうる候補を優先度順に返します。
-// Markdown コードブロックを個別の候補として列挙し、最後に区切り文字ベースの
-// 抽出結果をフォールバックとして加えます。
+// Markdown コードブロックを個別の候補として列挙し、最後にフェンス外の JSON を加えます。
+//
+// **候補が複数になるのは、説明用の JSON ブロックが混ざる応答があるためです。**
+// 呼び出し側は「レシピの中身を持つ最初の候補」を採るので、先頭の説明ブロックで
+// 打ち切られません。
+//
+// 切り出しと補修そのものは gemini.CleanJSONResponse に任せます。かつては
+// 「最初の { から最後の } まで」を自前で切っていましたが、完結した JSON の後ろに
+// 散文が続くと最後の } を拾って範囲がずれるうえ、文字列の中の生の改行や裸の
+// バックスラッシュを直せませんでした。歌詞や台詞を載せるレシピではそれが本番で
+// 出ます。CleanJSONResponse は既に解釈できる入力を変えないので、フェンスの中身に
+// 通しても素通しになります。
 func extractJSONCandidates(raw string) []string {
 	cleanRaw := strings.TrimSpace(raw)
 
 	var candidates []string
 	for _, matches := range jsonBlockRegex.FindAllStringSubmatch(cleanRaw, -1) {
-		candidates = append(candidates, matches[1])
+		candidates = append(candidates, gemini.CleanJSONResponse(matches[1]))
 	}
 
-	first := firstJSONDelimiter(cleanRaw)
-	last := lastJSONDelimiter(cleanRaw)
-	if first != -1 && last != -1 && last > first {
-		candidates = append(candidates, cleanRaw[first:last+1])
+	// JSON の開始文字が無い応答では候補を返しません。呼び出し側がそれを検知して
+	// 「抽出できなかった」と記録し、応答全体でのパースへ切り替えます。
+	if strings.ContainsAny(cleanRaw, "{[") {
+		candidates = append(candidates, gemini.CleanJSONResponse(cleanRaw))
 	}
 
 	return candidates
-}
-
-func firstJSONDelimiter(s string) int {
-	firstObj := strings.Index(s, "{")
-	firstArr := strings.Index(s, "[")
-	if firstObj == -1 || (firstArr != -1 && firstArr < firstObj) {
-		return firstArr
-	}
-	return firstObj
-}
-
-func lastJSONDelimiter(s string) int {
-	lastObj := strings.LastIndex(s, "}")
-	lastArr := strings.LastIndex(s, "]")
-	if lastObj == -1 || (lastArr != -1 && lastArr > lastObj) {
-		return lastArr
-	}
-	return lastObj
 }
 
 // sanitizeURL はログやエラーメッセージへの出力用に、URL からクエリパラメータと
