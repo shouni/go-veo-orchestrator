@@ -91,27 +91,30 @@ func New(args ManagerArgs) (*ports.Workflows, error) {
 }
 
 // validateArgs は引数のバリデーションを行います。
+//
+// 文面は ManagerArgs の実際のフィールド名で書きます。呼び出し側がメッセージを頼りに
+// 直す場所を探すため、名前がずれると grep しても当たりません。
 func validateArgs(args *ManagerArgs) error {
 	if args.Reader == nil {
-		return fmt.Errorf("InputReader is required")
+		return fmt.Errorf("ManagerArgs.Reader は必須です")
 	}
 	if args.Writer == nil {
-		return fmt.Errorf("OutputWriter is required")
+		return fmt.Errorf("ManagerArgs.Writer は必須です")
 	}
 	if args.AIClient == nil {
-		return fmt.Errorf("AIClient is required")
+		return fmt.Errorf("ManagerArgs.AIClient は必須です")
 	}
 	if args.PromptDeps == nil {
-		return fmt.Errorf("PromptDeps is required")
+		return fmt.Errorf("ManagerArgs.PromptDeps は必須です")
 	}
 	if args.PromptDeps.Characters == nil {
-		return fmt.Errorf("characters is required")
+		return fmt.Errorf("ManagerArgs.PromptDeps.Characters は必須です")
 	}
 	if args.PromptDeps.ScriptPrompt == nil {
-		return fmt.Errorf("ScriptPrompt is required")
+		return fmt.Errorf("ManagerArgs.PromptDeps.ScriptPrompt は必須です")
 	}
 	if args.PromptDeps.KeyframePrompt == nil {
-		return fmt.Errorf("KeyframePrompt is required")
+		return fmt.Errorf("ManagerArgs.PromptDeps.KeyframePrompt は必須です")
 	}
 
 	return nil
