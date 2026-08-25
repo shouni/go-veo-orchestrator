@@ -19,7 +19,7 @@ func TestVideoPublisherRunner_Run(t *testing.T) {
 		recipe := &video.Recipe{
 			ProjectTitle: "test",
 			Cuts: []video.Cut{
-				{CutIndex: 1, KeyframeResult: video.KeyframeResult{KeyframeReference: "gs://bucket/jobs/j1/images/keyframe_1.png"}},
+				{CutIndex: 1, KeyframeReference: "gs://bucket/jobs/j1/images/keyframe_1.png"},
 				{CutIndex: 2},
 			},
 		}

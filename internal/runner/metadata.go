@@ -40,6 +40,8 @@ func writeRecipeMetadata(ctx context.Context, writer remoteio.Writer, outputDir 
 		return "", fmt.Errorf("メタデータ出力パスの解決に失敗しました: %w", err)
 	}
 
+	// メタデータもキーフレームと同じジョブディレクトリに置く成果物なので、
+	// キャッシュ方針も同じものを使います（名前は keyframe 側が由来）。
 	if err := writer.Write(ctx, metadataPath, bytes.NewReader(metadata),
 		remoteio.WithContentType(metadataContentType),
 		remoteio.WithCacheControl(DefaultKeyframeCacheControl),

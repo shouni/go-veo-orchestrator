@@ -41,7 +41,7 @@
 | --- | --- | --- |
 | **1. Scripting** | `ScriptRunner` | Music Recipe JSON を読み込み、歌詞・section・楽曲展開から、カット割り・カメラワーク・推定秒数を含む **Video Recipe** を生成。 |
 | **2. Cut Keyframe Gen** | `CutKeyframeRunner` | 各カットのキーフレーム画像を、キャラクター Seed と参照画像を使って生成・保存（`GenerateAndSave`）。既存キーフレームの局所編集にも対応（`EditAndSave`）。 |
-| **3. Video Gen** | `VideoTimelineRunner` + `VideoRunner` | `VideoRequestBuilder` が `VideoGenerationRequest` を組み立て、Veo adapter に順次投入。 |
+| **3. Video Gen** | `VideoTimelineRunner` + `VideoRunner` | `VideoRequestBuilder` が `video.GenerationRequest` を組み立て、Veo adapter に順次投入。 |
 | **4. Metadata Publish** | `VideoPublishRunner` | `video_id` / `video_url` / `status` 更新済みの `video_music_meta.json` を保存。 |
 
 ---
@@ -96,7 +96,7 @@ if _, err := workflows.Publish.Run(ctx, recipe, "gs://bucket/jobs/<jobID>/"); er
 | --- | --- |
 | [Music Recipe JSON](docs/music-recipe.md) | 入力フォーマット、`cuts` の自動生成、`section_index`、`video.Cut` の構造 |
 | [設定と差し替え (Config / DI)](docs/configuration.md) | `ports.Config` / `ManagerArgs` / `PromptDeps`、キーフレーム生成オプション |
-| [Adapter Boundary](docs/adapter.md) | `ports.VideoRunner` の実装ガイドと `VideoGenerationRequest` の契約 |
+| [Adapter Boundary](docs/adapter.md) | `ports.VideoRunner` の実装ガイドと `video.GenerationRequest` の契約 |
 | [Veo 生成モードとカット尺](docs/veo-modes.md) | `veo.ClassifyRequest` による分類、モード別の対応尺、尺プランナー |
 | [レシピ・カットの操作](docs/recipe-api.md) | 再開・再生成のヘルパー、部分結果、単一カットのキーフレーム編集 |
 | [Sentinel Errors](docs/errors.md) | `errors.Is` で分岐するためのエラー一覧 |
@@ -110,7 +110,6 @@ if _, err := workflows.Publish.Run(ctx, recipe, "gs://bucket/jobs/<jobID>/"); er
 * [shouni/go-gemini-client](https://github.com/shouni/go-gemini-client) - Gemini API / Vertex AI クライアント（台本生成の構造化出力に使用）
 * [shouni/go-character-kit](https://github.com/shouni/go-character-kit) - キャラクター資産（characters.json）管理
 * [shouni/go-remote-io](https://github.com/shouni/go-remote-io) - GCS / ローカル対応の読み書き抽象化
-* [shouni/go-utils](https://github.com/shouni/go-utils) - 共通ユーティリティ
 
 ## 📜 ライセンス (License)
 

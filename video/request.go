@@ -25,10 +25,11 @@ type GenerationRequest struct {
 	// 併用が必須のため、adapter 側は image 入力（image_to_video）のときだけ
 	// lastFrame として送ります。対応モデルは Veo 2 / Veo 3.1 系のみです。
 	//
-	// このフィールドは呼び出し側が Build() の後で設定するものです。runner の
-	// DefaultVideoRequestBuilder は生成・検証・参照のいずれも行いません（セクション
-	// 境界・キャラクター変更・尺分割などの last-frame ガードは呼び出し側で判断し、
-	// Build() が返したリクエストに対して後付けで設定する想定です）。
+	// 値は runner.BuildInput.LastFrameReference として Build() へ渡します
+	// （通常は Cuts.NextLastFrameReference の戻り値。セクション境界・キャラクター
+	// 変更・同一キーフレームといった last-frame ガードはそちらが持ちます）。
+	// frames_to_video に解決しないリクエストでは Build() が落とすため、
+	// このフィールドが残っているリクエストは必ず lastFrame を実際に使います。
 	LastFrameReference string
 	Seed               int64
 	CutIndex           int

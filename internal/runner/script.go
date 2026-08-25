@@ -18,7 +18,7 @@ import (
 
 const (
 	// maxInputSize は読み込みを許可する最大テキストサイズ (5MB) です。
-	maxInputSize = 5 * 1024 * 1024
+	maxInputSize int64 = 5 * 1024 * 1024
 	// maxErrorResponseLength はエラーログに含める応答抜粋の最大文字数です。
 	maxErrorResponseLength = 200
 )
@@ -167,20 +167,14 @@ func (r *VideoScriptRunner) readContent(ctx context.Context, sourceURL string) (
 			slog.WarnContext(ctx, "ストリームのクローズに失敗しました", "error", closeErr)
 		}
 	}()
-	limitedReader := io.LimitReader(rc, int64(maxInputSize))
-	content, err := io.ReadAll(limitedReader)
+	// 上限より 1 バイト多く読み、余りが出たかどうかで超過を判定します。ちょうど上限まで
+	// 読んでから rc.Read で 1 バイト覗く形だと、判定のためだけに元ストリームの EOF の
+	// 返し方（io.EOF そのものか、包まれた EOF か）に依存してしまいます。
+	content, err := io.ReadAll(io.LimitReader(rc, maxInputSize+1))
 	if err != nil {
 		return "", fmt.Errorf("読み込みに失敗しました: %w", err)
 	}
-
-	// 追加の読み込みを試みてサイズ超過を判定
-	oneMoreByte := make([]byte, 1)
-	n, readErr := rc.Read(oneMoreByte)
-	if readErr != nil && readErr != io.EOF {
-		return "", fmt.Errorf("サイズ確認中にエラーが発生しました: %w", readErr)
-	}
-
-	if n > 0 {
+	if int64(len(content)) > maxInputSize {
 		return "", fmt.Errorf("入力が上限 %d bytes を超えています (url: %s): %w",
 			maxInputSize, sanitizeURL(sourceURL), ports.ErrInputTooLarge)
 	}

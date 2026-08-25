@@ -158,9 +158,9 @@ func TestVideoRecipeNormalizeDerivesSectionIndexFromStartSec(t *testing.T) {
 			},
 		},
 		Cuts: []Cut{
-			{VisualAnchor: "verse scene 1", AudioSync: AudioSync{StartSec: 0, DurationSec: 15}},
-			{VisualAnchor: "verse scene 2", AudioSync: AudioSync{StartSec: 15, DurationSec: 15}},
-			{VisualAnchor: "chorus scene 1", AudioSync: AudioSync{StartSec: 30, DurationSec: 30}},
+			{VisualAnchor: "verse scene 1", StartSec: 0, DurationSec: 15},
+			{VisualAnchor: "verse scene 2", StartSec: 15, DurationSec: 15},
+			{VisualAnchor: "chorus scene 1", StartSec: 30, DurationSec: 30},
 		},
 	}
 
@@ -187,7 +187,7 @@ func TestVideoRecipeNormalizeKeepsExplicitSectionIndex(t *testing.T) {
 			{
 				SectionIndex: 7,
 				VisualAnchor: "explicit section",
-				AudioSync:    AudioSync{StartSec: 0, DurationSec: 15},
+				StartSec:     0, DurationSec: 15,
 			},
 		},
 	}
@@ -207,8 +207,8 @@ func TestVideoRecipeNormalizePropagatesLocationAnchorToCuts(t *testing.T) {
 	recipe := &Recipe{
 		LocationAnchor: "a misty coastal cliffside road overlooking the ocean at dawn; her bicycle beside her",
 		Cuts: []Cut{
-			{VisualAnchor: "wide establishing shot", AudioSync: AudioSync{DurationSec: 8}},
-			{VisualAnchor: "close-up shot", AudioSync: AudioSync{DurationSec: 8}},
+			{VisualAnchor: "wide establishing shot", DurationSec: 8},
+			{VisualAnchor: "close-up shot", DurationSec: 8},
 		},
 	}
 
@@ -231,7 +231,7 @@ func TestVideoRecipeNormalizeKeepsExplicitCutLocationAnchor(t *testing.T) {
 			{
 				VisualAnchor:   "on the rooftop",
 				LocationAnchor: "a school rooftop at sunset; the city skyline behind her",
-				AudioSync:      AudioSync{DurationSec: 8},
+				DurationSec:    8,
 			},
 		},
 	}
@@ -257,7 +257,7 @@ func TestVideoRecipeNormalizeDoesNotOverwriteExplicitCuts(t *testing.T) {
 		Cuts: []Cut{
 			{
 				VisualAnchor: "explicit cut",
-				AudioSync:    AudioSync{DurationSec: 8},
+				DurationSec:  8,
 			},
 		},
 	}
@@ -324,5 +324,27 @@ func TestVideoRecipeValidateAcceptsMusicTitleAsFallback(t *testing.T) {
 
 	if err := recipe.Validate(); err != nil {
 		t.Errorf("Validate() error = %v, want nil", err)
+	}
+}
+
+// TestNormalizePropagatesAspectRatio pins that Recipe.AspectRatio reaches every cut, the same
+// way LocationAnchor does. CutReferenceImages only ever sees one Cut, so without this the
+// ratio-matched character art can never be selected.
+func TestNormalizePropagatesAspectRatio(t *testing.T) {
+	recipe := &Recipe{
+		ProjectTitle: "t",
+		AspectRatio:  "9:16",
+		Cuts: []Cut{
+			{VisualAnchor: "a", AudioSync: AudioSync{DurationSec: 4}},
+			{VisualAnchor: "b", AudioSync: AudioSync{DurationSec: 4}, AspectRatio: "1:1"},
+		},
+	}
+	recipe.Normalize()
+
+	if got := recipe.Cuts[0].AspectRatio; got != "9:16" {
+		t.Errorf("Cuts[0].AspectRatio = %q, want the recipe's ratio", got)
+	}
+	if got := recipe.Cuts[1].AspectRatio; got != "1:1" {
+		t.Errorf("Cuts[1].AspectRatio = %q, want the cut's own value kept", got)
 	}
 }

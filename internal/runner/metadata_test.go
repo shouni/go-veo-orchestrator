@@ -13,7 +13,7 @@ func TestBuildRecipeMetadataDoesNotNormalizeRecipe(t *testing.T) {
 		Cuts: []video.Cut{
 			{
 				VisualAnchor: "explicit cut",
-				AudioSync:    video.AudioSync{DurationSec: 8},
+				DurationSec:  8,
 			},
 		},
 	}

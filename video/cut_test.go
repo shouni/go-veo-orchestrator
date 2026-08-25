@@ -95,10 +95,10 @@ func TestCutEffectiveDurationSec(t *testing.T) {
 		cut  Cut
 		want float64
 	}{
-		{"explicit duration wins", Cut{AudioSync: AudioSync{DurationSec: 8, StartSec: 10, EndSec: 30}}, 8},
-		{"derived from the timeline", Cut{AudioSync: AudioSync{StartSec: 10, EndSec: 16}}, 6},
+		{"explicit duration wins", Cut{DurationSec: 8, StartSec: 10, EndSec: 30}, 8},
+		{"derived from the timeline", Cut{StartSec: 10, EndSec: 16}, 6},
 		{"neither set", Cut{}, 0},
-		{"end before start", Cut{AudioSync: AudioSync{StartSec: 20, EndSec: 10}}, 0},
+		{"end before start", Cut{StartSec: 20, EndSec: 10}, 0},
 	}
 	for _, tt := range tests {
 		if got := tt.cut.EffectiveDurationSec(); got != tt.want {
@@ -112,9 +112,9 @@ func TestCutEffectiveDurationSec(t *testing.T) {
 // means the caller reuses the stored one.
 func TestCutResetGeneration(t *testing.T) {
 	base := Cut{
-		KeyframeResult: KeyframeResult{KeyframeReference: "gs://bucket/kf.png"},
-		Result:         Result{VideoID: "gs://bucket/cut.mp4", VideoURL: "gs://bucket/cut.mp4", Status: CutStatusGenerated},
-		ChainControl:   ChainControl{IsChainStart: true, IsSectionStart: true},
+		KeyframeReference: "gs://bucket/kf.png",
+		VideoID:           "gs://bucket/cut.mp4", VideoURL: "gs://bucket/cut.mp4", Status: CutStatusGenerated,
+		IsChainStart: true, IsSectionStart: true,
 	}
 
 	dropped := base
@@ -180,7 +180,7 @@ func TestCutsNextLastFrameReference(t *testing.T) {
 			name: "next cut starts a section",
 			cuts: Cuts{
 				{CharacterID: "zundamon", KeyframeResult: kf("gs://a.png")},
-				{CharacterID: "zundamon", KeyframeResult: kf("gs://b.png"), ChainControl: ChainControl{IsSectionStart: true}},
+				{CharacterID: "zundamon", KeyframeResult: kf("gs://b.png"), IsSectionStart: true},
 			},
 			want: "",
 		},
@@ -216,5 +216,45 @@ func TestCutsNextLastFrameReference(t *testing.T) {
 	}
 	if got := cuts.NextLastFrameReference(99); got != "" {
 		t.Fatalf("NextLastFrameReference(99) = %q, want empty", got)
+	}
+}
+
+// TestCutReferenceImagesUsesAspectRatioVariant pins that the character art sent to Veo as a
+// referenceImage follows the cut's aspect ratio, the same way keyframe.Generator picks the
+// character reference for the still image. When this used the plain ReferenceURL, a 9:16 job
+// sent Veo a ratio-matched keyframe next to a 16:9 character sheet in the same request.
+func TestCutReferenceImagesUsesAspectRatioVariant(t *testing.T) {
+	chars, err := characterkit.NewCharacters([]characterkit.Character{
+		{
+			ID:           "tsumugi",
+			Name:         "Tsumugi",
+			ReferenceURL: "gs://bucket/characters/tsumugi-16x9.png",
+			ReferenceURLs: map[string]string{
+				"9:16": "gs://bucket/characters/tsumugi-9x16.png",
+			},
+			VisualCues: []string{"blonde hair"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewCharacters() error = %v", err)
+	}
+
+	tests := []struct {
+		name        string
+		aspectRatio string
+		want        string
+	}{
+		{"matching entry wins", "9:16", "gs://bucket/characters/tsumugi-9x16.png"},
+		{"falls back when no entry matches", "1:1", "gs://bucket/characters/tsumugi-16x9.png"},
+		{"falls back when the cut has no ratio", "", "gs://bucket/characters/tsumugi-16x9.png"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cut := Cut{CharacterID: "tsumugi", AspectRatio: tt.aspectRatio}
+			got := CutReferenceImages(cut, chars)
+			if diff := cmp.Diff([]string{tt.want}, got); diff != "" {
+				t.Errorf("CutReferenceImages() mismatch (-want +got):\n%s", diff)
+			}
+		})
 	}
 }

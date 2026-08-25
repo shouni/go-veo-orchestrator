@@ -9,11 +9,12 @@ import (
 )
 
 // このファイルは「カット尺のプランナー」— レシピ上の任意尺のカット列を、Veo が
-// 実際に受け付ける離散尺（veo_duration.go の各テーブル）のカット列へ正規化する
+// 実際に受け付ける離散尺（duration.go の各テーブル）のカット列へ正規化する
 // 純関数群 — を提供します。
 //
 // 尺の *ルール*（{4,6,8} ベース・7秒延長・24秒継続上限）はこのパッケージが持ち、
-// runner/video.go は送信前に同じテーブルで検証します（ErrUnsupportedCutDuration）。
+// internal/runner の VideoTimelineRunner は送信前に同じテーブルで検証します
+// （ErrUnsupportedCutDuration）。
 // プランナーだけを消費者に書かせると、ルールと計画が別リポジトリに割れて
 // ドリフトするため（実際にしていた）、両方をここに置きます。
 
@@ -227,7 +228,7 @@ func splitChainCutIntoSupportedDurations(cut video.Cut, allowedBases []float64) 
 	// [ベース, 7秒 × extensions] のサブ尺列を組み立てる。
 	durations := make([]float64, 0, extensions+1)
 	durations = append(durations, base)
-	for i := 0; i < extensions; i++ {
+	for range extensions {
 		durations = append(durations, VideoExtensionDurationSec)
 	}
 	return buildSubCutsFromDurations(cut, durations)
@@ -276,7 +277,7 @@ func isChainBase(cut video.Cut) bool {
 // SplitDialogueLines は歌詞テキストを空行を除いた行スライスへ分解します。
 func SplitDialogueLines(dialogue string) []string {
 	var lines []string
-	for _, line := range strings.Split(dialogue, "\n") {
+	for line := range strings.SplitSeq(dialogue, "\n") {
 		if line = strings.TrimSpace(line); line != "" {
 			lines = append(lines, line)
 		}

@@ -4,7 +4,8 @@
 package video
 
 import (
-	"sort"
+	"maps"
+	"slices"
 	"strings"
 
 	characterkit "github.com/shouni/go-character-kit/character"
@@ -18,14 +19,7 @@ func (cs Cuts) UniqueCharacterIDs() []string {
 			set[cut.CharacterID] = struct{}{}
 		}
 	}
-
-	uniqueIDs := make([]string, 0, len(set))
-	for id := range set {
-		uniqueIDs = append(uniqueIDs, id)
-	}
-	sort.Strings(uniqueIDs)
-
-	return uniqueIDs
+	return slices.Sorted(maps.Keys(set))
 }
 
 // EffectiveDurationSec は、このカットの実際の尺（秒）を返します。DurationSec が未設定
@@ -64,16 +58,22 @@ func (c *Cut) ResetGeneration(keepKeyframe bool) {
 // キーフレーム] で、空白のみの参照は除外します。参照が1つもなければ nil を返し、
 // adapter 側はキーフレームの image 入力（image_to_video）へフォールバックします。
 //
+// キャラクターの立ち絵は、このカットのアスペクト比（Cut.AspectRatio、Recipe.Normalize が
+// Recipe.AspectRatio から伝播）に一致するもの（Character.ReferenceURLs）があればそちらを
+// 使います。keyframe.Generator が ReferenceURLFor で同じ選び方をしているのに、ここだけ
+// 比率を無視した ReferenceURL 固定だと、同じリクエストの中で「比率の合ったキーフレーム」と
+// 「比率の違う立ち絵」が並び、Veo が参照から拾う色や小物の位置がブレます。
+//
 // この関数が referenceImages の唯一の組み立て規則です。動画生成リクエストの構築
 // （DefaultVideoRequestBuilder）と、そのリクエストの生成モード判定
-// （ClassifyVeoRequest 経由の尺の正規化・プロンプト選択）が同じリストを見るため、
+// （veo.ClassifyRequest 経由の尺の正規化・プロンプト選択）が同じリストを見るため、
 // 「尺は reference_to_video 前提で8秒に丸めたのに、実際のリクエストは image_to_video
 // だった」というズレが構造的に起こりません。
 func CutReferenceImages(cut Cut, characters *characterkit.Characters) []string {
 	var refs []string
 	if characters != nil {
 		if char := characters.GetCharacter(strings.TrimSpace(cut.CharacterID)); char != nil {
-			if ref := strings.TrimSpace(char.ReferenceURL); ref != "" {
+			if ref := strings.TrimSpace(char.ReferenceURLFor(cut.AspectRatio)); ref != "" {
 				refs = append(refs, ref)
 			}
 		}

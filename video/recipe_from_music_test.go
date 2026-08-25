@@ -22,15 +22,13 @@ func TestNewVideoRecipeFromMusicKeepsEveryField(t *testing.T) {
 		Sections: []music.Section{
 			{Name: "Verse", Duration: 30, StartSeconds: 0, EndSeconds: 30, Prompt: "pulse"},
 		},
-		Lyrics: &music.LyricsDraft{Title: "Song", Lyrics: "words"},
-		AIModels: music.AIModels{
-			TextModel:   "gemini-x",
-			AudioModel:  "lyria-x",
-			LyricsMode:  "mode-l",
-			ComposeMode: "mode-c",
-			Seed:        &seed,
-			Lang:        music.LangJapanese,
-		},
+		Lyrics:      &music.LyricsDraft{Title: "Song", Lyrics: "words"},
+		TextModel:   "gemini-x",
+		AudioModel:  "lyria-x",
+		LyricsMode:  "mode-l",
+		ComposeMode: "mode-c",
+		Seed:        &seed,
+		Lang:        music.LangJapanese,
 	}
 
 	vr := NewRecipeFromMusic(src)
@@ -66,7 +64,7 @@ func TestNewVideoRecipeFromMusicKeepsEveryField(t *testing.T) {
 func TestCutsFillHelpers(t *testing.T) {
 	cuts := Cuts{
 		{CutIndex: 1},
-		{CutIndex: 2, AudioSync: AudioSync{AudioReference: "gs://audio/explicit.mp3"}, CharacterID: "metan"},
+		{CutIndex: 2, AudioReference: "gs://audio/explicit.mp3", CharacterID: "metan"},
 		{CutIndex: 5},
 	}
 

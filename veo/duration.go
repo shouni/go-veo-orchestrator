@@ -6,7 +6,7 @@ package veo
 
 import (
 	"math"
-	"sort"
+	"slices"
 )
 
 // Veo が受け付けるカット尺（秒）に関する定数です。Veo は任意長の動画を生成できず、
@@ -43,12 +43,12 @@ var (
 
 // ImageToVideoDurationsSec は image_to_video / frames_to_video が受け付けるカット尺（秒）を
 // 昇順で返します。
-func ImageToVideoDurationsSec() []float64 { return append([]float64(nil), imageToVideoDurations...) }
+func ImageToVideoDurationsSec() []float64 { return slices.Clone(imageToVideoDurations) }
 
 // ReferenceToVideoDurationsSec は reference_to_video（referenceImages）が受け付けるカット尺
 // （秒）を返します。image_to_video の {4,6,8} とは異なり8秒固定です。
 func ReferenceToVideoDurationsSec() []float64 {
-	return append([]float64(nil), referenceToVideoDurations...)
+	return slices.Clone(referenceToVideoDurations)
 }
 
 // DurationsForMode は、指定された生成モードで Veo が受け付けるカット尺（秒）を昇順で
@@ -58,7 +58,7 @@ func DurationsForMode(mode GenerationMode) []float64 {
 	case ModeReferenceToVideo:
 		return ReferenceToVideoDurationsSec()
 	case ModeVideoExtension:
-		return append([]float64(nil), videoExtensionDurations...)
+		return slices.Clone(videoExtensionDurations)
 	case ModeImageToVideo, ModeFramesToVideo:
 		return ImageToVideoDurationsSec()
 	default:
@@ -118,6 +118,6 @@ func ChainDurations(bases []float64) []float64 {
 			}
 		}
 	}
-	sort.Float64s(out)
+	slices.Sort(out)
 	return out
 }

@@ -1,7 +1,8 @@
 // Package keyframe は、カット情報とキャラクター定義から動画のキーフレーム画像を
 // 生成するロジックを提供します。参照画像は gs:// URI のまま gemini-image-kit へ
-// 渡すため、このパッケージはカットごとの参照元 URL とプロンプトの組み立て、および
-// カット間の並列実行に専念します。
+// 渡すため、このパッケージの仕事はカット 1 件分の参照元 URL とプロンプトの
+// 組み立て、そして 1 回の送信だけです。カット間の並列実行は行いません
+// （runner.CutKeyframeRunner が持ちます — Generator のコメント参照）。
 package keyframe
 
 import (
@@ -12,7 +13,6 @@ import (
 
 	imagePorts "github.com/shouni/gemini-image-kit/ports"
 	characterkit "github.com/shouni/go-character-kit/character"
-	"github.com/shouni/go-gemini-client/gemini"
 
 	"github.com/shouni/go-veo-orchestrator/ports"
 	"github.com/shouni/go-veo-orchestrator/video"
@@ -85,33 +85,53 @@ func (g *Generator) generateCutKeyframe(ctx context.Context, task keyframeTask) 
 	// 同じ値があるが、Cloud Logging の折りたたみ表示ではメッセージしか見えず、
 	// 1枚に分単位かかる処理では「何枚中の何枚目か」が読めないと進捗が判断できない。
 	progress := fmt.Sprintf("(%d/%d)", task.index+1, task.total)
-	return g.runImageGeneration(ctx, req, logger,
-		"Starting keyframe generation "+progress, "Keyframe generation completed "+progress,
-		"キーフレーム生成", task.index+1, char.ID)
+	return g.runImageGeneration(ctx, imageRun{
+		req:         req,
+		logger:      logger,
+		startLog:    "Starting keyframe generation " + progress,
+		completeLog: "Keyframe generation completed " + progress,
+		actionJP:    "キーフレーム生成",
+		cutIndex:    task.index + 1,
+		characterID: char.ID,
+	})
+}
+
+// imageRun は runImageGeneration の 1 回分の呼び出しを説明します。
+//
+// 位置引数だと startLog / completeLog / actionJP という無関係な文字列が 3 つ並び、
+// 取り違えてもコンパイルが通ってしまうため、構造体で受け取ります
+// （go-comic-kit の *RunnerArgs と同じ理由）。
+type imageRun struct {
+	// req は画像キットへ送るリクエストです。
+	req imagePorts.ImageRequest
+	// logger は開始・完了ログの出力先です（カット・キャラクターの属性を付けたもの）。
+	logger *slog.Logger
+	// startLog / completeLog は開始・完了時のメッセージ本文です。完了側には所要時間が
+	// 後置されます。
+	startLog, completeLog string
+	// actionJP はエラー文言に埋める日本語の動作名です（「キーフレーム生成」など）。
+	actionJP string
+	// cutIndex / characterID はエラー文言に埋める識別子です。
+	cutIndex    int
+	characterID string
 }
 
 // runImageGeneration は 1 回の Generate 呼び出しを、開始・完了ログとエラー文言の
 // 体裁で包みます。generateCutKeyframe と EditCut が共有します。
-func (g *Generator) runImageGeneration(
-	ctx context.Context,
-	req imagePorts.ImageRequest,
-	logger *slog.Logger,
-	startLog, completeLog, actionJP string,
-	cutIndex int,
-	characterID string,
-) (*video.KeyframeImage, error) {
-	logger.Info(startLog)
+func (g *Generator) runImageGeneration(ctx context.Context, run imageRun) (*video.KeyframeImage, error) {
+	run.logger.Info(run.startLog)
 	startTime := time.Now()
 
-	resp, err := g.generator.Generate(ctx, req)
+	resp, err := g.generator.Generate(ctx, run.req)
 	if err != nil {
-		return nil, fmt.Errorf("cut %d (character_id: %s) の%sに失敗しました: %w", cutIndex, characterID, actionJP, err)
+		return nil, fmt.Errorf("cut %d (character_id: %s) の%sに失敗しました: %w",
+			run.cutIndex, run.characterID, run.actionJP, err)
 	}
 
 	// 所要時間もメッセージへ入れる（属性だけだと折りたたみ表示で見えないため）。
 	// 生成が遅いときに、1枚ずつの実測が並ぶだけで当たりが付けられる。
 	elapsed := time.Since(startTime).Round(time.Second)
-	logger.Info(fmt.Sprintf("%s %s", completeLog, elapsed), "duration", elapsed)
+	run.logger.Info(fmt.Sprintf("%s %s", run.completeLog, elapsed), "duration", elapsed)
 
 	return keyframeImageFrom(resp), nil
 }
@@ -160,9 +180,15 @@ func (g *Generator) EditCut(ctx context.Context, cut video.Cut, editPrompt strin
 		"character_name", char.Name,
 	)
 
-	return g.runImageGeneration(ctx, req, logger,
-		"Starting keyframe edit", "Keyframe edit completed", "キーフレーム編集",
-		cut.CutIndex, char.ID)
+	return g.runImageGeneration(ctx, imageRun{
+		req:         req,
+		logger:      logger,
+		startLog:    "Starting keyframe edit",
+		completeLog: "Keyframe edit completed",
+		actionJP:    "キーフレーム編集",
+		cutIndex:    cut.CutIndex,
+		characterID: char.ID,
+	})
 }
 
 // characterForCut はカットに対応するキャラクターを解決します。
@@ -191,12 +217,10 @@ func (g *Generator) buildGenerationOptions(prompt, systemPrompt string, seed *in
 		Model:          g.model,
 		Prompt:         prompt,
 		NegativePrompt: g.negativePrompt,
-		GenerateOptions: gemini.GenerateOptions{
-			SystemPrompt: systemPrompt,
-			AspectRatio:  g.aspectRatio,
-			ImageSize:    g.imageSize,
-			Seed:         seed,
-		},
+		SystemPrompt:   systemPrompt,
+		AspectRatio:    g.aspectRatio,
+		ImageSize:      g.imageSize,
+		Seed:           seed,
 	}
 }
 

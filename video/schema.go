@@ -5,10 +5,13 @@ package video
 // モデル出力が文法レベルでこのスキーマに制約されます。
 //
 // music_recipe / final_video_url / aspect_ratio、および Cut のうち cut_index /
-// section_index / start_sec / end_sec / keyframe_reference / video_url /
-// video_id / status / is_chain_start / is_section_start は、いずれもパイプラインの
-// 後段（Recipe.Normalize、CutKeyframeRunner、VideoTimelineRunner）が算出・
-// 付与する値であり、AI に生成させる対象ではないため意図的にスキーマへ含めません。
+// section_index / start_sec / end_sec / location_anchor / aspect_ratio /
+// keyframe_reference / video_url / video_id / status / is_chain_start /
+// is_section_start は、いずれもパイプラインの後段（Recipe.Normalize、
+// CutKeyframeRunner、VideoTimelineRunner）が算出・付与する値であり、AI に
+// 生成させる対象ではないため意図的にスキーマへ含めません。カット側の
+// location_anchor / aspect_ratio は特に、レシピ直下の同名フィールドを
+// Recipe.Normalize が写したものなので、AI に別々の値を書かせてはいけません。
 //
 // characterIDs は、この呼び出しで有効なキャラクター定義（characterkit.Characters）
 // の ID 一覧です。cuts[].character_id を既知の ID に限定することで、存在しない

@@ -26,9 +26,9 @@ func threeCutRecipe() *video.Recipe {
 	return &video.Recipe{
 		ProjectTitle: "partial",
 		Cuts: []video.Cut{
-			{CutIndex: 1, AudioSync: video.AudioSync{DurationSec: 8}, KeyframeResult: video.KeyframeResult{KeyframeReference: "gs://images/cut_1.png"}, ChainControl: video.ChainControl{IsChainStart: true}},
-			{CutIndex: 2, AudioSync: video.AudioSync{DurationSec: 8}, KeyframeResult: video.KeyframeResult{KeyframeReference: "gs://images/cut_2.png"}, ChainControl: video.ChainControl{IsChainStart: true}},
-			{CutIndex: 3, AudioSync: video.AudioSync{DurationSec: 8}, KeyframeResult: video.KeyframeResult{KeyframeReference: "gs://images/cut_3.png"}, ChainControl: video.ChainControl{IsChainStart: true}},
+			{CutIndex: 1, DurationSec: 8, KeyframeReference: "gs://images/cut_1.png", IsChainStart: true},
+			{CutIndex: 2, DurationSec: 8, KeyframeReference: "gs://images/cut_2.png", IsChainStart: true},
+			{CutIndex: 3, DurationSec: 8, KeyframeReference: "gs://images/cut_3.png", IsChainStart: true},
 		},
 	}
 }
@@ -115,8 +115,8 @@ func TestCutKeyframeRunner_GenerateAndSavePersistsPartialResults(t *testing.T) {
 	recipe := &video.Recipe{
 		ProjectTitle: "partial keyframes",
 		Cuts: []video.Cut{
-			{CutIndex: 1, AudioSync: video.AudioSync{DurationSec: 8}},
-			{CutIndex: 2, AudioSync: video.AudioSync{DurationSec: 8}},
+			{CutIndex: 1, DurationSec: 8},
+			{CutIndex: 2, DurationSec: 8},
 		},
 	}
 

@@ -85,7 +85,7 @@ Veo に渡る prompt は `cuts[].visual_anchor`、`cuts[].audio_cue`、`music_re
 }
 ```
 
-この JSON は `Normalize()` により `start_sec` / `end_sec` / `status` が補完されます。生成後は `keyframe_reference`、`video_id`、`video_url` が追記された `video_music_meta.json` として保存されます。
+この JSON は `Normalize()` により `cut_index` / `start_sec` / `end_sec` / `status` / `section_index` が補完され、レシピ直下の `location_anchor` / `aspect_ratio` が各カットへ写されます。生成後は `keyframe_reference`、`video_id`、`video_url` が追記された `video_music_meta.json` として保存されます。
 
 ## cuts を省略した最小形
 
@@ -116,9 +116,9 @@ Veo に渡る prompt は `cuts[].visual_anchor`、`cuts[].audio_cue`、`music_re
         "prompt": "emotional peak with fuller instrumentation and stronger accents"
       }
     ],
-    "AudioModel": "lyria-3-pro-preview",
-    "ComposeMode": "game_fantasy",
-    "Seed": 10
+    "audio_model": "lyria-3-pro-preview",
+    "compose_mode": "game_fantasy",
+    "seed": 10
   },
   "cuts": []
 }
@@ -130,7 +130,7 @@ Veo に渡る prompt は `cuts[].visual_anchor`、`cuts[].audio_cue`、`music_re
 
 ## ⚠️ `video.Cut` の内部構造
 
-`Cut` の JSON はフラットな構造のままですが、Go の構造体としては `AudioSync` / `KeyframeResult` / `VideoResult` / `ChainControl` へ分割され、匿名フィールドとして埋め込まれています。`cut.VideoID` のようなフィールドアクセスは変わりませんが、コンポジットリテラルはグループ単位で書く必要があります。
+`Cut` の JSON はフラットな構造のままですが、Go の構造体としては `AudioSync` / `KeyframeResult` / `Result` / `ChainControl` へ分割され、匿名フィールドとして埋め込まれています。`cut.VideoID` のようなフィールドアクセスは変わりませんが、コンポジットリテラルはグループ単位で書く必要があります。
 
 ```go
 // ✗ フラットには書けません

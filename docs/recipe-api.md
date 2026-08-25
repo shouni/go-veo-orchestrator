@@ -11,7 +11,7 @@
 | `Cut.IsGenerated()` / `Cut.Status`（`video.CutStatus`） | そのカットが生成済みかの判定と状態 |
 | `Cut.ResetGeneration(keepKeyframe)` | 生成結果を捨てて再生成対象に戻す。`keepKeyframe=false` は `keyframe_reference` も消すため、次の `GenerateAndSave` で画像から焼き直されます |
 | `Cut.EffectiveDurationSec()` | そのカットの実効尺 |
-| `VideoRecipe.Normalize()` | カットの連番・開始秒・`SectionIndex` / `LocationAnchor` の伝播を整えます |
+| `VideoRecipe.Normalize()` | カットの連番・開始秒・`SectionIndex` と、レシピから各カットへの `LocationAnchor` / `AspectRatio` の伝播を整えます |
 | `VideoRecipe.Validate()` | レシピの整合性検証 |
 | `Config.UsesModels(gemini, image)` / `Cuts.UniqueCharacterIDs()` | 使用モデルの一致判定・登場キャラクターの集合 |
 | `Cuts.NextLastFrameReference(i)` | frames_to_video で次カットの `lastFrame` に使う参照の解決 |
@@ -21,9 +21,9 @@
 | `video.NewRecipeFromMusic(music.Recipe)` | Music Recipe から動画レシピを組み立て（深いコピー + Normalize） |
 | `veo.ExpandCutsToSupportedDurations(...)` | カット尺を Veo のサポート値へ正規化する尺プランナー（分割・チェーン形成・セクション境界リセット） |
 | `veo.CapCutsTotalDuration(cuts, maxSec)` / `veo.ChainTailEnd(cuts, i, usePrev)` | 合計尺の切り詰め・チェーン再生成範囲の解決 |
-| `veo.SplitCutBySupportedDurations(cut, totalSec)` / `veo.AllowedCutDurations(usesRefs)` | 1 カットの分割と、参照画像の有無で変わる許容尺の取得 |
-| `veo.CutUsesReferenceImages(cut, characters)` | そのカットが reference_to_video 経路（＝8 秒固定）になるかの判定 |
-| `veo.SplitDialogueLines(dialogue)` / `veo.DistributeLines(lines, n)` | 台詞の行分割と、分割後カットへの割り当て |
+| `veo.SplitCutBySupportedDurations(cut, allowedDurations)` / `veo.AllowedCutDurations(cut, characters, referenceImagesSupported)` | 1 カットの分割と、参照画像の有無で変わる許容尺の取得 |
+| `veo.CutUsesReferenceImages(cut, characters, referenceImagesSupported)` | そのカットが reference_to_video 経路（＝8 秒固定）になるかの判定 |
+| `veo.SplitDialogueLines(dialogue)` / `veo.DistributeLines(lines, pos, total)` | 台詞の行分割と、分割後カットへの割り当て |
 | `veo.ModelCapabilities(model)` | モデル名から referenceImages / lastFrame 対応を導出 |
 
 ## 部分結果とライフサイクル

@@ -124,8 +124,13 @@ type Cut struct {
 	// prompt builders operating on a single Cut (ports.KeyframePrompt.BuildCut) can still ground
 	// their keyframe prompt in the video's persistent setting.
 	LocationAnchor string `json:"location_anchor,omitempty"`
-	CharacterID    string `json:"character_id"`
-	Dialogue       string `json:"dialogue,omitempty"`
+	// AspectRatio mirrors Recipe.AspectRatio for this cut, populated by Recipe.Normalize for
+	// the same reason as LocationAnchor: CutReferenceImages only ever sees one Cut, never the
+	// parent Recipe, and it needs the ratio to pick the character's ratio-matched reference art
+	// (Character.ReferenceURLFor). Not meant to be set independently per cut.
+	AspectRatio string `json:"aspect_ratio,omitempty"`
+	CharacterID string `json:"character_id"`
+	Dialogue    string `json:"dialogue,omitempty"`
 
 	AudioSync
 	KeyframeResult
@@ -172,6 +177,9 @@ func (vr *Recipe) Normalize() {
 		if vr.Cuts[i].LocationAnchor == "" {
 			vr.Cuts[i].LocationAnchor = vr.LocationAnchor
 		}
+		if vr.Cuts[i].AspectRatio == "" {
+			vr.Cuts[i].AspectRatio = vr.AspectRatio
+		}
 		current = vr.Cuts[i].EndSec
 	}
 }
@@ -187,10 +195,8 @@ func cutsFromSections(sections []music.Section) []Cut {
 			CutIndex:     i + 1,
 			SectionIndex: i + 1,
 			VisualAnchor: section.Name,
-			AudioSync: AudioSync{
-				DurationSec: duration,
-				AudioCue:    section.Prompt,
-			},
+			DurationSec:  duration,
+			AudioCue:     section.Prompt,
 		})
 	}
 	return cuts

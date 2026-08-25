@@ -1,6 +1,7 @@
 package workflow
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -112,6 +113,6 @@ func cloneImageResponse(src *imagePorts.ImageResponse) *imagePorts.ImageResponse
 		return nil
 	}
 	dst := *src
-	dst.Data = append([]byte(nil), src.Data...)
+	dst.Data = bytes.Clone(src.Data)
 	return &dst
 }
