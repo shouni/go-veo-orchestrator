@@ -326,3 +326,25 @@ func TestVideoRecipeValidateAcceptsMusicTitleAsFallback(t *testing.T) {
 		t.Errorf("Validate() error = %v, want nil", err)
 	}
 }
+
+// TestNormalizePropagatesAspectRatio pins that Recipe.AspectRatio reaches every cut, the same
+// way LocationAnchor does. CutReferenceImages only ever sees one Cut, so without this the
+// ratio-matched character art can never be selected.
+func TestNormalizePropagatesAspectRatio(t *testing.T) {
+	recipe := &Recipe{
+		ProjectTitle: "t",
+		AspectRatio:  "9:16",
+		Cuts: []Cut{
+			{VisualAnchor: "a", AudioSync: AudioSync{DurationSec: 4}},
+			{VisualAnchor: "b", AudioSync: AudioSync{DurationSec: 4}, AspectRatio: "1:1"},
+		},
+	}
+	recipe.Normalize()
+
+	if got := recipe.Cuts[0].AspectRatio; got != "9:16" {
+		t.Errorf("Cuts[0].AspectRatio = %q, want the recipe's ratio", got)
+	}
+	if got := recipe.Cuts[1].AspectRatio; got != "1:1" {
+		t.Errorf("Cuts[1].AspectRatio = %q, want the cut's own value kept", got)
+	}
+}
