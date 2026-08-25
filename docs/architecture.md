@@ -34,7 +34,7 @@ go-veo-orchestrator/
 | キーフレーム | `CutKeyframeRunner` | **同じ Runner が、1 枚生成するたびに行う**（`GenerateAndSave` / `EditAndSave`） |
 | 動画 | `VideoTimelineRunner.Run` | **行わない**。呼び出し側が `VideoPublishRunner`（`Workflows.Publish`）を呼びます |
 
-**キーフレームの保存を Runner が持つ理由**: 保存名 `keyframe_<レシピ内の位置>.png` がカットの並びと結びついているためです。呼び出し側に出すと、位置→ファイル名の対応と `keyframe_reference` の設定を再実装させることになり、部分生成時に `keyframe_1.png` が別のカットを指す事故を招きます。
+**キーフレームの保存を Runner が持つ理由**: 保存名 `keyframe_<レシピ内の位置>.<拡張子>`（拡張子は生成結果の MIME type から決まります）がカットの並びと結びついているためです。呼び出し側に出すと、位置→ファイル名の対応と `keyframe_reference` の設定を再実装させることになり、部分生成時に `keyframe_1.png` が別のカットを指す事故を招きます。
 
 **1 枚ごとに保存する理由**: まとめて生成してから保存すると、その間にプロセスが落ちた場合（Cloud Run のタイムアウト・デプロイ・OOM）に生成済み＝課金済みの画像がメモリごと消えます。1 枚ずつ保存していれば失うのは最大 1 枚で、レシピの `keyframe_reference` を見て続きから再開できます。カットごとの goroutine が生成から保存までを完結させるため、**注入する `remoteio.Writer` は同時アクセス安全である必要があります**（`Config.MaxConcurrency` が 2 以上のとき）。
 

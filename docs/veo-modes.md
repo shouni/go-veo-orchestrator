@@ -17,10 +17,10 @@ mode := veo.ClassifyRequest(req, usePreviousVideo, caps)
 
 | 優先 | モード | 条件 | 対応尺（秒） |
 | --- | --- | --- | --- |
-| 1 | `VeoModeVideoExtension` | `usePreviousVideo` かつ `PreviousVideoURI` が `gs://` 参照。画像参照はすべて無視されます | 7 固定 |
-| 2 | `VeoModeReferenceToVideo` | 参照画像が1つ以上あり、モデルが `referenceImages` 対応（Veo 3系の非 Fast） | 8 固定 |
-| 3 | `VeoModeFramesToVideo` | 開始フレームと `LastFrameReference` が両方あり、モデルが `lastFrame` 対応（Veo 2 / Veo 3.1系） | 4 / 6 / 8 |
-| 4 | `VeoModeImageToVideo` | 上記以外すべて | 4 / 6 / 8 |
+| 1 | `veo.ModeVideoExtension` | `usePreviousVideo` かつ `PreviousVideoURI` が `gs://` 参照。画像参照はすべて無視されます | 7 固定 |
+| 2 | `veo.ModeReferenceToVideo` | 参照画像が1つ以上あり、モデルが `referenceImages` 対応（Veo 3系の非 Fast） | 8 固定 |
+| 3 | `veo.ModeFramesToVideo` | 開始フレームと `LastFrameReference` が両方あり、モデルが `lastFrame` 対応（Veo 2 / Veo 3.1系） | 4 / 6 / 8 |
+| 4 | `veo.ModeImageToVideo` | 上記以外すべて | 4 / 6 / 8 |
 
 モデルの対応状況を伝えるオプションインターフェースについては [Adapter Boundary](adapter.md#モデルの対応機能を伝える) を参照してください。
 
@@ -40,6 +40,6 @@ Veo は任意長の動画を生成できないため、レシピ側でこれら�
 
 ## 参照画像の組み立て
 
-参照画像（`referenceImages`）の組み立て規則は `video.CutReferenceImages(cut, characters)` に一本化されています。`[キャラクター立ち絵, キーフレーム]` の順に最大3枚で、立ち絵が無いカットはキーフレームだけを参照として使います。
+参照画像（`referenceImages`）の組み立て規則は `video.CutReferenceImages(cut, characters)` に一本化されています。`[キャラクター立ち絵, キーフレーム]` の順に最大3枚で、立ち絵が無いカットはキーフレームだけを参照として使います。立ち絵は `Cut.AspectRatio`（`Recipe.Normalize` が `Recipe.AspectRatio` から伝播）に一致するバリアントがあればそれを使うため、キーフレームと立ち絵の比率が揃います。
 
-カットを分類する側もリクエストを組み立てる側も、必ずこの関数を通してください。カットが丸められる尺と、そのリクエストが実際に解決するモードが一致しなくなります。
+カットを分類する側もリクエストを組み立てる側も、必ずこの関数を通してください。通さないと、カットが丸められる尺と、そのリクエストが実際に解決するモードが食い違います。

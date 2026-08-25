@@ -2,11 +2,11 @@
 
 [← README](../README.md)
 
-呼び出し側が `errors.Is` で判定し、汎用エラーとは異なる制御（フォールバックやリトライ）を行えるよう、`ports` パッケージは以下の sentinel error を公開しています。
+呼び出し側が `errors.Is` で判定し、汎用エラーとは異なる制御（フォールバックやリトライ）を行えるよう、以下の sentinel error を公開しています。1 件を除いて `ports` パッケージにあります（`video.ErrRecipeInvalid` だけは、返すのが `video.Recipe.Validate` で、最下層の `video` は `ports` を import できないためこちらにあります）。
 
 | エラー | 発生条件 | 想定される呼び出し側の対応 |
 | --- | --- | --- |
-| `ports.ErrConfigInvalid` | `Config.Validate` が必須項目（`GeminiModel` / `ImageModel`）の欠落を検出した場合。`workflow.New` の時点で返ります | 構築（DI）の誤り。設定不備の通知 |
+| `ports.ErrConfigInvalid` | `Config.Validate` が必須 4 項目（`GeminiModel` / `ImageModel` / `KeyframeAspectRatio` / `KeyframeImageSize`）の欠落を検出した場合。`workflow.New` の時点で返ります | 構築（DI）の誤り。設定不備の通知 |
 | `ports.ErrRecipeRequired` | `VideoRecipe` が必須の処理に `nil` を渡した場合 | 呼び出し側の実装不備。基本的に発生させない |
 | `ports.ErrEditingNotSupported` | `EditAndSave` で、設定済みの画像生成エンジンがキーフレーム編集（`EditCut`）を実装していない場合 | 全体再生成（`GenerateAndSave`）へのフォールバック |
 | `ports.ErrInvalidAIResponse` | AI の応答テキストを `VideoRecipe` の JSON として解析できなかった場合 | ネットワーク/認証エラーと区別したリトライ判断 |

@@ -66,7 +66,7 @@ func (c *Cut) ResetGeneration(keepKeyframe bool) {
 //
 // この関数が referenceImages の唯一の組み立て規則です。動画生成リクエストの構築
 // （DefaultVideoRequestBuilder）と、そのリクエストの生成モード判定
-// （ClassifyVeoRequest 経由の尺の正規化・プロンプト選択）が同じリストを見るため、
+// （veo.ClassifyRequest 経由の尺の正規化・プロンプト選択）が同じリストを見るため、
 // 「尺は reference_to_video 前提で8秒に丸めたのに、実際のリクエストは image_to_video
 // だった」というズレが構造的に起こりません。
 func CutReferenceImages(cut Cut, characters *characterkit.Characters) []string {

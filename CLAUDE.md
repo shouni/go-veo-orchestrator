@@ -67,7 +67,7 @@ If `ManagerArgs.VideoRunner` is nil, `Workflows.Video` is **not nil** — it's `
 
 ### Recipe / Cut model (`video/recipe.go`)
 
-`Cut` is JSON-flat but Go-composed: fields are grouped into embedded structs `AudioSync`, `KeyframeResult`, `VideoResult`, `ChainControl`. Field access (`cut.VideoID`, `cut.DurationSec`) is unaffected, but composite literals must nest by group — `video.Cut{AudioSync: video.AudioSync{DurationSec: 5}, KeyframeResult: video.KeyframeResult{KeyframeReference: "..."}}`, not a flat literal.
+`Cut` is JSON-flat but Go-composed: fields are grouped into embedded structs `AudioSync`, `KeyframeResult`, `Result`, `ChainControl`. Field access (`cut.VideoID`, `cut.DurationSec`) is unaffected, but composite literals must nest by group — `video.Cut{AudioSync: video.AudioSync{DurationSec: 5}, KeyframeResult: video.KeyframeResult{KeyframeReference: "..."}}`, not a flat literal.
 
 `VideoRecipe.Normalize()` (call before processing any recipe that might come from partially-hand-authored JSON) fills in cut numbering, `start_sec`/`end_sec` from cumulative `duration_sec`, default `status: "pending"`, generates `Cuts` from `MusicRecipe.Sections` if `Cuts` is empty, and propagates two recipe-level fields down to every cut: `LocationAnchor` (keyframe prompt builders only ever see one `Cut`, never the parent recipe, so this is how a tight close-up cut still knows the persistent scene setting) and `AspectRatio` (`video.CutReferenceImages` has the same one-cut-only view and needs the ratio to pick the character's ratio-matched reference art). A cut that already carries its own value keeps it. Anything else that a single-`Cut` function needs from the recipe belongs here too — that is what this propagation is for.
 
@@ -93,7 +93,7 @@ Veo accepts only discrete cut durations, and which set applies depends on the re
 
 ### Adapter boundary (`ports.VideoRunner`)
 
-The real Veo/Vertex AI call is entirely external to this repo. An adapter's `Run(ctx, VideoGenerationRequest) (*VideoResponse, error)` is responsible for auth, resolving `ImageReference`/`AudioReference` (preferred) vs. uploading `InputImage`/`InputAudio` (fallback when the reference is empty), submitting to Veo, polling long-running operations, and returning `VideoID` as a `gs://` URI (needed to chain into the next cut's `PreviousVideoURI`) and `CloudURL`. `ReferenceImages` (max 3, `characterkit` character art + keyframe) takes priority over `ImageReference`/`InputImage` when both are supplied by `DefaultVideoRequestBuilder`. `LastFrameReference` is only meaningful for image-to-video Veo 2 / Veo 3.1 requests and must be paired with a start frame.
+The real Veo/Vertex AI call is entirely external to this repo. An adapter's `Run(ctx, video.GenerationRequest) (*video.Response, error)` is responsible for auth, resolving `ImageReference`/`AudioReference` (preferred) vs. uploading `InputImage`/`InputAudio` (fallback when the reference is empty), submitting to Veo, polling long-running operations, and returning `VideoID` as a `gs://` URI (needed to chain into the next cut's `PreviousVideoURI`) and `CloudURL`. `ReferenceImages` (max 3, `characterkit` character art + keyframe) takes priority over `ImageReference`/`InputImage` when both are supplied by `DefaultVideoRequestBuilder`. `LastFrameReference` is only meaningful for image-to-video Veo 2 / Veo 3.1 requests and must be paired with a start frame.
 
 ### Sentinel errors (`ports/errors.go`, `video/errors.go`)
 
@@ -120,4 +120,4 @@ A cut that fails does not discard the images already paid for: partial successes
 
 ## Conventions
 
-- **Error text**: sentinel errors are English with a package prefix (`review: diff is empty`) so a deeply wrapped error still names its origin; the context added by `fmt.Errorf` wrapping is Japanese. Existing English wrap text is not being retrofitted — apply the rule to code you touch.
+- **Error text**: sentinel errors are English and name their subject (`video recipe is required`, `cut duration is not supported by the resolved Veo generation mode`) so a deeply wrapped error still says what failed; the context added by `fmt.Errorf` wrapping is Japanese. Existing English wrap text is not being retrofitted — apply the rule to code you touch.
