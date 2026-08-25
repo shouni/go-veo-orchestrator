@@ -4,7 +4,8 @@
 package video
 
 import (
-	"sort"
+	"maps"
+	"slices"
 	"strings"
 
 	characterkit "github.com/shouni/go-character-kit/character"
@@ -18,14 +19,7 @@ func (cs Cuts) UniqueCharacterIDs() []string {
 			set[cut.CharacterID] = struct{}{}
 		}
 	}
-
-	uniqueIDs := make([]string, 0, len(set))
-	for id := range set {
-		uniqueIDs = append(uniqueIDs, id)
-	}
-	sort.Strings(uniqueIDs)
-
-	return uniqueIDs
+	return slices.Sorted(maps.Keys(set))
 }
 
 // EffectiveDurationSec は、このカットの実際の尺（秒）を返します。DurationSec が未設定

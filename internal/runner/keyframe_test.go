@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"sort"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -276,7 +276,7 @@ func (g *capturingCutImageGenerator) seenCutIndexes() []int {
 	for _, cut := range g.seen {
 		out = append(out, cut.CutIndex)
 	}
-	sort.Ints(out)
+	slices.Sort(out)
 	return out
 }
 

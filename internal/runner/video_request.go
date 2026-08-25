@@ -2,6 +2,7 @@ package runner
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	characterkit "github.com/shouni/go-character-kit/character"
@@ -156,11 +157,9 @@ func (b *DefaultVideoRequestBuilder) buildPrompt(recipe *video.Recipe, cut video
 		parts = append(parts, fmt.Sprintf("Timeline: %.2fs to %.2fs.", cut.StartSec, cut.EndSec))
 	}
 
-	nonEmpty := parts[:0]
-	for _, part := range parts {
-		if strings.TrimSpace(part) != "" {
-			nonEmpty = append(nonEmpty, part)
-		}
-	}
-	return strings.Join(nonEmpty, "\n")
+	// VisualAnchor は空のことがあるので、繋ぐ前に空要素を落とす。
+	parts = slices.DeleteFunc(parts, func(part string) bool {
+		return strings.TrimSpace(part) == ""
+	})
+	return strings.Join(parts, "\n")
 }
