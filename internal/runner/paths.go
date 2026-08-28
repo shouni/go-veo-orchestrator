@@ -17,13 +17,13 @@ func defaultKeyframePath() string {
 }
 
 func resolveOutputPath(baseDir, fileName string) (string, error) {
-	return remoteio.ResolvePath(baseDir, fileName)
+	return remoteio.Join(baseDir, fileName), nil
 }
 
 func resolveBaseURL(rawPath string) string {
-	return remoteio.ResolveBaseDir(rawPath)
+	return remoteio.Dir(rawPath)
 }
 
 func generateIndexedPath(basePath string, index int) (string, error) {
-	return remoteio.GenerateIndexedPath(basePath, index)
+	return remoteio.IndexedPath(basePath, index)
 }
