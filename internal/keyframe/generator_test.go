@@ -6,24 +6,24 @@ import (
 	"sync"
 	"testing"
 
-	imagePorts "github.com/shouni/gemini-image-kit/ports"
+	"github.com/shouni/genai-kit/imagegen"
 	characterkit "github.com/shouni/go-character-kit/character"
 	"github.com/shouni/go-veo-orchestrator/video"
 )
 
 // --- Mocks ---
 
-// mockImageGenerator は gemini-image-kit の ImageGenerator を模したテストダブルです。
+// mockImageGenerator は imagegen.Generator を模したテストダブルです。
 // このパッケージの生成は逐次ですが、runner 側のテストからも並列に叩かれるため
 // mu で保護します。
 type mockImageGenerator struct {
 	mu            sync.Mutex
 	generateCount int
-	lastReq       imagePorts.ImageRequest
-	generateFunc  func(ctx context.Context, req imagePorts.ImageRequest) (*imagePorts.ImageResponse, error)
+	lastReq       imagegen.Request
+	generateFunc  func(ctx context.Context, req imagegen.Request) (*imagegen.Response, error)
 }
 
-func (m *mockImageGenerator) Generate(ctx context.Context, req imagePorts.ImageRequest) (*imagePorts.ImageResponse, error) {
+func (m *mockImageGenerator) Generate(ctx context.Context, req imagegen.Request) (*imagegen.Response, error) {
 	m.mu.Lock()
 	m.generateCount++
 	m.lastReq = req
@@ -35,7 +35,7 @@ func (m *mockImageGenerator) Generate(ctx context.Context, req imagePorts.ImageR
 	if req.Seed != nil {
 		s = *req.Seed
 	}
-	return &imagePorts.ImageResponse{Data: []byte("fake-keyframe-image"), UsedSeed: s}, nil
+	return &imagegen.Response{Data: []byte("fake-keyframe-image"), UsedSeed: s}, nil
 }
 
 type mockImagePrompt struct{}
@@ -113,8 +113,8 @@ func TestGenerator_GenerateCut(t *testing.T) {
 
 		// リクエストされた Seed を記録するためのスライス
 		capturedSeeds := make([]int64, len(cuts))
-		genMock.generateFunc = func(_ context.Context, req imagePorts.ImageRequest) (*imagePorts.ImageResponse, error) {
-			return &imagePorts.ImageResponse{UsedSeed: *req.Seed}, nil
+		genMock.generateFunc = func(_ context.Context, req imagegen.Request) (*imagegen.Response, error) {
+			return &imagegen.Response{UsedSeed: *req.Seed}, nil
 		}
 
 		res, err := execAll(ctx, t, generator, cuts)
@@ -164,7 +164,7 @@ func TestGenerator_GenerateCut(t *testing.T) {
 		if genMock.generateCount != 1 {
 			t.Errorf("Expected 1 generation call, got %d", genMock.generateCount)
 		}
-		if got := genMock.lastReq.Images[0].ReferenceURL; got != "gs://bucket/zunda.png" {
+		if got := genMock.lastReq.Images[0]; got != "gs://bucket/zunda.png" {
 			t.Errorf("ReferenceURL = %q, want the character reference", got)
 		}
 	})
@@ -185,9 +185,9 @@ func TestGenerator_AspectRatio(t *testing.T) {
 		genMock := &mockImageGenerator{}
 		g := NewGenerator(cm, genMock, &mockImagePrompt{}, "gemini-2.0-flash", opts...)
 		var captured string
-		genMock.generateFunc = func(_ context.Context, req imagePorts.ImageRequest) (*imagePorts.ImageResponse, error) {
+		genMock.generateFunc = func(_ context.Context, req imagegen.Request) (*imagegen.Response, error) {
 			captured = req.AspectRatio
-			return &imagePorts.ImageResponse{}, nil
+			return &imagegen.Response{}, nil
 		}
 		if _, err := execAll(ctx, t, g, cuts); err != nil {
 			t.Fatalf("Execute failed: %v", err)
@@ -237,9 +237,9 @@ func TestGenerator_ReferenceURLPerAspectRatio(t *testing.T) {
 	t.Run("uses aspect-ratio-specific entry when present", func(t *testing.T) {
 		g, genMock := newGenerator(WithAspectRatio("9:16"))
 		var captured string
-		genMock.generateFunc = func(_ context.Context, req imagePorts.ImageRequest) (*imagePorts.ImageResponse, error) {
-			captured = req.Images[0].ReferenceURL
-			return &imagePorts.ImageResponse{}, nil
+		genMock.generateFunc = func(_ context.Context, req imagegen.Request) (*imagegen.Response, error) {
+			captured = req.Images[0]
+			return &imagegen.Response{}, nil
 		}
 		if _, err := execAll(ctx, t, g, cuts); err != nil {
 			t.Fatalf("Execute failed: %v", err)
@@ -252,9 +252,9 @@ func TestGenerator_ReferenceURLPerAspectRatio(t *testing.T) {
 	t.Run("falls back to ReferenceURL when aspect ratio has no entry", func(t *testing.T) {
 		g, genMock := newGenerator(WithAspectRatio("16:9"))
 		var captured string
-		genMock.generateFunc = func(_ context.Context, req imagePorts.ImageRequest) (*imagePorts.ImageResponse, error) {
-			captured = req.Images[0].ReferenceURL
-			return &imagePorts.ImageResponse{}, nil
+		genMock.generateFunc = func(_ context.Context, req imagegen.Request) (*imagegen.Response, error) {
+			captured = req.Images[0]
+			return &imagegen.Response{}, nil
 		}
 		if _, err := execAll(ctx, t, g, cuts); err != nil {
 			t.Fatalf("Execute failed: %v", err)
@@ -277,10 +277,10 @@ func TestGenerator_EditCut(t *testing.T) {
 	generator := NewGenerator(cm, genMock, pbMock, "gemini-2.0-flash")
 
 	t.Run("Uses existing keyframe as source, generation model, and character seed", func(t *testing.T) {
-		var captured imagePorts.ImageRequest
-		genMock.generateFunc = func(_ context.Context, req imagePorts.ImageRequest) (*imagePorts.ImageResponse, error) {
+		var captured imagegen.Request
+		genMock.generateFunc = func(_ context.Context, req imagegen.Request) (*imagegen.Response, error) {
 			captured = req
-			return &imagePorts.ImageResponse{Data: []byte("edited"), UsedSeed: *req.Seed}, nil
+			return &imagegen.Response{Data: []byte("edited"), UsedSeed: *req.Seed}, nil
 		}
 
 		cut := video.Cut{CutIndex: 2, CharacterID: "zundamon", KeyframeReference: "gs://bucket/jobs/j1/images/keyframe_2.png"}
@@ -291,8 +291,8 @@ func TestGenerator_EditCut(t *testing.T) {
 		if string(resp.Data) != "edited" {
 			t.Errorf("unexpected response data: %q", resp.Data)
 		}
-		if captured.Images[0].ReferenceURL != cut.KeyframeReference {
-			t.Errorf("edit request image = %q, want %q", captured.Images[0].ReferenceURL, cut.KeyframeReference)
+		if captured.Images[0] != cut.KeyframeReference {
+			t.Errorf("edit request image = %q, want %q", captured.Images[0], cut.KeyframeReference)
 		}
 		if captured.Prompt != "腕には絆創膏を1〜2枚のみにしてください" {
 			t.Errorf("edit request prompt = %q", captured.Prompt)

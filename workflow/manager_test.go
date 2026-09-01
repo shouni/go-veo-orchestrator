@@ -7,8 +7,8 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/shouni/genai-kit/gemini"
 	characterkit "github.com/shouni/go-character-kit/character"
-	"github.com/shouni/go-gemini-client/gemini"
 	"github.com/shouni/go-remote-io/remoteio"
 	"github.com/shouni/go-veo-orchestrator/ports"
 	"github.com/shouni/go-veo-orchestrator/video"
@@ -101,7 +101,7 @@ func newTestCharacters(list []characterkit.Character) (*characterkit.Characters,
 // （オプショナルインターフェース）は素通りします。
 type fakeGenerativeModel struct{}
 
-func (fakeGenerativeModel) GenerateWithAttachments(context.Context, string, string, []gemini.Attachment, gemini.GenerateOptions) (*gemini.Response, error) {
+func (fakeGenerativeModel) Generate(context.Context, string, string, []gemini.Attachment, gemini.GenerateOptions) (*gemini.Response, error) {
 	return &gemini.Response{}, nil
 }
 

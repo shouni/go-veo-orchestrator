@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/shouni/go-gemini-client/music"
+	"github.com/shouni/genai-kit/music"
 )
 
 // Recipe は ScriptRunner が生成する動画台本全体の構造です。

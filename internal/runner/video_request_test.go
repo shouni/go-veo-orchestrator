@@ -3,8 +3,8 @@ package runner
 import (
 	"testing"
 
+	"github.com/shouni/genai-kit/lyria"
 	characterkit "github.com/shouni/go-character-kit/character"
-	"github.com/shouni/go-gemini-client/lyria"
 	"github.com/shouni/go-veo-orchestrator/veo"
 	"github.com/shouni/go-veo-orchestrator/video"
 )

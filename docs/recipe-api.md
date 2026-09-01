@@ -54,7 +54,7 @@ if err != nil {
 
 対象カットだけの使い捨てレシピを組む必要はありません（v1.11 より前はそれが必須で、カットごとにループする呼び出し側がレシピを組み直していました）。保存されるメタデータも常に完全なレシピになります。
 
-内部的には [gemini-image-kit](https://github.com/shouni/gemini-image-kit) の `ImageGenerator.Generate` に既存キーフレーム画像を入力として渡し、`editPrompt` をプロンプトとして呼び出します。`GenerateAndSave`（通常のキーフレーム生成）と同じ会話型マルチモーダル画像モデル（`Config.ImageModel`、Gemini の「Nano Banana」系）をそのまま再利用するため、編集専用のモデルや API は不要です。
+内部的には [genai-kit](https://github.com/shouni/genai-kit) の `imagegen.Generator.Generate` に既存キーフレーム画像を入力として渡し、`editPrompt` をプロンプトとして呼び出します。`GenerateAndSave`（通常のキーフレーム生成）と同じ会話型マルチモーダル画像モデル（`Config.ImageModel`、Gemini の「Nano Banana」系）をそのまま再利用するため、編集専用のモデルや API は不要です。
 
 > Vertex AI Imagen のマスクベース編集/カスタマイズ API（`imagen-3.0-capability-001` 系）は2026年6月30日に廃止され、後継の「capability」モデルも用意されていません。そのため `EditAndSave` はマスク指定には対応せず、自由記述の編集指示のみをサポートします。
 

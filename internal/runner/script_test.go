@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/shouni/genai-kit/gemini"
 	characterkit "github.com/shouni/go-character-kit/character"
-	"github.com/shouni/go-gemini-client/gemini"
 	"github.com/shouni/go-veo-orchestrator/ports"
 )
 
@@ -41,7 +41,7 @@ type fakeContentGenerator struct {
 	lastOpts   gemini.GenerateOptions
 }
 
-func (f *fakeContentGenerator) GenerateWithAttachments(_ context.Context, modelName string, prompt string, _ []gemini.Attachment, opts gemini.GenerateOptions) (*gemini.Response, error) {
+func (f *fakeContentGenerator) Generate(_ context.Context, modelName string, prompt string, _ []gemini.Attachment, opts gemini.GenerateOptions) (*gemini.Response, error) {
 	f.calls++
 	f.lastModel = modelName
 	f.lastPrompt = prompt
@@ -390,7 +390,7 @@ type sequenceContentGenerator struct {
 	calls     int
 }
 
-func (g *sequenceContentGenerator) GenerateWithAttachments(_ context.Context, _ string, _ string, _ []gemini.Attachment, _ gemini.GenerateOptions) (*gemini.Response, error) {
+func (g *sequenceContentGenerator) Generate(_ context.Context, _ string, _ string, _ []gemini.Attachment, _ gemini.GenerateOptions) (*gemini.Response, error) {
 	text := g.responses[min(g.calls, len(g.responses)-1)]
 	g.calls++
 	return &gemini.Response{Text: text}, nil
