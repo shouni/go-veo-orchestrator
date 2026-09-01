@@ -10,8 +10,8 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/shouni/genai-kit/gemini"
 	characterkit "github.com/shouni/go-character-kit/character"
-	"github.com/shouni/go-gemini-client/gemini"
 	"github.com/shouni/go-veo-orchestrator/ports"
 	"github.com/shouni/go-veo-orchestrator/video"
 )
@@ -119,7 +119,7 @@ func (r *VideoScriptRunner) generateRecipe(ctx context.Context, finalPrompt stri
 	for attempt := 1; attempt <= maxScriptAttempts; attempt++ {
 		slog.InfoContext(ctx, "ScriptRunner: Gemini APIを呼び出し中", "model", r.aiModel, "attempt", attempt)
 
-		resp, err := r.aiClient.GenerateWithAttachments(ctx, r.aiModel, finalPrompt, nil, opts)
+		resp, err := r.aiClient.Generate(ctx, r.aiModel, finalPrompt, nil, opts)
 		if err != nil {
 			return nil, fmt.Errorf("geminiによるコンテンツ生成に失敗しました: %w", err)
 		}

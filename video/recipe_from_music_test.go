@@ -3,7 +3,7 @@ package video
 import (
 	"testing"
 
-	"github.com/shouni/go-gemini-client/music"
+	"github.com/shouni/genai-kit/music"
 )
 
 // TestNewVideoRecipeFromMusicKeepsEveryField は、音楽レシピの取り込みが深いコピーで

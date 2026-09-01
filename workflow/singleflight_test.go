@@ -8,9 +8,9 @@ import (
 	"testing/synctest"
 	"time"
 
-	imagePorts "github.com/shouni/gemini-image-kit/ports"
-	"github.com/shouni/go-gemini-client/callguard"
-	"github.com/shouni/go-gemini-client/gemini"
+	"github.com/shouni/genai-kit/callguard"
+	"github.com/shouni/genai-kit/gemini"
+	"github.com/shouni/genai-kit/imagegen"
 )
 
 // countingImageGenerator counts how many times the underlying API would actually be called.
@@ -22,7 +22,7 @@ type countingImageGenerator struct {
 	cancel context.Context //nolint:containedctx // records the ctx the decorator passed down
 }
 
-func (g *countingImageGenerator) Generate(ctx context.Context, _ imagePorts.ImageRequest) (*imagePorts.ImageResponse, error) {
+func (g *countingImageGenerator) Generate(ctx context.Context, _ imagegen.Request) (*imagegen.Response, error) {
 	g.mu.Lock()
 	g.calls++
 	g.cancel = ctx
@@ -36,7 +36,7 @@ func (g *countingImageGenerator) Generate(ctx context.Context, _ imagePorts.Imag
 	if err != nil {
 		return nil, err
 	}
-	return &imagePorts.ImageResponse{Data: []byte("image"), MimeType: "image/png"}, nil
+	return &imagegen.Response{Data: []byte("image"), MIMEType: "image/png"}, nil
 }
 
 func (g *countingImageGenerator) callCount() int {
@@ -45,8 +45,8 @@ func (g *countingImageGenerator) callCount() int {
 	return g.calls
 }
 
-func imageRequest(prompt string) imagePorts.ImageRequest {
-	return imagePorts.ImageRequest{
+func imageRequest(prompt string) imagegen.Request {
+	return imagegen.Request{
 		Model: "m", Prompt: prompt,
 	}
 }
@@ -61,7 +61,7 @@ func TestSingleflightImageGeneratorCollapsesIdenticalCalls(t *testing.T) {
 
 		const callers = 4
 		var wg sync.WaitGroup
-		responses := make([]*imagePorts.ImageResponse, callers)
+		responses := make([]*imagegen.Response, callers)
 		errs := make([]error, callers)
 		for i := range callers {
 			wg.Go(func() {
@@ -173,7 +173,7 @@ type countingTextGenerator struct {
 	calls int
 }
 
-func (g *countingTextGenerator) GenerateWithAttachments(
+func (g *countingTextGenerator) Generate(
 	_ context.Context, _, _ string, _ []gemini.Attachment, _ gemini.GenerateOptions,
 ) (*gemini.Response, error) {
 	g.mu.Lock()
@@ -205,7 +205,7 @@ func TestGuardCoversTextGenerationToo(t *testing.T) {
 		ctx := context.Background()
 		start := time.Now()
 
-		if _, err := textGen.GenerateWithAttachments(ctx, "m", "script", nil, gemini.GenerateOptions{}); err != nil {
+		if _, err := textGen.Generate(ctx, "m", "script", nil, gemini.GenerateOptions{}); err != nil {
 			t.Fatalf("text generation error = %v", err)
 		}
 		if _, err := imageGen.Generate(ctx, imageRequest("keyframe")); err != nil {

@@ -12,7 +12,7 @@ import (
 // 構造化出力（RecipeSchema）を指定しても、モデルは**歌詞や情景描写を引用するとき、
 // JSON 文字列の中へ生の改行を入れてきます。** 応答を返しきったあとの崩れなので API の
 // 再試行では直らず、補修が無ければレシピ生成が ErrInvalidAIResponse で丸ごと落ちます。
-// 補修は go-gemini-client の gemini.CleanJSONResponse が持っており、
+// 補修は genai-kit の gemini.CleanJSONResponse が持っており、
 // extractJSONCandidates がそこを通します。
 
 // recipeJSONWithRawNewline は description に生の改行を含むレシピ応答です。

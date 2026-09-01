@@ -11,7 +11,7 @@ import (
 	"path"
 	"strings"
 
-	imagePorts "github.com/shouni/gemini-image-kit/ports"
+	"github.com/shouni/genai-kit/imagegen"
 	"github.com/shouni/go-remote-io/remoteio"
 	"github.com/shouni/go-veo-orchestrator/ports"
 	"github.com/shouni/go-veo-orchestrator/video"
@@ -224,7 +224,7 @@ func (r *CutKeyframeRunner) saveKeyframeImage(ctx context.Context, basePath stri
 		return "", fmt.Errorf("cut %d のキーフレーム出力パス生成に失敗しました: %w", index, err)
 	}
 	// 実際の画像形式に合わせて拡張子を付け替える（basePath は .png 基準）。
-	if ext := imagePorts.ExtensionByMIMEType(image.MimeType); ext != path.Ext(keyframePath) {
+	if ext := imagegen.ExtensionByMIMEType(image.MimeType); ext != path.Ext(keyframePath) {
 		keyframePath = strings.TrimSuffix(keyframePath, path.Ext(keyframePath)) + ext
 	}
 

@@ -89,7 +89,7 @@ Veo に渡る prompt は `cuts[].visual_anchor`、`cuts[].audio_cue`、`music_re
 
 ## cuts を省略した最小形
 
-`cuts` が空の場合は、`music_recipe.sections` からカット列を自動生成します。`music_recipe` は `github.com/shouni/go-gemini-client/music.Recipe` をそのまま保持するため、楽曲生成側の JSON は `music_recipe` 配下へ入れます。
+`cuts` が空の場合は、`music_recipe.sections` からカット列を自動生成します。`music_recipe` は `github.com/shouni/genai-kit/music.Recipe` をそのまま保持するため、楽曲生成側の JSON は `music_recipe` 配下へ入れます。
 
 ```json
 {

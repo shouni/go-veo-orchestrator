@@ -20,7 +20,7 @@ package video
 //
 // 戻り値は素の JSON Schema（gemini.GenerateOptions.ResponseJSONSchema へ渡す形）です。
 // genai.Schema で組み立てると、スキーマを書くだけのコードが SDK の型に縛られ、
-// go-gemini-client を挟んでいる意味が薄れます。
+// genai-kit を挟んでいる意味が薄れます。
 func RecipeSchema(characterIDs []string) map[string]any {
 	return map[string]any{
 		"type": "object",

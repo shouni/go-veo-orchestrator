@@ -1,5 +1,5 @@
 // Package keyframe は、カット情報とキャラクター定義から動画のキーフレーム画像を
-// 生成するロジックを提供します。参照画像は gs:// URI のまま gemini-image-kit へ
+// 生成するロジックを提供します。参照画像は gs:// URI のまま genai-kit の imagegen へ
 // 渡すため、このパッケージの仕事はカット 1 件分の参照元 URL とプロンプトの
 // 組み立て、そして 1 回の送信だけです。カット間の並列実行は行いません
 // （runner.CutKeyframeRunner が持ちます — Generator のコメント参照）。
@@ -11,7 +11,8 @@ import (
 	"log/slog"
 	"time"
 
-	imagePorts "github.com/shouni/gemini-image-kit/ports"
+	"github.com/shouni/genai-kit/gemini"
+	"github.com/shouni/genai-kit/imagegen"
 	characterkit "github.com/shouni/go-character-kit/character"
 
 	"github.com/shouni/go-veo-orchestrator/ports"
@@ -25,7 +26,7 @@ import (
 // workflow の callGuard が持ちます。
 type Generator struct {
 	characters     *characterkit.Characters
-	generator      imagePorts.ImageGenerator
+	generator      imagegen.Generator
 	pb             ports.KeyframePrompt
 	model          string
 	aspectRatio    string
@@ -45,7 +46,7 @@ type keyframeTask struct {
 // NewGenerator は Generator の新しいインスタンスを初期化します。
 func NewGenerator(
 	characters *characterkit.Characters,
-	generator imagePorts.ImageGenerator,
+	generator imagegen.Generator,
 	pb ports.KeyframePrompt,
 	model string,
 	opts ...Option,
@@ -102,8 +103,8 @@ func (g *Generator) generateCutKeyframe(ctx context.Context, task keyframeTask) 
 // 取り違えてもコンパイルが通ってしまうため、構造体で受け取ります
 // （go-comic-kit の *RunnerArgs と同じ理由）。
 type imageRun struct {
-	// req は画像キットへ送るリクエストです。
-	req imagePorts.ImageRequest
+	// req は imagegen へ送るリクエストです。
+	req imagegen.Request
 	// logger は開始・完了ログの出力先です（カット・キャラクターの属性を付けたもの）。
 	logger *slog.Logger
 	// startLog / completeLog は開始・完了時のメッセージ本文です。完了側には所要時間が
@@ -136,15 +137,15 @@ func (g *Generator) runImageGeneration(ctx context.Context, run imageRun) (*vide
 	return keyframeImageFrom(resp), nil
 }
 
-// keyframeImageFrom は、画像キットのレスポンスをライブラリ自身の型へ写します。
-// image-kit の型を公開 API へ晒さないための境界で、このパッケージだけが両方を知ります。
-func keyframeImageFrom(resp *imagePorts.ImageResponse) *video.KeyframeImage {
+// keyframeImageFrom は、imagegen のレスポンスをライブラリ自身の型へ写します。
+// imagegen の型を公開 API へ晒さないための境界で、このパッケージだけが両方を知ります。
+func keyframeImageFrom(resp *imagegen.Response) *video.KeyframeImage {
 	if resp == nil {
 		return nil
 	}
 	return &video.KeyframeImage{
 		Data:     resp.Data,
-		MimeType: resp.MimeType,
+		MimeType: resp.MIMEType,
 		UsedSeed: resp.UsedSeed,
 		Model:    resp.Model,
 		Prompt:   resp.Prompt,
@@ -169,10 +170,7 @@ func (g *Generator) EditCut(ctx context.Context, cut video.Cut, editPrompt strin
 	}
 
 	userPrompt, systemPrompt := g.pb.BuildEdit(cut, char, editPrompt)
-	req := imagePorts.ImageRequest{
-		GenerationOptions: g.buildGenerationOptions(userPrompt, systemPrompt, char.Seed),
-		Images:            []imagePorts.ImageURI{{ReferenceURL: cut.KeyframeReference}},
-	}
+	req := g.buildRequest(userPrompt, systemPrompt, char.Seed, cut.KeyframeReference)
 
 	logger := slog.With(
 		"cut_index", cut.CutIndex,
@@ -197,37 +195,43 @@ func (g *Generator) characterForCut(cut video.Cut) *characterkit.Character {
 	return g.characters.GetCharacterWithDefault(cut.CharacterID)
 }
 
-func (g *Generator) buildImageRequest(cut video.Cut, char *characterkit.Character) imagePorts.ImageRequest {
+func (g *Generator) buildImageRequest(cut video.Cut, char *characterkit.Character) imagegen.Request {
 	userPrompt, systemPrompt := g.pb.BuildCut(cut, char)
 	// キャラクターの参照画像が生成対象と異なるアスペクト比（例: 横長3ポーズシートを縦長
 	// キーフレームの参照に使う）だと、色・小物配置・髪型などの細部が生成のたびにブレやすいため、
 	// g.aspectRatio に一致する参照画像（ReferenceURLs）があればそちらを優先します。
 	referenceURL := char.ReferenceURLFor(g.aspectRatio)
 
-	return imagePorts.ImageRequest{
-		GenerationOptions: g.buildGenerationOptions(userPrompt, systemPrompt, char.Seed),
-		Images:            []imagePorts.ImageURI{{ReferenceURL: referenceURL}},
-	}
+	return g.buildRequest(userPrompt, systemPrompt, char.Seed, referenceURL)
 }
 
-// buildGenerationOptions は buildImageRequest と EditCut が共有する GenerationOptions を
-// 組み立てます。新規生成と既存画像の編集で違うのは Images だけです。
-func (g *Generator) buildGenerationOptions(prompt, systemPrompt string, seed *int64) imagePorts.GenerationOptions {
-	return imagePorts.GenerationOptions{
+// buildRequest は buildImageRequest と EditCut が共有するリクエストを組み立てます。
+// 新規生成と既存画像の編集で違うのは参照画像だけです。
+//
+// referenceURL が空でも落としません。imagegen が参照先を持たない要素を送信対象から
+// 外すため、「このキャラクターには参照画像が無い」をそのまま表現できます。
+//
+// 生成パラメータを GenerateOptions のリテラルで書いているのは、埋め込みで昇格した
+// フィールドが複合リテラルでは指定できないためです。
+func (g *Generator) buildRequest(prompt, systemPrompt string, seed *int64, referenceURL string) imagegen.Request {
+	return imagegen.Request{
 		Model:          g.model,
 		Prompt:         prompt,
 		NegativePrompt: g.negativePrompt,
-		SystemPrompt:   systemPrompt,
-		AspectRatio:    g.aspectRatio,
-		ImageSize:      g.imageSize,
-		Seed:           seed,
+		Images:         []string{referenceURL},
+		GenerateOptions: gemini.GenerateOptions{
+			SystemPrompt: systemPrompt,
+			AspectRatio:  g.aspectRatio,
+			ImageSize:    g.imageSize,
+			Seed:         seed,
+		},
 	}
 }
 
-func newKeyframeLogger(task keyframeTask, char *characterkit.Character, images []imagePorts.ImageURI) *slog.Logger {
+func newKeyframeLogger(task keyframeTask, char *characterkit.Character, images []string) *slog.Logger {
 	referenceURL := ""
 	if len(images) > 0 {
-		referenceURL = images[0].ReferenceURL
+		referenceURL = images[0]
 	}
 	return slog.With(
 		"keyframe_index", task.index+1,

@@ -49,7 +49,7 @@ sequenceDiagram
   participant App as 呼び出し側
   participant KFRunner as runner.CutKeyframeRunner
   participant KeyframeGen as keyframe.Generator
-  participant ImageKit as gemini-image-kit
+  participant ImageKit as genai-kit/imagegen
   participant Writer as remoteio.Writer
 
   App->>KFRunner: GenerateAndSave(ctx, recipe, outputPath)
@@ -57,7 +57,7 @@ sequenceDiagram
 
   par 最大 Config.MaxConcurrency 並列（カットごとに1 goroutine）
     KFRunner->>KeyframeGen: GenerateCut(ctx, cut, index, total)
-    KeyframeGen->>ImageKit: Generate(prompt + ImageURI{gs://...})
+    KeyframeGen->>ImageKit: Generate(prompt + Images{gs://...})
     Note over KeyframeGen,ImageKit: gs:// はそのまま Vertex AI が解決する（取得もアップロードも無い）
     ImageKit-->>KeyframeGen: KeyframeImage（Data + UsedSeed）
     KeyframeGen-->>KFRunner: KeyframeImage
