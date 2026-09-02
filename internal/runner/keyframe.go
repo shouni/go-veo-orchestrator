@@ -24,7 +24,7 @@ const DefaultKeyframeCacheControl = "public, max-age=1800"
 
 // CutKeyframeRunner は、動画レシピを元にカットキーフレーム生成を管理します。
 //
-// **注入する remoteio.Writer は同時アクセス安全である必要があります。**
+// 注入する remoteio.Writer は同時アクセス安全である必要があります。
 // GenerateAndSave はカットごとの goroutine の中で保存まで済ませるため、
 // WithMaxConcurrency が 2 以上なら Write は並行に呼ばれます。
 type CutKeyframeRunner struct {
@@ -83,14 +83,14 @@ func NewCutKeyframeRunner(
 }
 
 // GenerateAndSave は、キーフレーム画像をまだ持たないカットについて
-// **1 枚生成するたびに即座に保存し**、KeyframeReference と KeyframeSeed を更新します。
+// 1 枚生成するたびに即座に保存し、KeyframeReference と KeyframeSeed を更新します。
 //
 // 生成と保存を 1 枚ずつ組にしているのは運用上の理由です。まとめて生成してから保存すると、
 // その間にプロセスが落ちた場合（Cloud Run のタイムアウト、デプロイ、OOM）に生成済み＝
 // 課金済みの画像がメモリごと消え、再実行で全部作り直しになります。1 枚ずつ保存していれば
 // 失われるのは最大 1 枚で、レシピの KeyframeReference を見て続きから再開できます。
 //
-// **すでに KeyframeReference を持つカットは焼き直しません。** レシピを「あるべき状態」
+// すでに KeyframeReference を持つカットは焼き直しません。レシピを「あるべき状態」
 // として扱い、足りないキーフレームだけを補います。これは VideoTimelineRunner.Run が
 // Cut.IsGenerated() のカットを飛ばすのと同じ考え方です。全カットが揃っていれば画像生成は
 // 一度も呼ばれず、メタデータの保存だけを行います。
@@ -217,7 +217,6 @@ func resolveKeyframeBasePath(outputPath string) (targetDir string, basePath stri
 }
 
 // saveKeyframeImage は、basePath から index 番目のキーフレームパスを生成し、画像を保存します。
-// GenerateAndSave / EditAndSave の両方から使われる共通の保存ロジックです。
 func (r *CutKeyframeRunner) saveKeyframeImage(ctx context.Context, basePath string, index int, image *video.KeyframeImage) (string, error) {
 	keyframePath, err := generateIndexedPath(basePath, index)
 	if err != nil {

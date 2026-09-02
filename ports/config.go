@@ -19,7 +19,7 @@ const (
 // Config は Go Veo Orchestrator の各 Runner を動作させるための基本設定です。
 //
 // MaxConcurrency / RateInterval / RequestTimeout は AI 呼び出しの実行制御です。
-// 発射間隔と上限時間は台本のテキスト生成とキーフレームの画像生成の**両方**に
+// 発射間隔と上限時間は台本のテキスト生成とキーフレームの画像生成の両方に
 // 掛かります（クォータはプロジェクト単位で、操作の種類ごとではないため）。
 // 並列度が効くのはキーフレーム生成だけで、動画生成は Video-to-Video の連鎖上
 // 必ず逐次です。
@@ -47,11 +47,11 @@ type Config struct {
 	// 設定と二重の出所になり、片方だけ変えたときに黙って食い違います。
 
 	// KeyframeAspectRatio はキーフレーム画像生成のアスペクト比です（例: "16:9", "9:16"）。
-	// **必須です**（Validate 参照）。空のまま送ると、モデルが勝手に選んだ比率で
+	// 必須です（Validate 参照）。空のまま送ると、モデルが勝手に選んだ比率で
 	// 焼かれてしまい、誰も気付かないまま縦横が変わります。
 	KeyframeAspectRatio string
 	// KeyframeImageSize はキーフレーム画像の出力解像度です（例: "1K", "2K"）。
-	// **必須です**（Validate 参照）。
+	// 必須です（Validate 参照）。
 	KeyframeImageSize string
 	// KeyframeNegativePrompt はキーフレーム生成で排除したい要素です
 	// （例: "speech bubble, text, watermark"）。

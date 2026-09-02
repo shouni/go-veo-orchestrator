@@ -8,49 +8,34 @@ import (
 	"github.com/shouni/go-veo-orchestrator/video"
 )
 
-// このファイルは「カット尺のプランナー」— レシピ上の任意尺のカット列を、Veo が
-// 実際に受け付ける離散尺（duration.go の各テーブル）のカット列へ正規化する
-// 純関数群 — を提供します。
+// このファイルはカット尺のプランナーです。レシピ上の任意尺のカット列を、Veo が実際に
+// 受け付ける離散尺（duration.go）のカット列へ正規化する純関数群を提供します。
 //
-// 尺の *ルール*（{4,6,8} ベース・7秒延長・24秒継続上限）はこのパッケージが持ち、
-// internal/runner の VideoTimelineRunner は送信前に同じテーブルで検証します
-// （ErrUnsupportedCutDuration）。
-// プランナーだけを消費者に書かせると、ルールと計画が別リポジトリに割れて
-// ドリフトするため（実際にしていた）、両方をここに置きます。
+// 尺のルールと、それを使う計画の両方をこのパッケージに置いています。プランナーだけを
+// 消費者に書かせると、ルールと計画が別リポジトリに割れてドリフトするためです
+// （実際にそうなっていました）。
 
 // ExpandCutsToSupportedDurations は各カットの尺を Veo のサポート値へ正規化します。
 // 8 秒を超えるカットは同じキーフレーム・プロンプトを引き継いだサブカット列へ分割し、
 // 歌詞（Dialogue）は行単位でサブカットへ均等配分します。分割後は CutIndex を 1 から振り直します。
 //
-// usePreviousVideo が true の場合、原則として先頭カット以降（PreviousVideoURI を伴い
-// video_extension で生成される想定のカット）は image_to_video 用の {4,6,8} ではなく 7 秒固定へ
-// 揃えます。ただし video_extension は「前の動画」として渡せる累積尺に上限
-// (ContinuationMaxDurationSec) があり、これを超えると Veo 側が
-// "Video duration N seconds exceeds the maximum duration 30 seconds" (code=3) で拒否するため、
-// 累積尺が上限に達する手前でチェーンをリセットします。リセットされたカットは
-// PreviousVideoURI を使わない新規ベース（image_to_video、{4,6,8}秒）として扱われ、
-// そこから新しい継続チェーンが始まります（実行側の lastVideoID リセット処理と対）。
-// 生成済みカットは実動画の尺と metadata がずれないよう変更しませんが、累積尺の計算には
-// 含めます（再開時にチェーン状態を正しく引き継ぐため）。
+// usePreviousVideo が true の場合、先頭カット以降（PreviousVideoURI を伴い video_extension で
+// 生成される想定のカット）は 7 秒固定へ揃えます。ただし累積尺が ContinuationMaxDurationSec に
+// 達する手前でチェーンをリセットし、リセットされたカットは PreviousVideoURI を使わない新規
+// ベース（image_to_video、{4,6,8}秒）として扱います（実行側の lastVideoID リセットと対）。
+// 生成済みカットは実動画の尺と metadata がずれないよう変更しませんが、再開時にチェーン状態を
+// 正しく引き継ぐため累積尺の計算には含めます。
 //
-// カットの所属セクションは cut.SectionIndex（VideoRecipe.Normalize が StartSec から自動補完）
-// をそのまま使います。曲のセクションが変わる境目では（技術的な累積尺上限に達していなくても）
-// チェーンをリセットします。技術的リセットとの違いは IsSectionStart フラグで示され、実行側は
-// このフラグが立っているカットについて直前チェーンの最終フレーム引き継ぎをスキップします
-// （セクションが変わる以上、直前セクションの絵をそのまま引き継ぐべきではないため、そのカット
-// 自身に割り当てられたキーフレーム参照をそのまま使う）。
+// 曲のセクションが変わる境目では、累積尺に余裕があってもチェーンをリセットします。所属
+// セクションは cut.SectionIndex（VideoRecipe.Normalize が StartSec から補完）で判定します。
+// 技術的リセットとの違いは IsSectionStart で示し、実行側はこのフラグが立つカットで直前
+// チェーンの最終フレーム引き継ぎをスキップします（意図した場面転換の直前で、次セクションの
+// 構図へ寄せないため）。
 //
-// characters と referenceImagesSupported は、各カットが reference_to_video（referenceImages、
-// 8秒固定）と image_to_video（{4,6,8}秒）のどちらで生成されるかを判定するために使います。
-// 判定は実際のリクエスト組み立てと同じ規則（CutReferenceImages）を ClassifyRequest に
-// 掛けたものです（詳細は CutUsesReferenceImages）。
-//
-// usePreviousVideo が true のとき、シーン分割側が事前計画したチェーンブロック
-// （IsChainStart 付きの未生成カット、尺は ChainDurations の候補値）は
-// [ベース, 7秒, ...] へ分割し、累積尺の判定でも常に新規チェーンの起点として扱います。
-// ブロック尺は計画時点で累積上限内に収まる候補値なので、ブロック途中で技術的リセットが
-// 発生することはありません。IsChainStart を持たない未生成カット（旧レシピなど）は
-// 従来どおり貪欲な分割と累積尺ベースのチェーン形成で処理します。
+// characters / referenceImagesSupported はカットごとの許容尺の判定に使います
+// （AllowedCutDurations 参照）。事前計画されたチェーンブロック（IsChainStart 付きの未生成
+// カット）の扱いは splitChainCutIntoSupportedDurations を参照してください。IsChainStart を
+// 持たない未生成カット（旧レシピなど）は、貪欲な分割と累積尺ベースのチェーン形成で処理します。
 func ExpandCutsToSupportedDurations(cuts []video.Cut, usePreviousVideo bool, characters *characterkit.Characters, referenceImagesSupported bool) []video.Cut {
 	expanded := make([]video.Cut, 0, len(cuts))
 	for _, cut := range cuts {
@@ -92,8 +77,8 @@ func ExpandCutsToSupportedDurations(cuts []video.Cut, usePreviousVideo bool, cha
 		//
 		//   isRealSectionBoundary: cut.SectionIndex（1始まり、0は未割り当て）が
 		//   前カットと異なる、実際の曲のセクション境界です。分割前カットの
-		//   SectionIndex はサブカットへコピーされるため（splitCutBySupportedDurations
-		//   の sub := cut）、分割自体はセクション境界とは見なされません。
+		//   SectionIndex はサブカットへコピーされるため（buildSubCutsFromDurations の
+		//   sub := cut）、分割自体はセクション境界とは見なされません。
 		//
 		// 両者とも「直前チェーンの最終フレームを引き継がない」という同じ下流の
 		// 挙動を必要とするため、最終的には同じ IsSectionStart へ合成して書き戻します。
@@ -177,12 +162,10 @@ func SplitCutBySupportedDurations(cut video.Cut, allowedDurations []float64) []v
 	return buildSubCutsFromDurations(cut, durations)
 }
 
-// buildSubCutsFromDurations は1つの親カットを durations の各要素に対応するサブカット列へ
-// 展開します。各サブカットは親カットのフィールドを引き継ぎ、先頭以外は
-// IsChainStart / IsSectionStart をクリアし、StartSec / DurationSec / EndSec を親の StartSec
-// から順に連続配置し、親カットの歌詞（Dialogue）を行単位でサブカットへ均等配分します。
-// サブ尺リストの計算方法（貪欲な8秒上限 vs [ベース, 7秒, ...]）だけが呼び出し元ごとに
-// 異なり、そこから先の組み立ては共通です。
+// buildSubCutsFromDurations は1つの親カットを durations に対応するサブカット列へ展開します。
+// サブ尺リストの計算方法（貪欲な8秒上限 vs [ベース, 7秒, ...]）だけが呼び出し元ごとに異なり、
+// そこから先の組み立て — 親フィールドの引き継ぎ、先頭以外のチェーンフラグのクリア、時間の
+// 連続配置、歌詞の均等配分 — は共通です。
 func buildSubCutsFromDurations(cut video.Cut, durations []float64) []video.Cut {
 	subCuts := make([]video.Cut, 0, len(durations))
 	offset := 0.0
@@ -207,10 +190,8 @@ func buildSubCutsFromDurations(cut video.Cut, durations []float64) []video.Cut {
 
 // splitChainCutIntoSupportedDurations は、シーン分割側が事前計画したチェーンブロック
 // （IsChainStart 付き、尺は ChainDurations の候補値）を実際の生成カット列
-// [ベース, 7秒, 7秒, ...] へ分割します。先頭サブカットがチェーンの起点（ブロックの
-// IsChainStart / IsSectionStart を引き継ぐ）で、尺は allowedBases（image_to_video なら
-// {4,6,8}、reference_to_video なら {8}）から選びます。以降のサブカットは video_extension
-// の7秒固定です。歌詞（Dialogue）は行単位でサブカットへ均等配分します。
+// [ベース, 7秒, 7秒, ...] へ分割します。先頭サブカットがチェーンの起点で、その尺は
+// allowedBases から選びます。以降のサブカットは video_extension の7秒固定です。
 //
 // reference_to_video のカット（ベース8秒固定）に {4,6} ベース前提のブロック尺（11秒など）が
 // 計画されていた場合、ベースは allowedBases へ丸められるため実現尺が計画と数秒ずれますが、
@@ -285,9 +266,8 @@ func SplitDialogueLines(dialogue string) []string {
 	return lines
 }
 
-// DistributeLines splits lines proportionally across `total` buckets and returns the lines
-// for bucket `pos` joined by newlines. Buckets at the front receive the earlier lines,
-// matching how lyrics flow across consecutive sub-cuts.
+// DistributeLines は lines を total 個へ按分し、pos 番目の分を改行で繋いで返します。
+// 前のバケットほど前半の行を受け取るため、連続するサブカットへ歌詞がそのままの順で流れます。
 func DistributeLines(lines []string, pos, total int) string {
 	if len(lines) == 0 {
 		return ""

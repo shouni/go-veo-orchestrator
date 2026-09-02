@@ -13,15 +13,14 @@ import (
 type Recipe struct {
 	ProjectTitle string `json:"project_title,omitempty"`
 	Description  string `json:"description,omitempty"`
-	// LocationAnchor is the single persistent core setting (location plus any recurring prop —
-	// e.g. "a misty coastal cliffside road overlooking the ocean at dawn; her bicycle beside
-	// her") for the entire video. It is decided once at script-generation time and propagated
-	// onto every Cut by Normalize. Keyframe generation runs one cut at a time
-	// (internal/keyframe.Generator.GenerateCut), and prompt builders such as
-	// ports.KeyframePrompt.BuildCut only ever see a single Cut, not the parent Recipe — so
-	// without this field, a cut whose own VisualAnchor omits the location (e.g. a tight emotional
-	// close-up) has nothing grounding its background, and the image model is free to hallucinate
-	// an unrelated one.
+	// LocationAnchor は、動画全体で一貫する場所設定です（場所と、繰り返し映る小道具。
+	// 例: "a misty coastal cliffside road overlooking the ocean at dawn; her bicycle beside her"）。
+	// 台本生成時に一度だけ決まり、Normalize が全 Cut へ伝播します。
+	//
+	// キーフレーム生成はカット単位で走り、ports.KeyframePrompt.BuildCut などのプロンプト
+	// ビルダーは親の Recipe ではなく単一の Cut しか見ません。このフィールドが無いと、
+	// VisualAnchor に場所が書かれていないカット（寄りの表情カットなど）の背景を縛るものが
+	// 何も無く、画像モデルが無関係な場所を作文します。
 	LocationAnchor string       `json:"location_anchor,omitempty"`
 	MusicRecipe    music.Recipe `json:"music_recipe"`
 	Cuts           []Cut        `json:"cuts"`
@@ -119,15 +118,12 @@ type Cut struct {
 	// 所属を判定できます。
 	SectionIndex int    `json:"section_index,omitempty"`
 	VisualAnchor string `json:"visual_anchor"`
-	// LocationAnchor mirrors Recipe.LocationAnchor for this cut. It is populated by
-	// Recipe.Normalize, not meant to be set independently per cut, and exists only so that
-	// prompt builders operating on a single Cut (ports.KeyframePrompt.BuildCut) can still ground
-	// their keyframe prompt in the video's persistent setting.
+	// LocationAnchor は Recipe.LocationAnchor を写した値です。Recipe.Normalize が埋めるもので、
+	// カットごとに個別設定するためのものではありません（理由は Recipe.LocationAnchor 参照）。
 	LocationAnchor string `json:"location_anchor,omitempty"`
-	// AspectRatio mirrors Recipe.AspectRatio for this cut, populated by Recipe.Normalize for
-	// the same reason as LocationAnchor: CutReferenceImages only ever sees one Cut, never the
-	// parent Recipe, and it needs the ratio to pick the character's ratio-matched reference art
-	// (Character.ReferenceURLFor). Not meant to be set independently per cut.
+	// AspectRatio は Recipe.AspectRatio を写した値です。LocationAnchor と同じ理由で
+	// Recipe.Normalize が埋めます: CutReferenceImages も単一の Cut しか見ないため、
+	// 比率の合ったキャラクター参照画像（Character.ReferenceURLFor）を選ぶのにこの値が要ります。
 	AspectRatio string `json:"aspect_ratio,omitempty"`
 	CharacterID string `json:"character_id"`
 	Dialogue    string `json:"dialogue,omitempty"`

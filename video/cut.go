@@ -64,11 +64,10 @@ func (c *Cut) ResetGeneration(keepKeyframe bool) {
 // 比率を無視した ReferenceURL 固定だと、同じリクエストの中で「比率の合ったキーフレーム」と
 // 「比率の違う立ち絵」が並び、Veo が参照から拾う色や小物の位置がブレます。
 //
-// この関数が referenceImages の唯一の組み立て規則です。動画生成リクエストの構築
-// （DefaultVideoRequestBuilder）と、そのリクエストの生成モード判定
-// （veo.ClassifyRequest 経由の尺の正規化・プロンプト選択）が同じリストを見るため、
-// 「尺は reference_to_video 前提で8秒に丸めたのに、実際のリクエストは image_to_video
-// だった」というズレが構造的に起こりません。
+// この関数が referenceImages の唯一の組み立て規則です。リクエストを組み立てる側
+// （DefaultVideoRequestBuilder）と分類する側（veo.ClassifyRequest 経由の尺の正規化・
+// プロンプト選択）が同じリストを見るため、「尺は reference_to_video 前提で8秒に丸めたのに
+// 実際のリクエストは image_to_video だった」というズレが構造的に起こりません。
 func CutReferenceImages(cut Cut, characters *characterkit.Characters) []string {
 	var refs []string
 	if characters != nil {
