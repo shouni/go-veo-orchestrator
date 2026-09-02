@@ -7,20 +7,12 @@ import (
 	"github.com/shouni/go-veo-orchestrator/video"
 )
 
-// GenerationMode は、1つの動画生成リクエストが Veo のどの生成機能で解釈されるかを
-// 表します。
+// GenerationMode は、1つの動画生成リクエストが Veo のどの生成機能で解釈されるかを表します。
 //
-// このモードは1つのリクエストにつき一度だけ決まり、以下の判断がすべてこの1つの値を
-// 共有します:
-//
-//   - adapter（呼び出し側の ports.VideoRunner 実装）が組み立てる Veo リクエスト本文
-//   - そのリクエストに許される尺（DurationsForMode。reference_to_video は8秒固定、
-//     video_extension は7秒固定、それ以外は {4,6,8}）
-//   - 生成モードごとに前提の異なるプロンプト（開始フレームあり／参照画像あり／
-//     前クリップの継続）の選択
-//
-// 判定を1箇所（ClassifyRequest）に閉じているのは、これらがズレると「参照画像に
-// 合わせろ」と指示しながら参照画像を送らない、といった無意味なリクエストになるためです。
+// モードは1リクエストにつき ClassifyRequest で一度だけ決まり、adapter が組み立てる Veo
+// リクエスト本文・そのリクエストに許される尺（DurationsForMode）・生成モードごとに前提の
+// 異なるプロンプトの選択が、すべてこの1つの値を共有します。判定が割れると「参照画像に
+// 合わせろ」と指示しながら参照画像を送らない、といった無意味なリクエストになります。
 type GenerationMode string
 
 const (
@@ -64,8 +56,7 @@ func RunnerCapabilities(runner ports.VideoRunner) Capabilities {
 }
 
 // ClassifyRequest は、このリクエストが Veo のどの生成機能で解釈されるかを判定します。
-// adapter のリクエスト本文構築と、呼び出し側のプロンプト・尺選択が同じ判定を共有する
-// ための唯一の分岐点で、優先順位は次のとおりです:
+// モードを決める唯一の分岐点で、優先順位は次のとおりです:
 //
 //  1. video_extension — usePreviousVideo が有効で、PreviousVideoURI が gs:// 参照のとき。
 //     Veo は video と referenceImages / image を併用できないため、以降の画像参照は

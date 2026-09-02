@@ -31,7 +31,7 @@ type ManagerArgs struct {
 	Reader ports.ContentReader
 	// Writer は生成物とメタデータの保存先です。
 	//
-	// **同時アクセス安全である必要があります。** キーフレームはカットごとの goroutine が
+	// 同時アクセス安全である必要があります。キーフレームはカットごとの goroutine が
 	// 生成直後に保存するため、Config.MaxConcurrency が 2 以上なら Write は並行に呼ばれます。
 	Writer remoteio.Writer
 	// AIClient は台本のテキスト生成とキーフレームの画像生成の両方に使います。
@@ -64,8 +64,7 @@ func New(args ManagerArgs) (*ports.Workflows, error) {
 		return nil, err
 	}
 
-	// 発射間隔と 1 回あたりの上限時間はワークフロー全体で 1 つのガードに集約する
-	// （クォータはプロジェクト単位で、操作の種類ごとではないため）。
+	// テキスト生成と画像生成で 1 つのガードを共有する（理由は singleflight.go のヘッダ）。
 	guard := callguard.New(
 		callguard.WithRateInterval(cfg.RateInterval),
 		callguard.WithExecTimeout(cfg.RequestTimeout),
@@ -122,11 +121,9 @@ func validateArgs(args *ManagerArgs) error {
 // buildImageGenerator は画像生成の実行体を組み立てます。
 //
 // imagegen は参照画像を gs:// URI としてそのまま Vertex AI へ渡すだけなので、取得も
-// アップロードもキャッシュも起きません。渡すのは生成クライアント 1 つだけです。
+// アップロードもキャッシュも起きません。渡すのは生成クライアント 1 つだけで、オプションを
+// 渡していないのも意図どおりです（発射間隔と上限時間は callGuard 側で掛けます）。
 // http(s) の参照が必要になったら、それは gemini-image-kit へ戻る合図です。
-//
-// オプションを渡していないのも意図どおりで、発射間隔と上限時間は callGuard 側で
-// 掛けます（理由は singleflight.go の callGuard を参照）。
 func buildImageGenerator(client gemini.Generator, guard *callguard.Guard) (imagegen.Generator, error) {
 	gen, err := imagegen.New(client)
 	if err != nil {

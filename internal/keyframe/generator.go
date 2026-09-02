@@ -1,8 +1,8 @@
 // Package keyframe は、カット情報とキャラクター定義から動画のキーフレーム画像を
 // 生成するロジックを提供します。参照画像は gs:// URI のまま genai-kit の imagegen へ
-// 渡すため、このパッケージの仕事はカット 1 件分の参照元 URL とプロンプトの
-// 組み立て、そして 1 回の送信だけです。カット間の並列実行は行いません
-// （runner.CutKeyframeRunner が持ちます — Generator のコメント参照）。
+// 渡すため、このパッケージの仕事はカット 1 件分の参照元 URL とプロンプトの組み立て、
+// そして 1 回の送信だけです。並列度は runner.CutKeyframeRunner が、発射間隔と 1 回
+// あたりの上限時間は workflow の callGuard が持ちます。
 package keyframe
 
 import (
@@ -19,11 +19,7 @@ import (
 	"github.com/shouni/go-veo-orchestrator/video"
 )
 
-// Generator は、キャラクターの一貫性を保ちながらカットのキーフレームを生成します。
-//
-// 生成の単位は 1 カットで、このパッケージに残るのは「1 枚をどう組み立ててどう送るか」
-// だけです。並列度は runner.CutKeyframeRunner が、発射間隔と 1 回あたりの上限時間は
-// workflow の callGuard が持ちます。
+// Generator は、キャラクターの一貫性を保ちながらカットのキーフレームを 1 枚ずつ生成します。
 type Generator struct {
 	characters     *characterkit.Characters
 	generator      imagegen.Generator
@@ -36,9 +32,7 @@ type Generator struct {
 
 type keyframeTask struct {
 	index int
-	// total は今回まとめて生成するキーフレームの総数です。1枚ごとのログに「何枚中の
-	// 何枚目か」を出すために持ちます。1枚に分単位で掛かることもあるため、総数が
-	// 無いと進捗が読めません。
+	// total は今回まとめて生成するキーフレームの総数です（進捗ログ用）。
 	total int
 	cut   video.Cut
 }
@@ -67,7 +61,6 @@ func NewGenerator(
 
 // GenerateCut は 1 カット分のキーフレームを生成します。並列実行はここでは行いません
 // （呼び出し側が 1 枚ごとに保存できるようにするため — CutKeyframeRunner.GenerateAndSave 参照）。
-//
 // index / total は進捗ログ用（1 始まり）で、生成そのものには影響しません。
 func (g *Generator) GenerateCut(ctx context.Context, cut video.Cut, index, total int) (*video.KeyframeImage, error) {
 	return g.generateCutKeyframe(ctx, keyframeTask{index: index - 1, total: total, cut: cut})
@@ -103,12 +96,9 @@ func (g *Generator) generateCutKeyframe(ctx context.Context, task keyframeTask) 
 // 取り違えてもコンパイルが通ってしまうため、構造体で受け取ります
 // （go-comic-kit の *RunnerArgs と同じ理由）。
 type imageRun struct {
-	// req は imagegen へ送るリクエストです。
-	req imagegen.Request
-	// logger は開始・完了ログの出力先です（カット・キャラクターの属性を付けたもの）。
+	req    imagegen.Request
 	logger *slog.Logger
-	// startLog / completeLog は開始・完了時のメッセージ本文です。完了側には所要時間が
-	// 後置されます。
+	// startLog / completeLog は開始・完了時のメッセージ本文です（完了側には所要時間が後置）。
 	startLog, completeLog string
 	// actionJP はエラー文言に埋める日本語の動作名です（「キーフレーム生成」など）。
 	actionJP string
@@ -129,8 +119,7 @@ func (g *Generator) runImageGeneration(ctx context.Context, run imageRun) (*vide
 			run.cutIndex, run.characterID, run.actionJP, err)
 	}
 
-	// 所要時間もメッセージへ入れる（属性だけだと折りたたみ表示で見えないため）。
-	// 生成が遅いときに、1枚ずつの実測が並ぶだけで当たりが付けられる。
+	// 所要時間もメッセージへ入れる。生成が遅いとき、1枚ずつの実測が並ぶだけで当たりが付く。
 	elapsed := time.Since(startTime).Round(time.Second)
 	run.logger.Info(fmt.Sprintf("%s %s", run.completeLog, elapsed), "duration", elapsed)
 
@@ -211,8 +200,9 @@ func (g *Generator) buildImageRequest(cut video.Cut, char *characterkit.Characte
 // referenceURL が空でも落としません。imagegen が参照先を持たない要素を送信対象から
 // 外すため、「このキャラクターには参照画像が無い」をそのまま表現できます。
 //
-// 生成パラメータを GenerateOptions のリテラルで書いているのは、埋め込みで昇格した
-// フィールドが複合リテラルでは指定できないためです。
+// 生成パラメータを型名付きの GenerateOptions リテラルで書いているのは、埋め込みで昇格した
+// フィールドを複合リテラルのキーにできないためです（型名を省ける、という IDE の指摘は誤りで、
+// 省くと missing type in composite literal になります）。
 func (g *Generator) buildRequest(prompt, systemPrompt string, seed *int64, referenceURL string) imagegen.Request {
 	return imagegen.Request{
 		Model:          g.model,

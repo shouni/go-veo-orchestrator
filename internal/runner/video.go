@@ -14,7 +14,7 @@ import (
 //
 // resumable な実行のために用意されています: 呼び出し側はここでカットごとの
 // 途中経過（メタデータの保存、実行時間予算の確認など）を行い、エラーを返すと
-// Run はそこで停止して**それまでの部分結果**を返します。時間制限のあるジョブ基盤で
+// Run はそこで停止してそれまでの部分結果を返します。時間制限のあるジョブ基盤で
 // 「期限が近いので一旦保存して次の実行で再開する」という運用が、Run を自前の
 // ループで置き換えずにできます。
 type CutObserver func(ctx context.Context, cut *video.Cut, res *video.Response) error
@@ -104,10 +104,9 @@ func (r *VideoTimelineRunner) validateRun(recipe *video.Recipe) error {
 
 // warnMissingKeyframes は、キーフレーム参照を持たないカットを警告します。
 //
-// このランナーはキーフレームを生成しません。生成と保存は CutKeyframeRunner の
-// 責務で、呼び出し側が先に実行します（保存されないまま生成された画像を持ち回ると、
-// 途中で落ちたときに課金済みの絵が失われるため、経路を1本に絞っています）。
-// 参照が無いカットはプロンプトのみの生成になるので、黙って進まず記録だけ残します。
+// このランナーはキーフレームを生成しません（生成と保存は CutKeyframeRunner の責務で、
+// 呼び出し側が先に実行します）。参照が無いカットはプロンプトのみの生成になるので、
+// 黙って進まず記録だけ残します。
 func warnMissingKeyframes(ctx context.Context, recipe *video.Recipe) {
 	for i := range recipe.Cuts {
 		cut := &recipe.Cuts[i]
@@ -168,11 +167,9 @@ func (r *VideoTimelineRunner) runCut(
 }
 
 // validateCutDuration は、これから Veo へ送るリクエストの尺が、そのリクエストが解決する
-// 生成モードで受け付けられる値かを検証します。
+// 生成モードで受け付けられる値かを検証します（許容尺は veo.DurationsForMode）。
 //
-// Veo は任意長の動画を生成できず、モードごとに離散的な尺しか受け付けません
-// （image_to_video なら {4,6,8}、reference_to_video は8秒固定、video_extension は7秒固定）。
-// 検証せずに送ると Veo 側で拒否されますが、それが分かるのは長時間実行オペレーションを
+// 検証せずに送っても Veo 側で拒否されますが、それが分かるのは長時間実行オペレーションを
 // 投げて待った後です。ここで手前に落とすことで、レシピ側の尺の計画ミスをカット生成の
 // 待ち時間と課金の前に、どのカットが何秒でどのモードだったかまで示して報告できます。
 func validateCutDuration(req video.GenerationRequest, caps veo.Capabilities) error {

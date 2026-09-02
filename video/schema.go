@@ -52,10 +52,9 @@ func cutSchema(characterIDs []string) map[string]any {
 			"dialogue":     map[string]any{"type": "string"},
 			"audio_cue":    map[string]any{"type": "string"},
 			"duration_sec": map[string]any{"type": "number"},
-			// AudioReference is normally left empty and backfilled later from the job's shared
-			// audio track (see the caller's cut-audio backfill step); it is exposed here only so
-			// the model can copy a cut-specific GCS audio URI when the source recipe explicitly
-			// calls for a different segment per cut.
+			// audio_reference は通常は空のままで、後からジョブ共通の音源で埋められます
+			// （呼び出し側の補完ステップ）。ここに露出しているのは、ソースレシピがカットごとに
+			// 別セグメントを指定している場合に、モデルがその GCS URI を写せるようにするためです。
 			"audio_reference": map[string]any{"type": "string"},
 		},
 		"required": []string{"visual_anchor", "character_id"},

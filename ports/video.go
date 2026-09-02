@@ -35,14 +35,14 @@ type VideoTimelineRunner interface {
 	Run(ctx context.Context, r *video.Recipe) ([]*video.Response, error)
 }
 
-// noopVideoTimelineRunner is a VideoTimelineRunner that always fails with
-// ErrVideoRunnerNotConfigured. It stands in for a nil Workflows.Video when no VideoRunner
-// (Veo adapter) was supplied at construction time, so callers get a clear, checkable error
-// instead of a nil-pointer panic on first use.
+// noopVideoTimelineRunner は、常に ErrVideoRunnerNotConfigured で失敗する
+// VideoTimelineRunner です。VideoRunner（Veo アダプター）が注入されなかった場合に
+// Workflows.Video を nil にせずこれを入れることで、呼び出し側は初回利用時の nil パニックの
+// 代わりに errors.Is で判定できるエラーを受け取ります。
 type noopVideoTimelineRunner struct{}
 
-// NewNoopVideoTimelineRunner returns a VideoTimelineRunner that always fails with
-// ErrVideoRunnerNotConfigured.
+// NewNoopVideoTimelineRunner は、常に ErrVideoRunnerNotConfigured を返す
+// VideoTimelineRunner を返します。
 func NewNoopVideoTimelineRunner() VideoTimelineRunner {
 	return noopVideoTimelineRunner{}
 }

@@ -272,7 +272,7 @@ func hasMusicRecipeContent(recipe *video.MusicRecipe) bool {
 // extractJSONCandidates は文字列から JSON として解釈しうる候補を優先度順に返します。
 // Markdown コードブロックを個別の候補として列挙し、最後にフェンス外の JSON を加えます。
 //
-// **候補が複数になるのは、説明用の JSON ブロックが混ざる応答があるためです。**
+// 候補が複数になるのは、説明用の JSON ブロックが混ざる応答があるためです。
 // 呼び出し側は「レシピの中身を持つ最初の候補」を採るので、先頭の説明ブロックで
 // 打ち切られません。
 //
