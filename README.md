@@ -18,7 +18,7 @@
 
 ---
 
-## ✨ コア・コンセプト (Core Concepts)
+## ✨ 提供機能 (Features)
 
 * **🧬 Consistency Control**
   **キャラクター固有 Seed**、**キーフレーム画像**、**動きのプロンプト**、**前カットの VideoID** を 1 つの `video.GenerationRequest` にまとめ、カット間の見た目と文脈を維持します。
@@ -46,7 +46,7 @@
 
 ---
 
-## ⚡ クイックスタート
+## 🚦 使い方 (Usage)
 
 `workflow.New` に依存を渡して `*ports.Workflows` を組み立て、各 Runner を呼びます。
 
