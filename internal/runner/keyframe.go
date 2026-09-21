@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"path"
 	"strings"
+	"time"
 
 	"github.com/shouni/genai-kit/imagegen"
 	"github.com/shouni/go-remote-io/remoteio"
@@ -21,6 +22,9 @@ import (
 // DefaultKeyframeCacheControl は、保存するキーフレーム画像に付ける既定の
 // Cache-Control ヘッダです（WithCacheControl で差し替え可能）。
 const DefaultKeyframeCacheControl = "public, max-age=1800"
+
+// metadataSaveTimeout は、切り離した ctx で行うメタデータ保存の上限です。
+const metadataSaveTimeout = 30 * time.Second
 
 // CutKeyframeRunner は、動画レシピを元にカットキーフレーム生成を管理します。
 //
@@ -89,6 +93,8 @@ func NewCutKeyframeRunner(
 // その間にプロセスが落ちた場合（Cloud Run のタイムアウト、デプロイ、OOM）に生成済み＝
 // 課金済みの画像がメモリごと消え、再実行で全部作り直しになります。1 枚ずつ保存していれば
 // 失われるのは最大 1 枚で、レシピの KeyframeReference を見て続きから再開できます。
+// その参照を残すため、末尾のメタデータ保存は呼び出し元の ctx が切れていても行います
+// （saveMetadata を参照）。
 //
 // すでに KeyframeReference を持つカットは焼き直しません。レシピを「あるべき状態」
 // として扱い、足りないキーフレームだけを補います。これは VideoTimelineRunner.Run が
@@ -118,12 +124,28 @@ func (r *CutKeyframeRunner) GenerateAndSave(ctx context.Context, recipe *video.R
 
 	genErr := r.generateAndSaveCuts(ctx, recipe, basePath)
 
-	slog.InfoContext(ctx, "更新された動画メタデータを保存しています", "output_dir", targetDir)
-	if _, err := writeRecipeMetadata(ctx, r.writer, targetDir, recipe); err != nil {
-		return nil, errors.Join(err, genErr)
+	// メタデータの保存に失敗しても、レシピは返します。保存済みの画像を指す
+	// KeyframeReference はレシピにしか無く、呼び出し側が自分で保存し直す余地を残します。
+	if err := r.saveMetadata(ctx, targetDir, recipe); err != nil {
+		return recipe, errors.Join(err, genErr)
 	}
 
 	return recipe, genErr
+}
+
+// saveMetadata は、更新したレシピのメタデータを呼び出し元の ctx から切り離して保存します。
+//
+// ここへ来る理由が打ち切りそのものである場面（呼び出し元のタイムアウト）では ctx は
+// すでに Done です。そのまま使うと書き込みが必ず失敗し、保存済み＝課金済みの画像を指す
+// 参照がどこにも残らず、GenerateAndSave の「続きから再開できる」が成り立ちません。
+// 切り離したうえで上限を与え直すのは、保存先が応答しないときに戻れなくならないためです。
+func (r *CutKeyframeRunner) saveMetadata(ctx context.Context, targetDir string, recipe *video.Recipe) error {
+	saveCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), metadataSaveTimeout)
+	defer cancel()
+
+	slog.InfoContext(saveCtx, "更新された動画メタデータを保存しています", "output_dir", targetDir)
+	_, err := writeRecipeMetadata(saveCtx, r.writer, targetDir, recipe)
+	return err
 }
 
 // generateAndSaveCuts は未生成のカットを並列に処理します。
@@ -292,8 +314,7 @@ func (r *CutKeyframeRunner) EditAndSave(ctx context.Context, recipe *video.Recip
 	}
 	recipe.Cuts[cutPosition].KeyframeReference = keyframePath
 
-	slog.InfoContext(ctx, "更新された動画メタデータを保存しています", "output_dir", targetDir)
-	if _, err := writeRecipeMetadata(ctx, r.writer, targetDir, recipe); err != nil {
+	if err := r.saveMetadata(ctx, targetDir, recipe); err != nil {
 		return nil, err
 	}
 
