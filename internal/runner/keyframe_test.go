@@ -1,10 +1,12 @@
 package runner
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"slices"
 	"strings"
 	"sync"
@@ -428,6 +430,57 @@ func TestCutKeyframeRunner_SavesEachKeyframeAsItIsGenerated(t *testing.T) {
 	if updated.Cuts[0].KeyframeSeed != 101 || updated.Cuts[1].KeyframeSeed != 102 {
 		t.Errorf("KeyframeSeed = %d/%d, want the seed each image was generated with",
 			updated.Cuts[0].KeyframeSeed, updated.Cuts[1].KeyframeSeed)
+	}
+}
+
+// ctxHonoringWriter は、実ストレージと同じく、終わった ctx では書き込まない Writer です。
+type ctxHonoringWriter struct{ *fakeWriter }
+
+func (w ctxHonoringWriter) Write(ctx context.Context, path string, r io.Reader, opts ...remoteio.WriteOption) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return w.fakeWriter.Write(ctx, path, r, opts...)
+}
+
+// TestCutKeyframeRunner_SavesMetadataAfterCancel は、生成の途中で呼び出し元の ctx が
+// 切れても、保存済みのキーフレームを指すメタデータが残ることを確かめます。残らないと、
+// 課金済みの画像への参照がどこにも無くなり、続きから再開できません。
+func TestCutKeyframeRunner_SavesMetadataAfterCancel(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	writer := ctxHonoringWriter{newFakeWriter()}
+	recipe := &video.Recipe{
+		ProjectTitle: "test",
+		Cuts:         []video.Cut{keyframeCut(1, ""), keyframeCut(2, ""), keyframeCut(3, "")},
+	}
+
+	// カット 2 の生成中にジョブが打ち切られる。
+	generator := &capturingCutImageGenerator{
+		image: func(cut video.Cut) *video.KeyframeImage {
+			if cut.CutIndex == 2 {
+				cancel()
+				return nil
+			}
+			return &video.KeyframeImage{Data: []byte("generated"), MimeType: "image/png"}
+		},
+	}
+
+	updated, err := NewCutKeyframeRunner(generator, writer).GenerateAndSave(ctx, recipe, "gs://bucket/jobs/job-1/")
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("GenerateAndSave() error = %v, want context.Canceled for the cuts that never started", err)
+	}
+	if updated == nil || updated.Cuts[0].KeyframeReference == "" {
+		t.Fatalf("the recipe must come back with cut 1's keyframe reference: %+v", updated)
+	}
+
+	meta, ok := writer.writes["gs://bucket/jobs/job-1/"+defaultVideoMetaJSON]
+	if !ok {
+		t.Fatalf("metadata was not saved after cancel; writes = %v", slices.Collect(maps.Keys(writer.writes)))
+	}
+	if !bytes.Contains(meta, []byte(updated.Cuts[0].KeyframeReference)) {
+		t.Errorf("saved metadata does not reference cut 1's keyframe: %s", meta)
 	}
 }
 
