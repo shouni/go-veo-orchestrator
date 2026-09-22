@@ -71,8 +71,8 @@ func (c *Cut) ResetGeneration(keepKeyframe bool) {
 func CutReferenceImages(cut Cut, characters *characterkit.Characters) []string {
 	var refs []string
 	if characters != nil {
-		if char := characters.GetCharacter(strings.TrimSpace(cut.CharacterID)); char != nil {
-			if ref := strings.TrimSpace(char.ReferenceURLFor(cut.AspectRatio)); ref != "" {
+		if char := characters.GetCharacter(cut.CharacterID); char != nil {
+			if ref := char.ReferenceURLFor(cut.AspectRatio); ref != "" {
 				refs = append(refs, ref)
 			}
 		}
