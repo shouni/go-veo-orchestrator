@@ -131,7 +131,7 @@ func pruneUnusedInputs(req *video.GenerationRequest, mode veo.GenerationMode) {
 // 固定したシードを渡してキャラの一貫性を高めます。
 func fallbackSeed(recipe *video.Recipe, cut video.Cut, characters *characterkit.Characters) int64 {
 	if characters != nil {
-		if char := characters.GetCharacter(strings.TrimSpace(cut.CharacterID)); char != nil && char.Seed != nil {
+		if char := characters.GetCharacter(cut.CharacterID); char != nil && char.Seed != nil {
 			return *char.Seed
 		}
 	}
