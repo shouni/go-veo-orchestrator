@@ -92,6 +92,12 @@ func imageRequestKey(req *imagegen.Request) string {
 //
 // 添付は URI かバイト列のどちらかなので、URI はそのまま、バイト列は中身のハッシュを
 // キーに含めます。長さだけで代用すると、同じサイズの別画像が同じキーになります。
+//
+// GenerateOptions のうちキーに入れているのは ResponseMIMEType と Seed だけです。
+// ResponseJSONSchema（script.go の RecipeSchema(characterIDs())）を省けるのは、
+// キャラクター名簿が起動時に一度読まれる埋め込みアセットで、プロセス内で変わらないからです。
+// 名簿をジョブごとに差し替えるようになったらキーに足してください。足さないと、同じ
+// プロンプトで別の character_id enum を持つ同時呼び出しが片方の結果を共有します。
 func textRequestKey(modelName string, prompt string, attachments []gemini.Attachment, opts *gemini.GenerateOptions) string {
 	keyParts := []string{modelName, opts.ResponseMIMEType, callguard.SeedKey(opts.Seed), prompt}
 	for _, attachment := range attachments {
