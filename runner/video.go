@@ -19,11 +19,23 @@ import (
 // ループで置き換えずにできます。
 type CutObserver func(ctx context.Context, cut *video.Cut, res *video.Response) error
 
+// CutGate は、1カットの生成に入る直前に呼ばれるフックです。
+//
+// false を返すとそのカットは生成せずに飛ばします。飛ばしたカットには動画が無いので、
+// チェーンの引き継ぎもそこで切れます（その先のカットは穴を跨いで前の動画へは繋げません）。
+// 生成する場合は、渡されたレシピのカットをここで書き換えられます。チェーンの起点で参照画像を
+// 直前チェーンの最終フレームへ差し替える、といった生成前の調整はここが置き場所です。
+//
+// 生成済みのカットには呼ばれません。すでに動画があるものに生成可否の余地は無く、
+// 飛ばしてしまえばその動画がチェーンから落ちるためです。
+type CutGate func(ctx context.Context, recipe *video.Recipe, cutIndex int) (generate bool, err error)
+
 // VideoTimelineRunner はキーフレーム生成結果を Veo へ順次流し込み、Video-to-Video の文脈を引き継ぎます。
 type VideoTimelineRunner struct {
 	videoRunner    ports.VideoRunner
 	requestBuilder VideoRequestBuilder
 	observer       CutObserver
+	gate           CutGate
 }
 
 // NewVideoTimelineRunner は動画生成オーケストレーターを初期化します。
@@ -54,6 +66,15 @@ func (r *VideoTimelineRunner) WithCutObserver(observer CutObserver) *VideoTimeli
 	return r
 }
 
+// WithCutGate は、カット生成前のフックを設定します。
+// nil を渡した場合は変更せず、メソッドチェーンできるよう自身を返します。
+func (r *VideoTimelineRunner) WithCutGate(gate CutGate) *VideoTimelineRunner {
+	if gate != nil {
+		r.gate = gate
+	}
+	return r
+}
+
 // Run はカットのキーフレームを生成し、前カットの VideoID を引き継ぎながら順次動画化します。
 //
 // エラー時も、それまでに完了したカットのレスポンスを部分結果として返します。
@@ -75,6 +96,23 @@ func (r *VideoTimelineRunner) Run(ctx context.Context, recipe *video.Recipe) ([]
 	lastVideoID := ""
 
 	for i := range recipe.Cuts {
+		// 生成済みかどうかは生成前に控えます。runCut がこのカットを生成すると
+		// IsGenerated() が true に変わるため、後から見ても区別が付きません。
+		alreadyGenerated := recipe.Cuts[i].IsGenerated()
+
+		if !alreadyGenerated && r.gate != nil {
+			generate, err := r.gate(ctx, recipe, i)
+			if err != nil {
+				return responses, fmt.Errorf("cut %d の生成可否の判定で停止しました: %w", recipe.Cuts[i].CutIndex, err)
+			}
+			if !generate {
+				// 飛ばしたカットの位置には動画が無いので、次に生成するカットは
+				// この穴を跨いで前の動画へ繋げない。引き継ぎ元を空へ戻す。
+				lastVideoID = ""
+				continue
+			}
+		}
+
 		res, err := r.runCut(ctx, recipe, i, lastVideoID, caps)
 		if err != nil {
 			return responses, err
@@ -82,10 +120,14 @@ func (r *VideoTimelineRunner) Run(ctx context.Context, recipe *video.Recipe) ([]
 		responses = append(responses, res)
 		lastVideoID = nextVideoID(lastVideoID, res)
 
-		if r.observer != nil {
-			if err := r.observer(ctx, &recipe.Cuts[i], res); err != nil {
-				return responses, fmt.Errorf("cut %d の後処理で停止しました: %w", recipe.Cuts[i].CutIndex, err)
-			}
+		// 生成済みカットでは後処理を呼びません。observer は「生成が終わった」ことに
+		// 紐づく処理（課金の記録、後段の加工）に使われるので、再開のたびに過去の
+		// カットぶんが繰り返し走ると二重計上になります。
+		if alreadyGenerated || r.observer == nil {
+			continue
+		}
+		if err := r.observer(ctx, &recipe.Cuts[i], res); err != nil {
+			return responses, fmt.Errorf("cut %d の後処理で停止しました: %w", recipe.Cuts[i].CutIndex, err)
 		}
 	}
 
@@ -136,6 +178,13 @@ func (r *VideoTimelineRunner) runCut(
 	previousVideoURI := lastVideoID
 	if cut.IsChainStart {
 		previousVideoURI = ""
+	}
+	// 引き継ぐ動画が無い状態で生成するカットは、それ自体が新しいチェーンの起点です。
+	// プランナが計画した起点（IsChainStart 済み）に加えて、直前のカットが飛ばされた
+	// 穴の向こう側もここに来ます。印を付けずに進むと、チェーンの境界を数える側からは
+	// 直前チェーンの最終カットが見えず、結合の対象から落ちます。
+	if previousVideoURI == "" {
+		cut.IsChainStart = true
 	}
 
 	req := r.requestBuilder.Build(BuildInput{
