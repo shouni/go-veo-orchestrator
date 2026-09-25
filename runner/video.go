@@ -179,6 +179,13 @@ func (r *VideoTimelineRunner) runCut(
 	if cut.IsChainStart {
 		previousVideoURI = ""
 	}
+	// 引き継ぐ動画が無い状態で生成するカットは、それ自体が新しいチェーンの起点です。
+	// プランナが計画した起点（IsChainStart 済み）に加えて、直前のカットが飛ばされた
+	// 穴の向こう側もここに来ます。印を付けずに進むと、チェーンの境界を数える側からは
+	// 直前チェーンの最終カットが見えず、結合の対象から落ちます。
+	if previousVideoURI == "" {
+		cut.IsChainStart = true
+	}
 
 	req := r.requestBuilder.Build(BuildInput{
 		Recipe:             recipe,

@@ -225,3 +225,30 @@ func TestCutKeyframeRunner_GenerateAndSavePersistsPartialResults(t *testing.T) {
 		t.Fatalf("writes = %d, want keyframe + metadata", writer.writeCount())
 	}
 }
+
+// TestVideoTimelineRunner_MarksAChainStartAfterASkippedCut は、飛ばされたカットの向こう側が
+// チェーンの起点として記録されることを検証します。
+//
+// 印が無いと、チェーンの境界を「次のカットが起点かどうか」で数える側から直前チェーンの
+// 最終カットが見えず、結合の対象から落ちます（完成動画からそのぶんが丸ごと消えます）。
+func TestVideoTimelineRunner_MarksAChainStartAfterASkippedCut(t *testing.T) {
+	recipe := threeCutRecipe()
+	for i := range recipe.Cuts {
+		recipe.Cuts[i].IsChainStart = false
+	}
+
+	runner := NewVideoTimelineRunner(&mockVideoRunner{}).
+		WithCutGate(func(_ context.Context, r *video.Recipe, i int) (bool, error) {
+			return r.Cuts[i].CutIndex != 2, nil
+		})
+	if _, err := runner.Run(context.Background(), recipe); err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+
+	if !recipe.Cuts[0].IsChainStart {
+		t.Error("cut 1 opens the job with no previous video but was not marked a chain start")
+	}
+	if !recipe.Cuts[2].IsChainStart {
+		t.Error("cut 3 follows a skipped cut but was not marked a chain start")
+	}
+}
