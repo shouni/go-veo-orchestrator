@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/shouni/go-veo-orchestrator/ports"
+	"github.com/shouni/go-veo-orchestrator/veo"
 	"github.com/shouni/go-veo-orchestrator/video"
 )
 
@@ -399,5 +400,53 @@ func TestVideoTimelineRunner_DoesNotGenerateKeyframes(t *testing.T) {
 	if recipe.Cuts[0].KeyframeReference != "" {
 		t.Errorf("KeyframeReference = %q, want the timeline runner to leave it alone",
 			recipe.Cuts[0].KeyframeReference)
+	}
+}
+
+// TestVideoTimelineRunner_RunResetsChainAtPlannedChainStart walks the seam between the
+// planner and the runner: plan the cuts, then run them, with nothing in between marking
+// the chain starts by hand.
+//
+// The other chain tests build their recipe with IsChainStart written into the literal, so
+// they pass whether or not anything in production ever sets it. That is how the planner
+// came to decide the resets without recording them: every consumer re-derived the decision
+// from the duration (isChainBase), while the runner — which only reads IsChainStart — never
+// broke the chain at all and handed Veo one unbroken video_extension chain for a whole job.
+func TestVideoTimelineRunner_RunResetsChainAtPlannedChainStart(t *testing.T) {
+	ctx := context.Background()
+	cuts := veo.ExpandCutsToSupportedDurations([]video.Cut{
+		{CutIndex: 1, SectionIndex: 1, StartSec: 0, DurationSec: 8},
+		{CutIndex: 2, SectionIndex: 1, StartSec: 8, DurationSec: 8},
+		{CutIndex: 3, SectionIndex: 2, StartSec: 16, DurationSec: 8},
+		{CutIndex: 4, SectionIndex: 2, StartSec: 24, DurationSec: 8},
+	}, true, nil, false)
+
+	recipe := &video.Recipe{ProjectTitle: "planned chain", Cuts: cuts}
+	videoRunner := &mockVideoRunner{}
+	if _, err := NewVideoTimelineRunner(videoRunner).Run(ctx, recipe); err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if len(videoRunner.requests) != len(cuts) {
+		t.Fatalf("video requests = %d, want %d", len(videoRunner.requests), len(cuts))
+	}
+
+	// 曲頭とセクション境界が起点。起点では引き継ぎ元が空、継続カットでは直前の VideoID。
+	resets := 0
+	for i, cut := range cuts {
+		got := videoRunner.requests[i].PreviousVideoURI
+		if cut.IsChainStart {
+			resets++
+			if got != "" {
+				t.Errorf("cut %d is a planned chain start but carried PreviousVideoURI %q", i+1, got)
+			}
+			continue
+		}
+		if want := videoRunner.requests[i-1].CutIndex; got == "" {
+			t.Errorf("cut %d continues the chain but carried no PreviousVideoURI (want cut %d's video)", i+1, want)
+		}
+	}
+	// 起点が 1 つも立たないまま通ってしまわないよう、下限を押さえる（曲頭とセクション境界）。
+	if resets < 2 {
+		t.Errorf("planned chain starts = %d, want at least 2 (song head and the section boundary)", resets)
 	}
 }
