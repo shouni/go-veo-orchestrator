@@ -15,14 +15,14 @@ go-veo-orchestrator/
 ├── veo/         # 【Veo の制約】モード判定（ClassifyRequest）、モード別の許容尺、
 │                #   カット分割の計画。API 呼び出しは行わない。
 ├── internal/keyframe/  # 【1カット分の画像生成】プロンプト組み立てと送信のみ。
-├── internal/runner/    # 【実行実体】VideoScriptRunner / CutKeyframeRunner /
+├── runner/             # 【実行実体】VideoScriptRunner / CutKeyframeRunner /
 │                       #   VideoTimelineRunner（+ VideoRequestBuilder）/ VideoPublisherRunner。
 │                       #   キーフレームの並列度と保存はここが持つ。
 └── workflow/    # 【統合管理】workflow.New が全 Runner を組み立てて Workflows を返す。
                  #   レート制限・タイムアウト・singleflight もここ。
 ```
 
-依存は `video → ports → veo → internal/{keyframe, runner} → workflow` の一方通行です。公開パッケージは `video` / `ports` / `veo` / `workflow` の4つで、`keyframe` と `runner` は `internal/` にあります（消費側は `workflow.New` と `ports` のインターフェースだけで足りるためです）。
+依存は `video → ports → veo → {internal/keyframe, runner} → workflow` の一方通行です。公開パッケージは `video` / `ports` / `veo` / `runner` / `workflow` の5つで、`keyframe` だけが `internal/` にあります。`runner` は、カット単位のフック（`WithRequestBuilder` / `WithCutGate` / `WithCutObserver`）が `ports.VideoTimelineRunner` からは届かず、利用側が生成ループを書き直す羽目になっていたため公開しました。フックは runner 単位なので、共有インスタンスではなく利用側が自分で組んだ runner にだけ設定してください。
 
 
 ## 💾 生成と保存の責務分担
