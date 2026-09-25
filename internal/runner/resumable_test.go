@@ -92,6 +92,93 @@ func TestVideoTimelineRunner_ObserverStopsRun(t *testing.T) {
 	}
 }
 
+// TestVideoTimelineRunner_ObserverSkipsAlreadyGeneratedCuts は、再開時に過去のカットぶんの
+// 後処理が走り直さないことを検証します。
+//
+// observer は生成が終わったことに紐づく処理（課金の記録、生成物の加工）に使われるので、
+// 1カット1起動で再開する呼び出し側では、走り直すたびに完了済みカットが二重計上されます。
+func TestVideoTimelineRunner_ObserverSkipsAlreadyGeneratedCuts(t *testing.T) {
+	recipe := threeCutRecipe()
+	recipe.Cuts[0].Status = video.CutStatusGenerated
+	recipe.Cuts[0].VideoID = "gs://bucket/video-1.mp4"
+	recipe.Cuts[0].VideoURL = "gs://videos/cut_1.mp4"
+
+	var observed []int
+	runner := NewVideoTimelineRunner(&mockVideoRunner{}).
+		WithCutObserver(func(_ context.Context, cut *video.Cut, _ *video.Response) error {
+			observed = append(observed, cut.CutIndex)
+			return nil
+		})
+
+	responses, err := runner.Run(context.Background(), recipe)
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	// 生成済みカットもレスポンスには並ぶ（呼び出し側が全カット分を受け取る前提のため）。
+	if len(responses) != 3 {
+		t.Fatalf("responses = %d, want 3", len(responses))
+	}
+	if len(observed) != 2 || observed[0] != 2 || observed[1] != 3 {
+		t.Errorf("observed cuts = %v, want [2 3] (cut 1 was already generated)", observed)
+	}
+}
+
+// TestVideoTimelineRunner_CutGateSkipsAndBreaksTheChain は、CutGate が false を返したカットが
+// 生成されず、かつその穴を跨いでチェーンが繋がらないことを検証します。
+func TestVideoTimelineRunner_CutGateSkipsAndBreaksTheChain(t *testing.T) {
+	recipe := threeCutRecipe()
+	// 2 本目だけ担当外にする（セクション単位の生成が担当外カットを飛ばす形）。
+	recipe.Cuts[1].IsChainStart = false
+	recipe.Cuts[2].IsChainStart = false
+
+	videoRunner := &mockVideoRunner{}
+	var gated []int
+	runner := NewVideoTimelineRunner(videoRunner).
+		WithCutGate(func(_ context.Context, r *video.Recipe, i int) (bool, error) {
+			gated = append(gated, r.Cuts[i].CutIndex)
+			return r.Cuts[i].CutIndex != 2, nil
+		})
+
+	if _, err := runner.Run(context.Background(), recipe); err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if len(gated) != 3 {
+		t.Fatalf("gate calls = %v, want one per pending cut", gated)
+	}
+	if len(videoRunner.requests) != 2 {
+		t.Fatalf("video requests = %d, want 2 (cut 2 was skipped)", len(videoRunner.requests))
+	}
+	if recipe.Cuts[1].IsGenerated() {
+		t.Error("cut 2 was skipped by the gate but came back generated")
+	}
+	// 穴の向こう側は、跨いだ先の動画へ繋がってはいけない。
+	if got := videoRunner.requests[1].PreviousVideoURI; got != "" {
+		t.Errorf("cut 3 followed a skipped cut but carried PreviousVideoURI %q", got)
+	}
+}
+
+// TestVideoTimelineRunner_CutGateSkipsGeneratedCuts は、生成済みカットに gate が呼ばれない
+// ことを検証します。呼んで false を返せると、既にある動画がチェーンから落ちます。
+func TestVideoTimelineRunner_CutGateSkipsGeneratedCuts(t *testing.T) {
+	recipe := threeCutRecipe()
+	recipe.Cuts[0].Status = video.CutStatusGenerated
+	recipe.Cuts[0].VideoID = "gs://bucket/video-1.mp4"
+
+	var gated []int
+	runner := NewVideoTimelineRunner(&mockVideoRunner{}).
+		WithCutGate(func(_ context.Context, r *video.Recipe, i int) (bool, error) {
+			gated = append(gated, r.Cuts[i].CutIndex)
+			return true, nil
+		})
+
+	if _, err := runner.Run(context.Background(), recipe); err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if len(gated) != 2 || gated[0] != 2 {
+		t.Errorf("gate calls = %v, want [2 3] (cut 1 was already generated)", gated)
+	}
+}
+
 // partialCutImageGenerator は2枚目で失敗するが1枚目の結果は返す CutImageGenerator です。
 type partialCutImageGenerator struct{ err error }
 
