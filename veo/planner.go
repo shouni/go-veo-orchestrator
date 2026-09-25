@@ -32,6 +32,10 @@ import (
 // チェーンの最終フレーム引き継ぎをスキップします（意図した場面転換の直前で、次セクションの
 // 構図へ寄せないため）。
 //
+// チェーンの起点と判断したカットには IsChainStart を立てて返します。この関数は起点かどうかを
+// 決める唯一の場所なので、決めた側が記録します。読む側が尺から逆算する（isChainBase）のは
+// 旧レシピ向けのフォールバックで、IsChainStart だけを見る実行側はそれでは起点を認識できません。
+//
 // characters / referenceImagesSupported はカットごとの許容尺の判定に使います
 // （AllowedCutDurations 参照）。事前計画されたチェーンブロック（IsChainStart 付きの未生成
 // カット）の扱いは splitChainCutIntoSupportedDurations を参照してください。IsChainStart を
@@ -93,6 +97,11 @@ func ExpandCutsToSupportedDurations(cuts []video.Cut, usePreviousVideo bool, cha
 			// されたチェーンブロックの起点）。分割時に既に割り当てた尺
 			// （image_to_videoなら{4,6,8}秒、reference_to_videoなら8秒固定）をそのまま使う。
 			cumulative = expanded[i].DurationSec
+			// 判断をカットへ書き戻します。ここで記録しないと、下流はチェーンの起点を
+			// 尺から逆算するしかありません（isChainBase と同じ手口）。逆算は旧レシピ用の
+			// フォールバックで、IsChainStart だけを見る実行側（VideoTimelineRunner）は
+			// 起点を一つも認識できず、チェーンを最後まで切らずに繋ぎ続けます。
+			expanded[i].IsChainStart = true
 			if isSectionStart {
 				expanded[i].IsSectionStart = true
 			}

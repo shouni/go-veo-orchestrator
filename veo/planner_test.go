@@ -123,7 +123,6 @@ func TestExpandCutsToSupportedDurationsResumedGenerationDoesNotCascadeReset(t *t
 // that only the section-boundary cut is marked IsSectionStart (not ordinary technical resets).
 // Section membership comes directly from cut.SectionIndex (as video.Recipe.Normalize would set
 // it from StartSec), not from a separately-passed sections list.
-// Note: IsChainStart itself is set later by runDirect (video_gen.go), not by this function.
 func TestExpandCutsToSupportedDurationsSectionBoundaryForcesReset(t *testing.T) {
 	cuts := []video.Cut{
 		{CutIndex: 1, SectionIndex: 1, StartSec: 0, DurationSec: 8},  // Verse start (i==0, not a "section boundary")
