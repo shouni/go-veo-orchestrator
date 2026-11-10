@@ -1,7 +1,7 @@
-// Package workflow は、設定とクライアント群から go-veo-orchestrator の各 Runner
-// （台本・キーフレーム・動画・パブリッシュ）を組み立てる DI 層を提供します。
-// AI 呼び出しの発射間隔・1回あたりの上限時間・重複排除（singleflight）もここで掛けます
-// （callGuard 参照）。
+// Package workflow provides the DI layer that assembles go-veo-orchestrator's
+// Runners (script, keyframe, video, publish) from configuration and clients. The
+// call interval, per-call time limit and deduplication (singleflight) of AI calls
+// are applied here too (see callGuard).
 package workflow
 
 import (
@@ -16,32 +16,33 @@ import (
 	"github.com/shouni/go-veo-orchestrator/ports"
 )
 
-// PromptDeps はプロンプト関連の依存関係をまとめた構造体です。
+// PromptDeps bundles the prompt-related dependencies.
 type PromptDeps struct {
 	Characters     *characterkit.Characters
 	ScriptPrompt   ports.ScriptPrompt
 	KeyframePrompt ports.KeyframePrompt
 }
 
-// ManagerArgs は、ワークフローの初期化と管理に必要な引数の集合を表します。
+// ManagerArgs is the set of arguments needed to initialize and manage the workflows.
 type ManagerArgs struct {
 	Config ports.Config
-	// Reader は台本ソース（URL・テキスト）の取得に使います。参照画像は gs:// URI の
-	// まま Vertex AI へ渡るため、画像の解決には使いません。
+	// Reader fetches the script source (URL or text). Reference images reach
+	// Vertex AI as gs:// URIs, unchanged, so it is not used to resolve images.
 	Reader ports.ContentReader
-	// Writer は生成物とメタデータの保存先です。
+	// Writer is where outputs and metadata are saved.
 	//
-	// 同時アクセス安全である必要があります。キーフレームはカットごとの goroutine が
-	// 生成直後に保存するため、Config.MaxConcurrency が 2 以上なら Write は並行に呼ばれます。
+	// It must be safe for concurrent use. Each cut's goroutine saves its
+	// keyframe right after generating it, so Write is called concurrently
+	// whenever Config.MaxConcurrency is 2 or more.
 	Writer remoteio.Writer
-	// AIClient は台本のテキスト生成とキーフレームの画像生成の両方に使います。
-	// 生成呼び出しの 1 メソッドだけを要求します。
+	// AIClient is used for both the script's text generation and the keyframes'
+	// image generation. Only the one generation method is required.
 	AIClient    gemini.Generator
 	VideoRunner ports.VideoRunner
 	PromptDeps  *PromptDeps
 }
 
-// manager は、ワークフローの各工程を担う Runner 群を構築・管理します。
+// manager builds and manages the Runners that carry out each stage of the workflows.
 type manager struct {
 	cfg            ports.Config
 	reader         ports.ContentReader
@@ -52,7 +53,7 @@ type manager struct {
 	promptDeps     *PromptDeps
 }
 
-// New は、設定とキャラクター定義を基に新しい Workflows を初期化します。
+// New initializes a new Workflows from the configuration and character definitions.
 func New(args ManagerArgs) (*ports.Workflows, error) {
 	if err := validateArgs(&args); err != nil {
 		return nil, err
@@ -64,7 +65,7 @@ func New(args ManagerArgs) (*ports.Workflows, error) {
 		return nil, err
 	}
 
-	// テキスト生成と画像生成で 1 つのガードを共有する（理由は singleflight.go のヘッダ）。
+	// Text and image generation share one guard (see the header of singleflight.go for why).
 	guard := callguard.New(
 		callguard.WithRateInterval(cfg.RateInterval),
 		callguard.WithExecTimeout(cfg.RequestTimeout),
@@ -88,46 +89,47 @@ func New(args ManagerArgs) (*ports.Workflows, error) {
 	return m.buildAllRunners()
 }
 
-// validateArgs は引数のバリデーションを行います。
+// validateArgs validates the arguments.
 //
-// 文面は ManagerArgs の実際のフィールド名で書きます。呼び出し側がメッセージを頼りに
-// 直す場所を探すため、名前がずれると grep しても当たりません。
+// The messages use ManagerArgs' actual field names. Callers rely on the message
+// to find what to fix, so if the names drift, grepping for them finds nothing.
 func validateArgs(args *ManagerArgs) error {
 	if args.Reader == nil {
-		return fmt.Errorf("ManagerArgs.Reader は必須です")
+		return fmt.Errorf("ManagerArgs.Reader is required")
 	}
 	if args.Writer == nil {
-		return fmt.Errorf("ManagerArgs.Writer は必須です")
+		return fmt.Errorf("ManagerArgs.Writer is required")
 	}
 	if args.AIClient == nil {
-		return fmt.Errorf("ManagerArgs.AIClient は必須です")
+		return fmt.Errorf("ManagerArgs.AIClient is required")
 	}
 	if args.PromptDeps == nil {
-		return fmt.Errorf("ManagerArgs.PromptDeps は必須です")
+		return fmt.Errorf("ManagerArgs.PromptDeps is required")
 	}
 	if args.PromptDeps.Characters == nil {
-		return fmt.Errorf("ManagerArgs.PromptDeps.Characters は必須です")
+		return fmt.Errorf("ManagerArgs.PromptDeps.Characters is required")
 	}
 	if args.PromptDeps.ScriptPrompt == nil {
-		return fmt.Errorf("ManagerArgs.PromptDeps.ScriptPrompt は必須です")
+		return fmt.Errorf("ManagerArgs.PromptDeps.ScriptPrompt is required")
 	}
 	if args.PromptDeps.KeyframePrompt == nil {
-		return fmt.Errorf("ManagerArgs.PromptDeps.KeyframePrompt は必須です")
+		return fmt.Errorf("ManagerArgs.PromptDeps.KeyframePrompt is required")
 	}
 
 	return nil
 }
 
-// buildImageGenerator は画像生成の実行体を組み立てます。
+// buildImageGenerator assembles the image generation engine.
 //
-// imagegen は参照画像を gs:// URI としてそのまま Vertex AI へ渡すだけなので、取得も
-// アップロードもキャッシュも起きません。渡すのは生成クライアント 1 つだけで、オプションを
-// 渡していないのも意図どおりです（発射間隔と上限時間は callGuard 側で掛けます）。
-// http(s) の参照が必要になったら、それは gemini-image-kit へ戻る合図です。
+// imagegen only hands reference images to Vertex AI as gs:// URIs, unchanged, so
+// nothing is fetched, uploaded or cached. It is given just the one generation
+// client, and passing no options is intended (the call interval and time limit are
+// applied on the callGuard side). If http(s) references ever become necessary,
+// that is the signal to go back to gemini-image-kit.
 func buildImageGenerator(client gemini.Generator, guard *callguard.Guard) (imagegen.Generator, error) {
 	gen, err := imagegen.New(client)
 	if err != nil {
-		return nil, fmt.Errorf("画像生成エンジンの初期化に失敗しました: %w", err)
+		return nil, fmt.Errorf("failed to initialize the image generator: %w", err)
 	}
 	return &singleflightImageGenerator{inner: gen, guard: guard}, nil
 }

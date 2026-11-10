@@ -6,7 +6,7 @@ import (
 	characterkit "github.com/shouni/go-character-kit/character"
 )
 
-// mustNewCharacters はテスト用のキャラクター定義を組み立てます。
+// mustNewCharacters builds the character definitions for tests.
 func mustNewCharacters(t *testing.T, list []characterkit.Character) *characterkit.Characters {
 	t.Helper()
 

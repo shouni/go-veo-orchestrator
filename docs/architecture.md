@@ -1,100 +1,100 @@
-# 📂 アーキテクチャ
+# 📂 Architecture
 
 [← README](../README.md)
 
-## プロジェクト構造
+## Project structure
 
-本アーキテクチャは **ports による抽象化（Hexagonal Architecture）** を境界線としており、Veo API のエンドポイント変更や動画合成エンジンの差し替えを容易に行える設計を採用しています。
+The architecture draws its boundary at **abstraction through ports (Hexagonal Architecture)**, so that a change of Veo API endpoint or a swap of the video synthesis engine is easy to make.
 
 ```text
 go-veo-orchestrator/
-├── video/       # 【ドメインモデル】Recipe / Cut / GenerationRequest / Response /
-│                #   KeyframeImage / PublishResult。何にも依存しない最下層。
-├── ports/       # 【契約】VideoRunner・各 Prompt・ContentReader・4つの Runner
-│                #   インターフェース・Workflows・Config・センチネルエラー。
-├── veo/         # 【Veo の制約】モード判定（ClassifyRequest）、モード別の許容尺、
-│                #   カット分割の計画。API 呼び出しは行わない。
-├── internal/keyframe/  # 【1カット分の画像生成】プロンプト組み立てと送信のみ。
-├── runner/             # 【実行実体】VideoScriptRunner / CutKeyframeRunner /
-│                       #   VideoTimelineRunner（+ VideoRequestBuilder）/ VideoPublisherRunner。
-│                       #   キーフレームの並列度と保存はここが持つ。
-└── workflow/    # 【統合管理】workflow.New が全 Runner を組み立てて Workflows を返す。
-                 #   レート制限・タイムアウト・singleflight もここ。
+├── video/       # [Domain model] Recipe / Cut / GenerationRequest / Response /
+│                #   KeyframeImage / PublishResult. The bottom layer; depends on nothing.
+├── ports/       # [Contracts] VideoRunner, each Prompt, ContentReader, the four Runner
+│                #   interfaces, Workflows, Config, sentinel errors.
+├── veo/         # [Veo constraints] mode classification (ClassifyRequest), allowed
+│                #   durations per mode, cut-split planning. Makes no API calls.
+├── internal/keyframe/  # [Image generation for one cut] only builds and sends the prompt.
+├── runner/             # [Implementations] VideoScriptRunner / CutKeyframeRunner /
+│                       #   VideoTimelineRunner (+ VideoRequestBuilder) / VideoPublisherRunner.
+│                       #   Owns keyframe concurrency and saving.
+└── workflow/    # [Integration] workflow.New assembles every Runner and returns Workflows.
+                 #   Rate limiting, timeouts and singleflight live here too.
 ```
 
-依存は `video → ports → veo → {internal/keyframe, runner} → workflow` の一方通行です。公開パッケージは `video` / `ports` / `veo` / `runner` / `workflow` の5つで、`keyframe` だけが `internal/` にあります。`runner` は、カット単位のフック（`WithRequestBuilder` / `WithCutGate` / `WithCutObserver`）が `ports.VideoTimelineRunner` からは届かず、利用側が生成ループを書き直す羽目になっていたため公開しました。フックは runner 単位なので、共有インスタンスではなく利用側が自分で組んだ runner にだけ設定してください。
+Dependencies run one way: `video → ports → veo → {internal/keyframe, runner} → workflow`. There are five public packages — `video` / `ports` / `veo` / `runner` / `workflow` — and only `keyframe` sits under `internal/`. `runner` was made public because the per-cut hooks (`WithRequestBuilder` / `WithCutGate` / `WithCutObserver`) were unreachable through `ports.VideoTimelineRunner`, which left consumers rewriting the generation loop themselves. The hooks are per-runner, so set them only on a runner the consumer built itself, never on a shared instance.
 
 
-## 💾 生成と保存の責務分担
+## 💾 Who generates and who saves
 
-書き先は `remoteio.Writer` として注入されるため、このライブラリは GCS も S3 も知りません。持っているのは「どこに保存するか」ではなく、**自分のフォーマットと命名規則**です。その上で、キーフレームと動画で意図的に扱いを分けています。
+The destination is injected as a `remoteio.Writer`, so this library knows neither GCS nor S3. What it owns is not "where to save" but **its own format and naming rules**. On top of that, keyframes and video are deliberately treated differently.
 
-| | 生成 | 保存 |
+| | Generate | Save |
 | --- | --- | --- |
-| キーフレーム | `CutKeyframeRunner` | **同じ Runner が、1 枚生成するたびに行う**（`GenerateAndSave` / `EditAndSave`） |
-| 動画 | `VideoTimelineRunner.Run` | **行わない**。呼び出し側が `VideoPublishRunner`（`Workflows.Publish`）を呼びます |
+| Keyframes | `CutKeyframeRunner` | **The same Runner, each time one image is generated** (`GenerateAndSave` / `EditAndSave`) |
+| Video | `VideoTimelineRunner.Run` | **Does not save.** The caller invokes `VideoPublishRunner` (`Workflows.Publish`) |
 
-**キーフレームの保存を Runner が持つ理由**: 保存名 `keyframe_<レシピ内の位置>.<拡張子>`（拡張子は生成結果の MIME type から決まります）がカットの並びと結びついているためです。呼び出し側に出すと、位置→ファイル名の対応と `keyframe_reference` の設定を再実装させることになり、部分生成時に `keyframe_1.png` が別のカットを指す事故を招きます。
+**Why the Runner owns keyframe saving**: the saved name `keyframe_<position in the recipe>.<extension>` (the extension comes from the generated image's MIME type) is tied to the order of the cuts. Handing it to the caller would make the caller reimplement the position-to-filename mapping and the setting of `keyframe_reference`, inviting accidents where `keyframe_1.png` points at a different cut during a partial generation.
 
-**1 枚ごとに保存する理由**: まとめて生成してから保存すると、その間にプロセスが落ちた場合（Cloud Run のタイムアウト・デプロイ・OOM）に生成済み＝課金済みの画像がメモリごと消えます。1 枚ずつ保存していれば失うのは最大 1 枚で、レシピの `keyframe_reference` を見て続きから再開できます。カットごとの goroutine が生成から保存までを完結させるため、**注入する `remoteio.Writer` は同時アクセス安全である必要があります**（`Config.MaxConcurrency` が 2 以上のとき）。
+**Why each image is saved on its own**: if images are generated as a batch and saved afterwards, a process dying in between (Cloud Run timeout, deploy, OOM) loses the generated — and therefore already billed — images along with the memory. Saving one at a time loses at most one image, and the run resumes from the recipe's `keyframe_reference`. Because each cut's goroutine carries the work from generation through saving, **the injected `remoteio.Writer` must be safe for concurrent use** (whenever `Config.MaxConcurrency` is 2 or more).
 
-**動画の保存を持たない理由**: 生成直後に保存すると、生成と保存の間に処理を挟む呼び出し側が困るからです。例えば継続チェーンを結合して `final_video_url` を埋めてから保存したい場合、タイムライン側が書いたメタデータには必ずその値が欠けます。（以前は `VideoTimelineRunner.GenerateAndSave` がありましたが、この理由でどの呼び出し元も使っておらず、削除しました。）
+**Why video saving is not owned here**: saving right after generation gets in the way of callers that insert a step between generating and saving. For example, a caller that wants to join the continuation chains and fill in `final_video_url` before saving would always find that value missing from metadata written by the timeline. (There used to be a `VideoTimelineRunner.GenerateAndSave`, but for this reason no caller used it, and it was removed.)
 
-## 🔄 シーケンスフロー
+## 🔄 Sequence flows
 
 ### Keyframe Flow (`CutKeyframeRunner.GenerateAndSave`)
 
 ```mermaid
 sequenceDiagram
-  participant App as 呼び出し側
+  participant App as Caller
   participant KFRunner as runner.CutKeyframeRunner
   participant KeyframeGen as keyframe.Generator
   participant ImageKit as genai-kit/imagegen
   participant Writer as remoteio.Writer
 
   App->>KFRunner: GenerateAndSave(ctx, recipe, outputPath)
-  Note over KFRunner: keyframe_reference が空のカットだけを対象にする
+  Note over KFRunner: Only cuts whose keyframe_reference is empty are targeted
 
-  par 最大 Config.MaxConcurrency 並列（カットごとに1 goroutine）
+  par Up to Config.MaxConcurrency in parallel (one goroutine per cut)
     KFRunner->>KeyframeGen: GenerateCut(ctx, cut, index, total)
     KeyframeGen->>ImageKit: Generate(prompt + Images{gs://...})
-    Note over KeyframeGen,ImageKit: gs:// はそのまま Vertex AI が解決する（取得もアップロードも無い）
-    ImageKit-->>KeyframeGen: KeyframeImage（Data + UsedSeed）
+    Note over KeyframeGen,ImageKit: Vertex AI resolves gs:// as-is (nothing is fetched or uploaded)
+    ImageKit-->>KeyframeGen: KeyframeImage (Data + UsedSeed)
     KeyframeGen-->>KFRunner: KeyframeImage
-    KFRunner->>Writer: Write(keyframe_<位置>.png)
-    Note over KFRunner: 生成直後に保存し、cut.keyframe_reference と cut.keyframe_seed を更新
+    KFRunner->>Writer: Write(keyframe_<position>.png)
+    Note over KFRunner: Saved right after generation; cut.keyframe_reference and cut.keyframe_seed are updated
   end
 
   KFRunner->>Writer: Write(video_music_meta.json)
-  KFRunner-->>App: 更新済み recipe（失敗分は errors.Join で集約）
+  KFRunner-->>App: Updated recipe (failures aggregated with errors.Join)
 ```
 
 ### Video Orchestration Flow (`NewVideoTimelineRunner`)
 
 ```mermaid
 sequenceDiagram
-  participant App as 呼び出し側
+  participant App as Caller
   participant Timeline as runner.VideoTimelineRunner
   participant Builder as runner.VideoRequestBuilder
   participant VeoAPI as Vertex AI (Veo API)
   participant Publisher as runner.VideoPublisherRunner
   participant Writer as remoteio.Writer
 
-  Note over App,Timeline: キーフレームは前段で生成・保存済み（上のフロー）。
+  Note over App,Timeline: Keyframes were generated and saved by the previous stage (flow above).
   App->>Timeline: Run(ctx, recipe)
-  Note over Timeline: キーフレーム参照を持たないカットは警告のみ（プロンプトのみで生成）
+  Note over Timeline: Cuts without a keyframe reference only get a warning (generated from the prompt alone)
 
-  loop cuts / 逐次の Video-to-Video チェーン
-    Note over Timeline: generated 済みのカットは video_id を使ってスキップ
+  loop cuts / sequential Video-to-Video chain
+    Note over Timeline: Cuts already generated are skipped, using their video_id
     Timeline->>Builder: Build(BuildInput{Recipe, Cut, PreviousVideoURI, ...})
     Builder-->>Timeline: video.GenerationRequest
-    Note over Builder: シードは cut.keyframe_seed を引き継ぐ（キーフレームと同じ乱数系列）
+    Note over Builder: The seed carries over cut.keyframe_seed (the same random sequence as the keyframe)
     Timeline->>VeoAPI: Run(Prompt + KeyframeReference + AudioReference + PreviousVideoURI + Seed)
     VeoAPI-->>Timeline: video.Response (CloudURL + VideoID)
-    Timeline->>Timeline: cut.video_id / video_url / status を更新し、次カットへ連鎖
+    Timeline->>Timeline: Update cut.video_id / video_url / status and chain into the next cut
   end
 
-  Note over App,Publisher: メタデータの保存は Publish が担当（生成とは別ステップ）
+  Note over App,Publisher: Publish saves the metadata (a step separate from generation)
   App->>Publisher: Run(ctx, recipe, outputDir)
   Publisher->>Writer: Write(video_music_meta.json)
   Publisher-->>App: *video.PublishResult

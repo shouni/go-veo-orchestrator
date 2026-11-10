@@ -1,6 +1,6 @@
-// Package video は、動画レシピのドメインモデル（Recipe・Cut とその操作）と、
-// 生成リクエスト／レスポンスのデータ型を定義します。このリポジトリで最下層の
-// パッケージで、リポジトリ内の何にも依存しません。
+// Package video defines the video recipe domain model (Recipe, Cut and their
+// operations) and the data types of generation requests and responses. It is the
+// bottom package of this repository and depends on nothing else in it.
 package video
 
 import (
@@ -11,7 +11,7 @@ import (
 	characterkit "github.com/shouni/go-character-kit/character"
 )
 
-// UniqueCharacterIDs はカットのスライスから重複しない CharacterID を抽出します。
+// UniqueCharacterIDs extracts the distinct CharacterIDs from a slice of cuts.
 func (cs Cuts) UniqueCharacterIDs() []string {
 	set := make(map[string]struct{})
 	for _, cut := range cs {
@@ -22,10 +22,10 @@ func (cs Cuts) UniqueCharacterIDs() []string {
 	return slices.Sorted(maps.Keys(set))
 }
 
-// EffectiveDurationSec は、このカットの実際の尺（秒）を返します。DurationSec が未設定
-// （0以下）のレシピでは StartSec / EndSec から導出します。手書き JSON や部分的にしか
-// 正規化されていないレシピを扱う箇所が、毎回同じフォールバックを書かずに済むように
-// しています。どちらからも決まらない場合は 0 を返します。
+// EffectiveDurationSec returns the cut's actual duration in seconds. For a recipe
+// whose DurationSec is unset (0 or less), it derives the value from StartSec /
+// EndSec, so code handling hand-written JSON or only partly normalized recipes need
+// not write the same fallback every time. It returns 0 when neither determines it.
 func (c Cut) EffectiveDurationSec() float64 {
 	if c.DurationSec > 0 {
 		return c.DurationSec
@@ -36,12 +36,12 @@ func (c Cut) EffectiveDurationSec() float64 {
 	return 0
 }
 
-// ResetGeneration は、このカットを再生成させるために生成結果の状態を消します。
-// Status は pending に戻り、VideoID / VideoURL / IsChainStart がクリアされます。
-// keepKeyframe が false の場合はさらに KeyframeReference と IsSectionStart もクリアし、
-// このカットに新しいキーフレームを作り直す前提にします。true の場合は、保存済みの
-// キーフレーム参照を再利用する呼び出し（既存ジョブの一部カットだけ動画を作り直す等）の
-// ためにどちらも保持します。
+// ResetGeneration clears the generation state so that this cut is regenerated.
+// Status goes back to pending, and VideoID / VideoURL / IsChainStart are cleared.
+// When keepKeyframe is false, KeyframeReference and IsSectionStart are cleared as
+// well, on the assumption that a new keyframe will be made for this cut. When true,
+// both are kept, for calls that reuse the saved keyframe reference (such as
+// regenerating the video of only some cuts of an existing job).
 func (c *Cut) ResetGeneration(keepKeyframe bool) {
 	c.Status = CutStatusPending
 	c.VideoID = ""
@@ -53,21 +53,26 @@ func (c *Cut) ResetGeneration(keepKeyframe bool) {
 	}
 }
 
-// CutReferenceImages は、このカットの referenceImages（Veo の reference_to_video、
-// asset タイプ・最大3枚）用 URI リストを組み立てます。並びは [キャラクター立ち絵,
-// キーフレーム] で、空白のみの参照は除外します。参照が1つもなければ nil を返し、
-// adapter 側はキーフレームの image 入力（image_to_video）へフォールバックします。
+// CutReferenceImages builds the URI list for this cut's referenceImages (Veo's
+// reference_to_video, asset type, up to 3). The order is [character art,
+// keyframe], and references that are blank are skipped. It returns nil when there
+// is no reference at all, and the adapter then falls back to the keyframe as image
+// input (image_to_video).
 //
-// キャラクターの立ち絵は、このカットのアスペクト比（Cut.AspectRatio、Recipe.Normalize が
-// Recipe.AspectRatio から伝播）に一致するもの（Character.ReferenceURLs）があればそちらを
-// 使います。keyframe.Generator が ReferenceURLFor で同じ選び方をしているのに、ここだけ
-// 比率を無視した ReferenceURL 固定だと、同じリクエストの中で「比率の合ったキーフレーム」と
-// 「比率の違う立ち絵」が並び、Veo が参照から拾う色や小物の位置がブレます。
+// For the character art, the variant matching this cut's aspect ratio
+// (Cut.AspectRatio, propagated from Recipe.AspectRatio by Recipe.Normalize) is used
+// when one exists (Character.ReferenceURLs). keyframe.Generator picks the same way
+// with ReferenceURLFor; if this function alone pinned ReferenceURL and ignored the
+// ratio, one request would carry "a keyframe with the right ratio" next to
+// "character art with a different ratio", and the colors and prop positions Veo
+// picks up from the references would wobble.
 //
-// この関数が referenceImages の唯一の組み立て規則です。リクエストを組み立てる側
-// （DefaultVideoRequestBuilder）と分類する側（veo.ClassifyRequest 経由の尺の正規化・
-// プロンプト選択）が同じリストを見るため、「尺は reference_to_video 前提で8秒に丸めたのに
-// 実際のリクエストは image_to_video だった」というズレが構造的に起こりません。
+// This function is the only rule for building referenceImages. The side that
+// builds requests (DefaultVideoRequestBuilder) and the side that classifies them
+// (duration normalization and prompt selection via veo.ClassifyRequest) see the
+// same list, so drift such as "the duration was rounded to 8 seconds assuming
+// reference_to_video, but the actual request was image_to_video" cannot happen by
+// construction.
 func CutReferenceImages(cut Cut, characters *characterkit.Characters) []string {
 	var refs []string
 	if characters != nil {
@@ -83,17 +88,19 @@ func CutReferenceImages(cut Cut, characters *characterkit.Characters) []string {
 	return refs
 }
 
-// NextLastFrameReference は、cs[i] の終了フレーム（frames_to_video 補間の lastFrame）と
-// して使う「次カットのキーフレーム参照」を返します。次カットの開始フレームでこのカットを
-// 終えることで、カット境界の繋ぎ（構図・キャラの見た目）を滑らかにします。
-// 以下の場合は空文字を返し、終了フレーム指定なしで生成させます:
+// NextLastFrameReference returns "the next cut's keyframe reference" to use as
+// cs[i]'s end frame (the lastFrame of frames_to_video interpolation). Ending this
+// cut on the next cut's start frame smooths the join at the cut boundary
+// (composition, the character's look). It returns an empty string, so the cut is
+// generated without an end frame, when:
 //
-//   - 次カットが無い、または次カットにキーフレームが無い
-//   - 次カットがセクション境界（IsSectionStart）。意図的な場面転換なので、現カットの絵を
-//     次セクションの構図へ寄せない
-//   - キャラクターが異なる（補間中にキャラ同士がモーフィングしてしまう）
-//   - 現カットと同一のキーフレーム（尺分割で同じキーフレームを共有するカット等。
-//     終了フレーム = 開始フレームを強制すると動きが殺される）
+//   - there is no next cut, or the next cut has no keyframe
+//   - the next cut starts a section (IsSectionStart). That is a deliberate scene
+//     change, so the current cut's picture is not pulled toward the next
+//     section's composition
+//   - the characters differ (they would morph into each other during interpolation)
+//   - the keyframe is the same as the current cut's (cuts sharing one keyframe after
+//     a duration split, etc.; forcing end frame = start frame kills the motion)
 func (cs Cuts) NextLastFrameReference(i int) string {
 	if i < 0 || i+1 >= len(cs) {
 		return ""
@@ -112,9 +119,10 @@ func (cs Cuts) NextLastFrameReference(i int) string {
 	return ref
 }
 
-// FillAudioReference は、AudioReference が未設定のカットへ audioURL を補います。
-// タスクで与えられた音源をレシピの全カットに紐づける用途で、カット側に既に
-// 明示された参照は上書きしません。空の audioURL は何もしません。
+// FillAudioReference sets audioURL on the cuts whose AudioReference is unset. It
+// is for attaching the audio given with a task to every cut of the recipe, and does
+// not overwrite a reference a cut already states explicitly. An empty audioURL
+// does nothing.
 func (cs Cuts) FillAudioReference(audioURL string) {
 	audioURL = strings.TrimSpace(audioURL)
 	if audioURL == "" {
@@ -127,9 +135,9 @@ func (cs Cuts) FillAudioReference(audioURL string) {
 	}
 }
 
-// FillCharacterID は、CharacterID が未設定のカットへ characterID を補います。
-// カット側に既に明示されたキャラクターは上書きしません。空の characterID は
-// 何もしません。
+// FillCharacterID sets characterID on the cuts whose CharacterID is unset. It does
+// not overwrite a character a cut already states explicitly. An empty characterID
+// does nothing.
 func (cs Cuts) FillCharacterID(characterID string) {
 	characterID = strings.TrimSpace(characterID)
 	if characterID == "" {
@@ -142,8 +150,8 @@ func (cs Cuts) FillCharacterID(characterID string) {
 	}
 }
 
-// IndexOf は、cut_index（レシピ上の1始まりの番号）を持つカットの位置（0始まり）を
-// 返します。見つからない場合は -1 です。
+// IndexOf returns the position (0-based) of the cut whose cut_index (the 1-based
+// number in the recipe) is cutIndex, or -1 when there is none.
 func (cs Cuts) IndexOf(cutIndex int) int {
 	for i := range cs {
 		if cs[i].CutIndex == cutIndex {

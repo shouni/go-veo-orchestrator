@@ -1,70 +1,70 @@
-# ⚙️ 設定と差し替え (Config / DI)
+# ⚙️ Configuration and DI
 
 [← README](../README.md)
 
-`workflow.New(ManagerArgs)` に渡す設定と依存です。
+The settings and dependencies passed to `workflow.New(ManagerArgs)`.
 
 ## ports.Config
 
-**4 項目が必須**です（未設定なら `ports.ErrConfigInvalid`）。モデル名 2 種と、画作りの 2 種（アスペクト比・解像度）です。理由は下の「画作りの既定値は持ちません」を参照してください。実行制御（並列度・タイムアウト）はゼロ値で構いません（`ApplyDefaults` が補完します）。`RateInterval` だけは補完しません — 0 が「制限なし」という意味を持つ値だからです。
+**Four fields are required** (missing ones yield `ports.ErrConfigInvalid`): the two model names and the two art-direction values (aspect ratio and resolution). See "No art-direction defaults" below for why. Execution controls (concurrency, timeout) may be left at their zero values (`ApplyDefaults` fills them in). `RateInterval` alone is not filled in — 0 is a meaningful value there, "no limit".
 
-| フィールド | 役割 |
+| Field | Role |
 | --- | --- |
-| `GeminiModel` | 台本生成に使うテキストモデル（**必須**） |
-| `ImageModel` | キーフレーム画像生成に使うモデル（**必須**） |
-| `MaxConcurrency` | キーフレーム生成の最大並列数（動画生成は Video-to-Video 連鎖のため常に逐次です） |
-| `RateInterval` | AI 呼び出しの発射間隔の下限（0 で無制限）。台本のテキスト生成にも掛かります |
-| `RequestTimeout` | AI 呼び出し 1 回あたりの上限時間（既定 5 分）|
-| `KeyframeAspectRatio` | キーフレームのアスペクト比（例: `16:9`, `9:16`）。**必須** |
-| `KeyframeImageSize` | キーフレームの出力解像度（例: `1K`, `2K`）。**必須** |
-| `KeyframeNegativePrompt` | キーフレームで排除したい要素（例: `speech bubble, text, watermark`）。任意（空は「排除指定なし」）|
+| `GeminiModel` | Text model used for script generation (**required**) |
+| `ImageModel` | Model used for keyframe image generation (**required**) |
+| `MaxConcurrency` | Maximum concurrency of keyframe generation (video generation is always sequential, because of the Video-to-Video chain) |
+| `RateInterval` | Minimum interval between AI calls (0 means unlimited). Also applies to the script's text generation |
+| `RequestTimeout` | Upper bound on the time of a single AI call (default 5 minutes) |
+| `KeyframeAspectRatio` | Keyframe aspect ratio (e.g. `16:9`, `9:16`). **Required** |
+| `KeyframeImageSize` | Keyframe output resolution (e.g. `1K`, `2K`). **Required** |
+| `KeyframeNegativePrompt` | Elements to exclude from keyframes (e.g. `speech bubble, text, watermark`). Optional (empty means "exclude nothing") |
 
-`Config.WithModels(gemini, image)` / `Config.WithAspectRatio(ratio)` で部分的に上書きしたコピーを取得できます（空文字は「変更なし」）。
+`Config.WithModels(gemini, image)` / `Config.WithAspectRatio(ratio)` return a copy with some values overridden (an empty string means "unchanged").
 
 ## ManagerArgs
 
-| フィールド | 役割 |
+| Field | Role |
 | --- | --- |
-| `AIClient` | `gemini.Generator`（台本生成・キーフレーム生成）。生成呼び出しの 1 メソッドだけを要求します |
-| `Reader` | `ports.ContentReader`。台本ソースの取得に使います（参照画像は `gs://` のまま渡るので、画像には使いません） |
-| `Writer` | `remoteio.Writer`。**同時アクセス安全な実装が必要です** — キーフレームはカットごとの goroutine が生成直後に保存します |
-| `VideoRunner` | Veo API アダプタ。未設定なら `ErrVideoRunnerNotConfigured` を返すダミーになります |
-| `PromptDeps` | キャラクター定義とプロンプト実装（下記） |
+| `AIClient` | `gemini.Generator` (script generation and keyframe generation). Only the one generation method is required |
+| `Reader` | `ports.ContentReader`. Fetches the script source (reference images travel as `gs://` URIs, so it is not used for images) |
+| `Writer` | `remoteio.Writer`. **Must be safe for concurrent use** — each cut's goroutine saves its keyframe right after generating it |
+| `VideoRunner` | The Veo API adapter. When unset, a dummy that returns `ErrVideoRunnerNotConfigured` is used |
+| `PromptDeps` | Character definitions and prompt implementations (below) |
 
 ## PromptDeps
 
-プロンプトはこのライブラリに含めず、`PromptDeps` から注入します。
+Prompts are not part of this library; they are injected through `PromptDeps`.
 
-| フィールド | インターフェース | 役割 |
+| Field | Interface | Role |
 | --- | --- | --- |
-| `Characters` | `*characterkit.Characters` | キャラクター定義。カットの `CharacterID` から解決し、未知IDは既定キャラクターへ落とします |
-| `ScriptPrompt` | `ports.ScriptPrompt` | Music Recipe から動画台本を生成するプロンプト（`Build(mode, *TemplateData)`） |
-| `KeyframePrompt` | `ports.KeyframePrompt` | カットのキーフレーム生成・編集のプロンプト（`BuildCut` / `BuildEdit`） |
+| `Characters` | `*characterkit.Characters` | Character definitions. Resolved from each cut's `CharacterID`; an unknown ID falls back to the default character |
+| `ScriptPrompt` | `ports.ScriptPrompt` | The prompt that generates a video script from a Music Recipe (`Build(mode, *TemplateData)`) |
+| `KeyframePrompt` | `ports.KeyframePrompt` | Prompts for generating and editing a cut's keyframe (`BuildCut` / `BuildEdit`) |
 
-## キーフレーム生成の内部オプション
+## Internal keyframe generation options
 
-`keyframe` と `runner` は `internal/` にあるため、消費側が直接触ることはありません。`workflow.New` が `Config` から次のように組み立てます。
+`keyframe` is in `internal/`, and `runner` is public but rarely built by hand: `workflow.New` assembles both from `Config` as follows. Build a `runner` yourself only when you need its per-cut hooks (see [architecture.md](architecture.md)).
 
-| Config | 内部での使われ方 |
+| Config | How it is used internally |
 | --- | --- |
-| `KeyframeAspectRatio` | アスペクト比（キャラクターに一致する参照画像があればそれを優先します） |
-| `KeyframeImageSize` | 解像度 |
-| `KeyframeNegativePrompt` | ネガティブプロンプト（未設定なら排除指定なし） |
-| `MaxConcurrency` | カット間の並列度。`runner.CutKeyframeRunner` が `errgroup` で適用します |
-| `RateInterval` / `RequestTimeout` | `workflow` の `callGuard` |
+| `KeyframeAspectRatio` | Aspect ratio (a character reference image matching it is preferred when one exists) |
+| `KeyframeImageSize` | Resolution |
+| `KeyframeNegativePrompt` | Negative prompt (when unset, nothing is excluded) |
+| `MaxConcurrency` | Concurrency across cuts. Applied by `runner.CutKeyframeRunner` with `errgroup` |
+| `RateInterval` / `RequestTimeout` | `workflow`'s `callGuard` |
 
-`RateInterval` と `RequestTimeout` は**台本のテキスト生成とキーフレームの画像生成の両方**に掛かります（クォータはプロジェクト単位で、操作の種類ごとではないため）。発射間隔の待機は 1 回あたりの上限時間の外側で行うので、混雑がタイムアウトに化けることはありません。
+`RateInterval` and `RequestTimeout` apply to **both the script's text generation and the keyframes' image generation** (quota is per project, not per kind of operation). The wait for the call interval happens outside the per-call time limit, so congestion never turns into a timeout.
 
-並列度が `keyframe` ではなく `runner` にあるのは、**保存も `runner` が持つ**ためです。1 カットの「生成 → 保存」を 1 つの goroutine で完結させることで、途中で落ちても保存済みの分が残ります。なお `RateInterval` が設定されていれば、スループットは並列度によらず発射間隔で頭打ちになります。
+Concurrency lives in `runner` rather than `keyframe` because **`runner` also owns saving**. Completing one cut's "generate → save" in a single goroutine means whatever was saved survives a crash midway. Note that when `RateInterval` is set, throughput is capped by the call interval regardless of concurrency.
 
-保存側の `Cache-Control` は `runner.WithCacheControl` で差し替えられます（既定は `public, max-age=1800`。生成物を公開したくないデプロイでは `private` などを指定してください）。
+The `Cache-Control` used when saving can be replaced with `runner.WithCacheControl` (default `public, max-age=1800`; a deployment that does not want its outputs public should specify `private` or similar).
 
-キーフレームの生成結果はライブラリ自身の型 `video.KeyframeImage`（`Data` / `MimeType` / `UsedSeed` / `Model` / `Prompt`）で扱います。画像キットの型を公開面に出さないための境界で、利用側は画像キットを import せずに済みます。
+Keyframe results are handled as the library's own type `video.KeyframeImage` (`Data` / `MimeType` / `UsedSeed` / `Model` / `Prompt`). It is the boundary that keeps the image kit's types off the public surface, so consumers do not need to import the image kit.
 
-## 画作りの既定値は持ちません
+## No art-direction defaults
 
-`KeyframeAspectRatio` / `KeyframeImageSize` を必須にし、`KeyframeNegativePrompt` の既定文言も持たないのは意図的です。
+Making `KeyframeAspectRatio` / `KeyframeImageSize` required, and holding no default wording for `KeyframeNegativePrompt`, is deliberate.
 
-これらは作品ごとに変わる値で、呼び出し側は自分の設定（ap-mv なら `VEO_ASPECT_RATIO`）を既に持っています。キットが既定値を併せ持つと出所が2つになり、片方だけ変えたときに黙って食い違います — ショート動画用に `9:16` を設定したのに、キーフレームだけキットの `16:9` で焼かれる、という形で。ログにも何も出ません。
+These values change from work to work, and the caller already has its own setting for them (`VEO_ASPECT_RATIO` in ap-mv). If the kit carried defaults as well, there would be two sources, and changing only one would make them disagree silently — in the form of setting `9:16` for a short video and still getting keyframes baked at the kit's `16:9`. Nothing would show up in the logs either.
 
-ネガティブプロンプトをキットに置かないのは、そこに画風の指定が混ざるためです。文字やフキダシの排除は普遍的でも、`monochrome` / `black and white` はアートディレクションそのもので、モノクロで作りたい作品がキットのリリース無しには作れなくなります。
+The negative prompt is kept out of the kit because art style creeps into it. Excluding text and speech bubbles may be universal, but `monochrome` / `black and white` is art direction itself, and a work that wanted to be monochrome could not be made without a kit release.

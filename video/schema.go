@@ -1,26 +1,29 @@
 package video
 
-// RecipeSchema は VideoScriptRunner が Gemini に構造化出力させる際の
-// レスポンススキーマです。ResponseMIMEType "application/json" と併用することで、
-// モデル出力が文法レベルでこのスキーマに制約されます。
+// RecipeSchema is the response schema VideoScriptRunner uses to have Gemini
+// produce structured output. Combined with ResponseMIMEType "application/json",
+// it constrains the model output to this schema at the grammar level.
 //
-// music_recipe / final_video_url / aspect_ratio、および Cut のうち cut_index /
+// music_recipe / final_video_url / aspect_ratio, and on Cut, cut_index /
 // section_index / start_sec / end_sec / location_anchor / aspect_ratio /
 // keyframe_reference / video_url / video_id / status / is_chain_start /
-// is_section_start は、いずれもパイプラインの後段（Recipe.Normalize、
-// CutKeyframeRunner、VideoTimelineRunner）が算出・付与する値であり、AI に
-// 生成させる対象ではないため意図的にスキーマへ含めません。カット側の
-// location_anchor / aspect_ratio は特に、レシピ直下の同名フィールドを
-// Recipe.Normalize が写したものなので、AI に別々の値を書かせてはいけません。
+// is_section_start, are all values computed or attached by later pipeline stages
+// (Recipe.Normalize, CutKeyframeRunner, VideoTimelineRunner), not something for
+// the AI to generate, so they are deliberately left out of the schema. The cut's
+// location_anchor / aspect_ratio in particular are copies Recipe.Normalize makes
+// of the recipe-level fields of the same name, so the AI must not be allowed to
+// write separate values for them.
 //
-// characterIDs は、この呼び出しで有効なキャラクター定義（characterkit.Characters）
-// の ID 一覧です。cuts[].character_id を既知の ID に限定することで、存在しない
-// キャラクターを AI が作文してしまうハルシネーションを文法レベルで防ぎます。
-// キャラクターの映らない情景カットを許容するため、空文字列も有効値に含みます。
+// characterIDs lists the IDs of the character definitions
+// (characterkit.Characters) valid for this call. Restricting cuts[].character_id
+// to known IDs prevents, at the grammar level, the hallucination where the AI
+// invents a character that does not exist. The empty string is also a valid value,
+// to allow scenery cuts with no character in them.
 //
-// 戻り値は素の JSON Schema（gemini.GenerateOptions.ResponseJSONSchema へ渡す形）です。
-// genai.Schema で組み立てると、スキーマを書くだけのコードが SDK の型に縛られ、
-// genai-kit を挟んでいる意味が薄れます。
+// The return value is a plain JSON Schema (the form passed to
+// gemini.GenerateOptions.ResponseJSONSchema). Building it with genai.Schema would
+// tie code that merely writes a schema to the SDK's types, undercutting the point
+// of going through genai-kit.
 func RecipeSchema(characterIDs []string) map[string]any {
 	return map[string]any{
 		"type": "object",
@@ -37,7 +40,7 @@ func RecipeSchema(characterIDs []string) map[string]any {
 	}
 }
 
-// cutSchema は RecipeSchema の cuts[] 要素のスキーマです。
+// cutSchema is the schema of an element of RecipeSchema's cuts[].
 func cutSchema(characterIDs []string) map[string]any {
 	characterIDEnum := append([]string{""}, characterIDs...)
 
@@ -52,9 +55,10 @@ func cutSchema(characterIDs []string) map[string]any {
 			"dialogue":     map[string]any{"type": "string"},
 			"audio_cue":    map[string]any{"type": "string"},
 			"duration_sec": map[string]any{"type": "number"},
-			// audio_reference は通常は空のままで、後からジョブ共通の音源で埋められます
-			// （呼び出し側の補完ステップ）。ここに露出しているのは、ソースレシピがカットごとに
-			// 別セグメントを指定している場合に、モデルがその GCS URI を写せるようにするためです。
+			// audio_reference normally stays empty and is filled in later with the
+			// job-wide audio (a completion step on the caller's side). It is exposed here
+			// so the model can copy the GCS URI when the source recipe points each cut
+			// at a different segment.
 			"audio_reference": map[string]any{"type": "string"},
 		},
 		"required": []string{"visual_anchor", "character_id"},

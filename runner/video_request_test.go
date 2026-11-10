@@ -19,7 +19,7 @@ func newTestCharacters(t *testing.T) *characterkit.Characters {
 			VisualCues:   []string{"green hair"},
 		},
 		{
-			// Seed を持たないキャラクター（シードのフォールバック検証用）。
+			// A character without a Seed (for verifying the seed fallback).
 			ID:           "metan",
 			Name:         "めたん",
 			ReferenceURL: "gs://bucket/characters/metan.png",
@@ -32,7 +32,7 @@ func newTestCharacters(t *testing.T) *characterkit.Characters {
 	return chars
 }
 
-// refCaps は referenceImages に対応したモデル（Veo 3系の非Fast）を表します。
+// refCaps represents a model supporting referenceImages (non-Fast Veo 3).
 var refCaps = veo.Capabilities{ReferenceImages: true}
 
 func assertStrings(t *testing.T, label string, got, want []string) {
@@ -47,9 +47,9 @@ func assertStrings(t *testing.T, label string, got, want []string) {
 	}
 }
 
-// TestVideoRequestBuilderWithCharactersBuildsReferenceImages は、モデルが referenceImages に
-// 対応している場合に立ち絵とキーフレームが referenceImages として組み立てられることを
-// 検証します。
+// TestVideoRequestBuilderWithCharactersBuildsReferenceImages verifies that when the
+// model supports referenceImages, the character art and keyframe are assembled as
+// referenceImages.
 func TestVideoRequestBuilderWithCharactersBuildsReferenceImages(t *testing.T) {
 	builder := NewVideoRequestBuilderWithCharacters(newTestCharacters(t))
 	cut := video.Cut{
@@ -70,16 +70,17 @@ func TestVideoRequestBuilderWithCharactersBuildsReferenceImages(t *testing.T) {
 		"gs://bucket/characters/zundamon.png",
 		"gs://bucket/jobs/job-1/images/cut_1.png",
 	})
-	// image-to-video フォールバック用に ImageReference も維持される。
+	// ImageReference is kept too, for the image-to-video fallback.
 	if req.ImageReference != cut.KeyframeReference {
 		t.Fatalf("ImageReference = %q, want keyframe reference", req.ImageReference)
 	}
 }
 
-// TestVideoRequestBuilderReferenceImagesNeedsModelSupport は、モデルが referenceImages に
-// 対応していない場合（VeoCapabilities のゼロ値）に referenceImages を送らず、
-// image_to_video のキーフレーム入力へフォールバックすることを検証します。adapter が
-// 同じ判定でフォールバックするため、組み立て段階から実際に送られる内容と揃えます。
+// TestVideoRequestBuilderReferenceImagesNeedsModelSupport verifies that when the
+// model does not support referenceImages (the zero value of VeoCapabilities),
+// referenceImages is not sent and the request falls back to image_to_video's
+// keyframe input. The adapter falls back on the same decision, so the request is
+// aligned with what is actually sent from the assembly stage on.
 func TestVideoRequestBuilderReferenceImagesNeedsModelSupport(t *testing.T) {
 	builder := NewVideoRequestBuilderWithCharacters(newTestCharacters(t))
 	cut := video.Cut{
@@ -100,9 +101,9 @@ func TestVideoRequestBuilderReferenceImagesNeedsModelSupport(t *testing.T) {
 	}
 }
 
-// TestVideoRequestBuilderOmitsImageInputsWithPreviousVideo は、video-to-video の文脈
-// （gs:// の PreviousVideoURI）がある場合に画像入力を一切送らないことを検証します。
-// Veo は video と referenceImages / image を同時に受け付けません。
+// TestVideoRequestBuilderOmitsImageInputsWithPreviousVideo verifies that when there
+// is a video-to-video context (a gs:// PreviousVideoURI), no image input is sent
+// at all. Veo does not accept video together with referenceImages / image.
 func TestVideoRequestBuilderOmitsImageInputsWithPreviousVideo(t *testing.T) {
 	builder := NewVideoRequestBuilderWithCharacters(newTestCharacters(t))
 	recipe := &video.Recipe{ProjectTitle: "test"}
@@ -114,7 +115,7 @@ func TestVideoRequestBuilderOmitsImageInputsWithPreviousVideo(t *testing.T) {
 		KeyframeReference: "gs://bucket/jobs/job-1/images/cut_2.png",
 	}
 
-	// (a) gs:// の PreviousVideoURI あり → video_extension なので画像入力は落ちる。
+	// (a) With a gs:// PreviousVideoURI → video_extension, so image inputs are dropped.
 	withPrev := builder.Build(BuildInput{
 		Recipe:           recipe,
 		Cut:              cut,
@@ -128,7 +129,7 @@ func TestVideoRequestBuilderOmitsImageInputsWithPreviousVideo(t *testing.T) {
 		t.Fatalf("image inputs = %v / %q, want none for video_extension", withPrev.ReferenceImages, withPrev.ImageReference)
 	}
 
-	// (b) PreviousVideoURI なし → 同じ cut/recipe で referenceImages が組み立てられる。
+	// (b) Without PreviousVideoURI → referenceImages are assembled for the same cut/recipe.
 	withoutPrev := builder.Build(BuildInput{Recipe: recipe, Cut: cut, Capabilities: refCaps})
 	assertStrings(t, "ReferenceImages", withoutPrev.ReferenceImages, []string{
 		"gs://bucket/characters/zundamon.png",
@@ -136,10 +137,11 @@ func TestVideoRequestBuilderOmitsImageInputsWithPreviousVideo(t *testing.T) {
 	})
 }
 
-// TestVideoRequestBuilderReferenceImagesWithoutCharacterArt は、キャラクターが解決できない
-// （未設定・未知ID）場合でも、カット自身のキーフレームが referenceImages として
-// 使われることを検証します。video.CutReferenceImages が referenceImages の唯一の組み立て
-// 規則で、リクエストの生成モード判定もこの同じリストを見ます。
+// TestVideoRequestBuilderReferenceImagesWithoutCharacterArt verifies that even when
+// the character cannot be resolved (unset or unknown ID), the cut's own keyframe
+// is used as referenceImages. video.CutReferenceImages is the only rule for
+// building referenceImages, and the request's generation-mode decision looks at
+// this same list.
 func TestVideoRequestBuilderReferenceImagesWithoutCharacterArt(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -175,9 +177,10 @@ func TestVideoRequestBuilderReferenceImagesWithoutCharacterArt(t *testing.T) {
 	}
 }
 
-// TestVideoRequestBuilderLastFrameNeedsModelSupport は、lastFrame（frames_to_video 補間）が
-// 対応モデルのときだけリクエストに残ることを検証します。非対応モデルに送っても無視される
-// だけなので、組み立て段階で落として実際に送られる内容と一致させます。
+// TestVideoRequestBuilderLastFrameNeedsModelSupport verifies that lastFrame
+// (frames_to_video interpolation) stays in the request only for supporting models.
+// Sending it to an unsupporting model would just get it ignored, so it is dropped
+// at assembly to match what is actually sent.
 func TestVideoRequestBuilderLastFrameNeedsModelSupport(t *testing.T) {
 	builder := NewVideoRequestBuilder()
 	recipe := &video.Recipe{ProjectTitle: "test"}
@@ -208,9 +211,10 @@ func TestVideoRequestBuilderLastFrameNeedsModelSupport(t *testing.T) {
 	}
 }
 
-// TestVideoRequestBuilderFallsBackToCharacterSeed は、キーフレーム生成結果からシードが
-// 得られない場合にキャラクターのシード（キーフレーム生成が使うのと同じ値）へ、それも
-// 無ければレシピ全体のシードへフォールバックすることを検証します。
+// TestVideoRequestBuilderFallsBackToCharacterSeed verifies that when no seed can be
+// obtained from the keyframe result, the request falls back to the character's seed
+// (the same value keyframe generation uses), and failing that to the recipe-wide
+// seed.
 func TestVideoRequestBuilderFallsBackToCharacterSeed(t *testing.T) {
 	charSeed := int64(4242)
 	chars := newTestCharacters(t).WithSeedOverride("zundamon", charSeed)

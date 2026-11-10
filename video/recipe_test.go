@@ -272,9 +272,10 @@ func TestVideoRecipeNormalizeDoesNotOverwriteExplicitCuts(t *testing.T) {
 	}
 }
 
-// TestVideoRecipeValidateRejectsBrokenStructure は、Normalize では埋めようのない破綻を
-// 弾くことを確認します。JSON Schema は型と必須項目までしか縛れないため、これらは
-// 文法制約をすり抜けて後段（Veo のカット生成）まで到達します。
+// TestVideoRecipeValidateRejectsBrokenStructure checks that breakage Normalize
+// cannot fill is rejected. A JSON Schema constrains only types and required fields,
+// so these slip past the grammar constraint and reach the downstream steps (Veo cut
+// generation).
 func TestVideoRecipeValidateRejectsBrokenStructure(t *testing.T) {
 	tests := map[string]*Recipe{
 		"nil recipe": nil,
@@ -300,8 +301,9 @@ func TestVideoRecipeValidateRejectsBrokenStructure(t *testing.T) {
 	}
 }
 
-// TestVideoRecipeValidateAcceptsUnassignedSectionIndex は、section_index の 0 を通すことを
-// 確認します。0 は「未割り当て」を表す正当な値で、Normalize が StartSec から補完します。
+// TestVideoRecipeValidateAcceptsUnassignedSectionIndex checks that a section_index
+// of 0 is accepted. 0 is a legitimate value meaning "unassigned", which Normalize
+// fills in from StartSec.
 func TestVideoRecipeValidateAcceptsUnassignedSectionIndex(t *testing.T) {
 	recipe := &Recipe{
 		ProjectTitle: "Title",
@@ -314,8 +316,9 @@ func TestVideoRecipeValidateAcceptsUnassignedSectionIndex(t *testing.T) {
 	}
 }
 
-// TestVideoRecipeValidateAcceptsMusicTitleAsFallback は、project_title が空でも
-// music_recipe 側にタイトルがあれば通ることを確認します。Normalize が補完する関係です。
+// TestVideoRecipeValidateAcceptsMusicTitleAsFallback checks that an empty
+// project_title passes as long as music_recipe has a title, since Normalize fills
+// one from the other.
 func TestVideoRecipeValidateAcceptsMusicTitleAsFallback(t *testing.T) {
 	recipe := &Recipe{
 		MusicRecipe: MusicRecipe{Title: "Song"},

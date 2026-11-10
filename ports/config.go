@@ -1,5 +1,5 @@
-// Package ports は、go-veo-orchestrator の各コンポーネントが依存する
-// インターフェース（ポート）と、動画生成に関する共通データ型・設定を定義します。
+// Package ports defines the interfaces (ports) that the components of
+// go-veo-orchestrator depend on, together with the shared configuration for video generation.
 package ports
 
 import (
@@ -8,65 +8,70 @@ import (
 	"time"
 )
 
-// DefaultMaxConcurrency などは Config に適用するデフォルト値です。
+// DefaultMaxConcurrency and the other constants are the defaults applied to Config.
 const (
 	DefaultMaxConcurrency = 1
-	// DefaultRequestTimeout は AI 呼び出し1回あたりの既定の上限時間です。
-	// 画像生成は分単位で掛かることがあるため、余裕を持った値にしています。
+	// DefaultRequestTimeout is the default upper bound on the time of a single AI call.
+	// Image generation can take minutes, so the value leaves plenty of room.
 	DefaultRequestTimeout = 5 * time.Minute
 )
 
-// Config は Go Veo Orchestrator の各 Runner を動作させるための基本設定です。
+// Config is the basic configuration that the Go Veo Orchestrator Runners run on.
 //
-// MaxConcurrency / RateInterval / RequestTimeout は AI 呼び出しの実行制御です。
-// 発射間隔と上限時間は台本のテキスト生成とキーフレームの画像生成の両方に
-// 掛かります（クォータはプロジェクト単位で、操作の種類ごとではないため）。
-// 並列度が効くのはキーフレーム生成だけで、動画生成は Video-to-Video の連鎖上
-// 必ず逐次です。
+// MaxConcurrency / RateInterval / RequestTimeout control how AI calls are executed.
+// The call interval and the time limit apply to both the script's text generation
+// and the keyframes' image generation (quota is per project, not per kind of
+// operation). Concurrency affects keyframe generation only; video generation is
+// always sequential because of the Video-to-Video chain.
 type Config struct {
 	// --- AI Model Settings (Common) ---
-	// どちらも必須です（Validate 参照）。
+	// Both are required (see Validate).
 	GeminiModel string
 	ImageModel  string
 
 	// --- Generation Settings ---
-	// MaxConcurrency はキーフレーム生成の同時実行数です（0 以下は既定値 1）。
+	// MaxConcurrency is the number of keyframe generations run at once (0 or
+	// less means the default, 1).
 	//
-	// 注意: RateInterval が設定されていれば、スループットは並列度によらず
-	// 1/RateInterval で頭打ちになります。両方を大きくする設定は矛盾しています。
+	// Note: when RateInterval is set, throughput is capped at 1/RateInterval
+	// regardless of concurrency. Setting both aggressively is contradictory.
 	MaxConcurrency int
-	// RateInterval は AI 呼び出しの発射間隔の下限です（0 で無制限）。
+	// RateInterval is the minimum interval between AI calls (0 means unlimited).
 	RateInterval time.Duration
-	// RequestTimeout は AI 呼び出し1回あたりの上限時間です（0 以下は既定値）。
-	// レート制限の待機はこの上限の外側で行うため、混雑がタイムアウトに化けません。
+	// RequestTimeout is the upper bound on the time of a single AI call (0 or
+	// less means the default). The rate-limit wait happens outside this bound,
+	// so congestion never turns into a timeout.
 	RequestTimeout time.Duration
 	// --- Art Direction ---
 	//
-	// このライブラリは画作りの既定値を一切持ちません。アスペクト比も解像度も
-	// ネガティブプロンプトも作品ごとに変わる値で、キットが既定を持つと呼び出し側の
-	// 設定と二重の出所になり、片方だけ変えたときに黙って食い違います。
+	// This library holds no art-direction defaults at all. Aspect ratio,
+	// resolution and negative prompt all change from work to work; a kit default
+	// would be a second source next to the caller's own setting, and changing
+	// only one of them would make the two disagree silently.
 
-	// KeyframeAspectRatio はキーフレーム画像生成のアスペクト比です（例: "16:9", "9:16"）。
-	// 必須です（Validate 参照）。空のまま送ると、モデルが勝手に選んだ比率で
-	// 焼かれてしまい、誰も気付かないまま縦横が変わります。
+	// KeyframeAspectRatio is the aspect ratio for keyframe image generation
+	// (e.g. "16:9", "9:16"). Required (see Validate). Sent empty, the image is
+	// baked at whatever ratio the model picks, and the orientation changes
+	// without anyone noticing.
 	KeyframeAspectRatio string
-	// KeyframeImageSize はキーフレーム画像の出力解像度です（例: "1K", "2K"）。
-	// 必須です（Validate 参照）。
+	// KeyframeImageSize is the output resolution of keyframe images (e.g. "1K",
+	// "2K"). Required (see Validate).
 	KeyframeImageSize string
-	// KeyframeNegativePrompt はキーフレーム生成で排除したい要素です
-	// （例: "speech bubble, text, watermark"）。
+	// KeyframeNegativePrompt lists elements to exclude from keyframe generation
+	// (e.g. "speech bubble, text, watermark").
 	//
-	// 必須ではありません。空は「排除指定なし」という意味のある選択だからです。
-	// ただしキットは既定文言を持たないので、文字やフキダシを避けたいなら明示して
-	// ください。文言をキットに置かないのは、そこに画風の指定（monochrome など）が
-	// 混ざると、モノクロで作りたい作品がキットのリリース無しには作れなくなるためです。
+	// It is not required, because empty is a meaningful choice: "exclude
+	// nothing". The kit holds no default wording, though, so state it explicitly
+	// if you want to avoid text and speech bubbles. The wording stays out of the
+	// kit because art style (monochrome, etc.) creeps into it, and then a work
+	// meant to be monochrome could not be made without a kit release.
 	KeyframeNegativePrompt string
 }
 
-// ApplyDefaults は未設定（ゼロ値）の項目にデフォルト値を適用します。
+// ApplyDefaults applies the defaults to unset (zero-valued) fields.
 //
-// RateInterval は補完しません。0 は「制限なし」という意味を持つ値で、既定値を
-// 差し込むと呼び出し側が明示的に無制限を選べなくなるためです。
+// RateInterval is not filled in. 0 means "no limit", and inserting a default
+// would leave callers no way to choose unlimited explicitly.
 func (c *Config) ApplyDefaults() {
 	if c.MaxConcurrency <= 0 {
 		c.MaxConcurrency = DefaultMaxConcurrency
@@ -76,7 +81,7 @@ func (c *Config) ApplyDefaults() {
 	}
 }
 
-// Validate はモデル名が指定されていることを検証します。
+// Validate checks that the model names and the art-direction fields are set.
 func (c *Config) Validate() error {
 	missing := make([]string, 0, 4)
 	if strings.TrimSpace(c.GeminiModel) == "" {
@@ -97,7 +102,8 @@ func (c *Config) Validate() error {
 	return nil
 }
 
-// WithModels は、指定されたモデル名で上書きした Config のコピーを返します。
+// WithModels returns a copy of the Config with the given model names overriding the current ones.
+// An empty name leaves that model unchanged.
 func (c Config) WithModels(geminiModel, imageModel string) Config {
 	if geminiModel = strings.TrimSpace(geminiModel); geminiModel != "" {
 		c.GeminiModel = geminiModel
@@ -109,8 +115,8 @@ func (c Config) WithModels(geminiModel, imageModel string) Config {
 	return c
 }
 
-// WithAspectRatio は、指定されたアスペクト比で上書きした Config のコピーを返します。
-// 空文字は「変更なし」として扱います。
+// WithAspectRatio returns a copy of the Config with the given aspect ratio.
+// An empty string means "unchanged".
 func (c Config) WithAspectRatio(aspectRatio string) Config {
 	if aspectRatio = strings.TrimSpace(aspectRatio); aspectRatio != "" {
 		c.KeyframeAspectRatio = aspectRatio
@@ -118,7 +124,7 @@ func (c Config) WithAspectRatio(aspectRatio string) Config {
 	return c
 }
 
-// UsesModels は、指定モデルを適用しても現在の Config と同じモデル構成かを返します。
+// UsesModels reports whether applying the given models would leave the Config's model selection unchanged.
 func (c Config) UsesModels(geminiModel, imageModel string) bool {
 	current := c
 	current.ApplyDefaults()

@@ -8,38 +8,49 @@ import (
 	"github.com/shouni/go-veo-orchestrator/video"
 )
 
-// このファイルはカット尺のプランナーです。レシピ上の任意尺のカット列を、Veo が実際に
-// 受け付ける離散尺（duration.go）のカット列へ正規化する純関数群を提供します。
+// This file is the cut-duration planner. It provides pure functions that
+// normalize a recipe's sequence of cuts of arbitrary duration into a sequence of
+// cuts with the discrete durations Veo actually accepts (duration.go).
 //
-// 尺のルールと、それを使う計画の両方をこのパッケージに置いています。プランナーだけを
-// 消費者に書かせると、ルールと計画が別リポジトリに割れてドリフトするためです
-// （実際にそうなっていました）。
+// Both the duration rules and the planning that uses them live in this package.
+// Leaving consumers to write the planner would split rules and planning across
+// repositories, and they would drift (which is what actually happened).
 
-// ExpandCutsToSupportedDurations は各カットの尺を Veo のサポート値へ正規化します。
-// 8 秒を超えるカットは同じキーフレーム・プロンプトを引き継いだサブカット列へ分割し、
-// 歌詞（Dialogue）は行単位でサブカットへ均等配分します。分割後は CutIndex を 1 から振り直します。
+// ExpandCutsToSupportedDurations normalizes each cut's duration to a value Veo
+// supports. A cut longer than 8 seconds is split into a run of sub-cuts that carry
+// over the same keyframe and prompt, and the lyrics (Dialogue) are distributed
+// evenly across the sub-cuts line by line. After splitting, CutIndex is renumbered
+// from 1.
 //
-// usePreviousVideo が true の場合、先頭カット以降（PreviousVideoURI を伴い video_extension で
-// 生成される想定のカット）は 7 秒固定へ揃えます。ただし累積尺が ContinuationMaxDurationSec に
-// 達する手前でチェーンをリセットし、リセットされたカットは PreviousVideoURI を使わない新規
-// ベース（image_to_video、{4,6,8}秒）として扱います（実行側の lastVideoID リセットと対）。
-// 生成済みカットは実動画の尺と metadata がずれないよう変更しませんが、再開時にチェーン状態を
-// 正しく引き継ぐため累積尺の計算には含めます。
+// When usePreviousVideo is true, the cuts after the first (those expected to be
+// generated as video_extension with a PreviousVideoURI) are aligned to a fixed 7
+// seconds. The chain is reset just before the cumulative duration reaches
+// ContinuationMaxDurationSec, however, and a reset cut is treated as a new base
+// that does not use PreviousVideoURI (image_to_video, {4,6,8} seconds), mirroring
+// the lastVideoID reset on the execution side. Generated cuts are left unchanged so
+// their metadata does not drift from the actual video's duration, but they are
+// included in the cumulative-duration calculation so a resumed run carries the
+// chain state over correctly.
 //
-// 曲のセクションが変わる境目では、累積尺に余裕があってもチェーンをリセットします。所属
-// セクションは cut.SectionIndex（VideoRecipe.Normalize が StartSec から補完）で判定します。
-// 技術的リセットとの違いは IsSectionStart で示し、実行側はこのフラグが立つカットで直前
-// チェーンの最終フレーム引き継ぎをスキップします（意図した場面転換の直前で、次セクションの
-// 構図へ寄せないため）。
+// At a boundary where the song's section changes, the chain is reset even if there
+// is room left in the cumulative duration. Section membership is decided from
+// cut.SectionIndex (filled in from StartSec by VideoRecipe.Normalize). The
+// difference from a technical reset is marked by IsSectionStart, and on cuts where
+// this flag is set the execution side skips carrying over the previous chain's
+// last frame (so the picture is not pulled toward the next section's composition
+// right before an intended scene change).
 //
-// チェーンの起点と判断したカットには IsChainStart を立てて返します。この関数は起点かどうかを
-// 決める唯一の場所なので、決めた側が記録します。読む側が尺から逆算する（isChainBase）のは
-// 旧レシピ向けのフォールバックで、IsChainStart だけを見る実行側はそれでは起点を認識できません。
+// Cuts judged to be a chain's starting point are returned with IsChainStart set.
+// This function is the only place that decides whether a cut is a starting point,
+// so the decider records it. Readers reverse-deriving it from durations
+// (isChainBase) is a fallback for old recipes, and an execution side that looks
+// only at IsChainStart cannot recognize starting points that way.
 //
-// characters / referenceImagesSupported はカットごとの許容尺の判定に使います
-// （AllowedCutDurations 参照）。事前計画されたチェーンブロック（IsChainStart 付きの未生成
-// カット）の扱いは splitChainCutIntoSupportedDurations を参照してください。IsChainStart を
-// 持たない未生成カット（旧レシピなど）は、貪欲な分割と累積尺ベースのチェーン形成で処理します。
+// characters / referenceImagesSupported are used to decide each cut's allowed
+// durations (see AllowedCutDurations). For how pre-planned chain blocks (ungenerated
+// cuts with IsChainStart) are handled, see splitChainCutIntoSupportedDurations.
+// Ungenerated cuts without IsChainStart (old recipes, etc.) are handled by greedy
+// splitting and chain formation based on the cumulative duration.
 func ExpandCutsToSupportedDurations(cuts []video.Cut, usePreviousVideo bool, characters *characterkit.Characters, referenceImagesSupported bool) []video.Cut {
 	expanded := make([]video.Cut, 0, len(cuts))
 	for _, cut := range cuts {
@@ -58,12 +69,13 @@ func ExpandCutsToSupportedDurations(cuts []video.Cut, usePreviousVideo bool, cha
 			continue
 		}
 		if expanded[i].IsGenerated() {
-			// 生成済みカットがそれ自体チェーンの起点（IsChainStart、先頭カットまたは
-			// 過去のリセット）だった場合、累積尺はそのカット自身の尺から数え直す。
-			// 常に加算するだけだと、一度リセットが起きた後もそれ以前のチェーンの
-			// 累積尺を引きずり続けてしまい、以降のカットが（実際には累積尺に余裕が
-			// あるのに）毎回誤ってリセット扱いになる（1カットずつ再開する実行側の
-			// 性質上、この関数は毎回全カットを再計算する）。
+			// If a generated cut was itself a chain's starting point (IsChainStart: the
+			// first cut, or a past reset), the cumulative duration is counted again from
+			// that cut's own duration. Always just adding would keep dragging the
+			// cumulative duration of the chain before a reset along after it, and every
+			// later cut would wrongly be treated as a reset (even though there is room
+			// left in the cumulative duration). Because the execution side resumes one cut
+			// at a time, this function recomputes every cut each time.
 			if i == 0 || expanded[i].IsChainStart {
 				cumulative = expanded[i].DurationSec
 			} else {
@@ -71,21 +83,24 @@ func ExpandCutsToSupportedDurations(cuts []video.Cut, usePreviousVideo bool, cha
 			}
 			continue
 		}
-		// IsSectionStart（cut.ChainControl）は2つの異なる理由で立つ、意味が重なった
-		// フラグです。ここではその2つを別々に判定してから合成し、どちらの理由で
-		// リセットになったかをコードとして追跡できるようにしています。
+		// IsSectionStart (cut.ChainControl) is a flag with overlapping meanings,
+		// set for two different reasons. Here the two are decided separately and
+		// then combined, so the code shows which reason caused the reset.
 		//
-		//   isSceneReset: シーン分割側がこの関数より前に立てた値です。1つの音楽
-		//   セクション内で複数シーンに分割された際の「シーン内リセット」で、
-		//   SectionIndex は前後で変わりません（SectionIndex 比較では検出できない）。
+		//   isSceneReset: the value the scene splitter set before this function. It
+		//   is a "reset within a scene" from splitting one music section into several
+		//   scenes, and SectionIndex does not change across it (so a SectionIndex
+		//   comparison cannot detect it).
 		//
-		//   isRealSectionBoundary: cut.SectionIndex（1始まり、0は未割り当て）が
-		//   前カットと異なる、実際の曲のセクション境界です。分割前カットの
-		//   SectionIndex はサブカットへコピーされるため（buildSubCutsFromDurations の
-		//   sub := cut）、分割自体はセクション境界とは見なされません。
+		//   isRealSectionBoundary: an actual section boundary of the song, where
+		//   cut.SectionIndex (1-based, 0 unassigned) differs from the previous cut.
+		//   The pre-split cut's SectionIndex is copied to its sub-cuts (sub := cut in
+		//   buildSubCutsFromDurations), so a split by itself is not treated as a
+		//   section boundary.
 		//
-		// 両者とも「直前チェーンの最終フレームを引き継がない」という同じ下流の
-		// 挙動を必要とするため、最終的には同じ IsSectionStart へ合成して書き戻します。
+		// Both need the same downstream behavior, "do not carry over the previous
+		// chain's last frame", so they are finally combined and written back into
+		// the same IsSectionStart.
 		isSceneReset := expanded[i].IsSectionStart
 		isRealSectionBoundary := i > 0 && expanded[i].SectionIndex != 0 && expanded[i].SectionIndex != expanded[i-1].SectionIndex
 		isSectionStart := isSceneReset || isRealSectionBoundary
@@ -93,14 +108,17 @@ func ExpandCutsToSupportedDurations(cuts []video.Cut, usePreviousVideo bool, cha
 			cumulative = 0
 		}
 		if expanded[i].IsChainStart || cumulative == 0 || cumulative+VideoExtensionDurationSec > ContinuationMaxDurationSec {
-			// 新規チェーンの先頭（曲頭、セクション境界、リセット直後、または事前計画
-			// されたチェーンブロックの起点）。分割時に既に割り当てた尺
-			// （image_to_videoなら{4,6,8}秒、reference_to_videoなら8秒固定）をそのまま使う。
+			// The head of a new chain (start of the song, a section boundary, right
+			// after a reset, or the starting point of a pre-planned chain block). Use
+			// the duration already assigned during splitting as-is ({4,6,8} seconds for
+			// image_to_video, fixed at 8 seconds for reference_to_video).
 			cumulative = expanded[i].DurationSec
-			// 判断をカットへ書き戻します。ここで記録しないと、下流はチェーンの起点を
-			// 尺から逆算するしかありません（isChainBase と同じ手口）。逆算は旧レシピ用の
-			// フォールバックで、IsChainStart だけを見る実行側（VideoTimelineRunner）は
-			// 起点を一つも認識できず、チェーンを最後まで切らずに繋ぎ続けます。
+			// Write the decision back into the cut. Without recording it here,
+			// downstream can only reverse-derive the chain's starting point from
+			// durations (the same trick as isChainBase). That reverse derivation is a
+			// fallback for old recipes, and an execution side that looks only at
+			// IsChainStart (VideoTimelineRunner) would recognize no starting point at
+			// all and keep chaining to the very end without ever cutting the chain.
 			expanded[i].IsChainStart = true
 			if isSectionStart {
 				expanded[i].IsSectionStart = true
@@ -114,10 +132,10 @@ func ExpandCutsToSupportedDurations(cuts []video.Cut, usePreviousVideo bool, cha
 	return expanded
 }
 
-// AllowedCutDurations は、指定されたカットが reference_to_video（referenceImages）と
-// image_to_video のどちらで生成されるかに応じて、Veo がそのカットに対して受け付ける尺
-// （秒）の候補リストを返します（referenceImagesSupported が false の場合、モデルが
-// referenceImages に対応していないため image_to_video 用の {4,6,8} を返します）。
+// AllowedCutDurations returns the candidate durations (seconds) Veo accepts for the
+// given cut, depending on whether it is generated by reference_to_video
+// (referenceImages) or image_to_video (when referenceImagesSupported is false, the
+// model does not support referenceImages, so image_to_video's {4,6,8} is returned).
 func AllowedCutDurations(cut video.Cut, characters *characterkit.Characters, referenceImagesSupported bool) []float64 {
 	if CutUsesReferenceImages(cut, characters, referenceImagesSupported) {
 		return ReferenceToVideoDurationsSec()
@@ -125,10 +143,11 @@ func AllowedCutDurations(cut video.Cut, characters *characterkit.Characters, ref
 	return ImageToVideoDurationsSec()
 }
 
-// CutUsesReferenceImages は、このカットが Veo の referenceImages（reference_to_video）で
-// 生成されるかを返します。実際の生成が組むのと同じ参照画像リスト（CutReferenceImages）で
-// リクエストを分類する（ClassifyRequest）ため、尺の正規化と実際の生成が使う判定は
-// 構造的に一致します。
+// CutUsesReferenceImages reports whether this cut is generated with Veo's
+// referenceImages (reference_to_video). The request is classified (ClassifyRequest)
+// with the same reference image list the actual generation builds
+// (CutReferenceImages), so the decision used by duration normalization and by the
+// actual generation agree by construction.
 func CutUsesReferenceImages(cut video.Cut, characters *characterkit.Characters, referenceImagesSupported bool) bool {
 	req := video.GenerationRequest{
 		ImageReference:  cut.KeyframeReference,
@@ -138,12 +157,13 @@ func CutUsesReferenceImages(cut video.Cut, characters *characterkit.Characters, 
 	return ClassifyRequest(req, false, caps) == ModeReferenceToVideo
 }
 
-// SplitCutBySupportedDurations は1カットをサポート尺のサブカット列へ分割します。
-// 生成済みカットは実動画の尺と metadata がずれないよう、そのまま返します。
-// allowedDurations は使用する尺の候補リストで、AllowedCutDurations が呼び出し元で
-// 事前に決定します（reference_to_videoなら{8}、image_to_videoなら{4,6,8}）。
-// CutIndex の振り直しは行いません（シーン分割など、呼び出し側が自前の採番を持つ
-// 経路から使うため。全体の正規化には ExpandCutsToSupportedDurations を使ってください）。
+// SplitCutBySupportedDurations splits one cut into a run of sub-cuts with supported
+// durations. Generated cuts are returned unchanged so their metadata does not drift
+// from the actual video's duration. allowedDurations is the list of candidate
+// durations to use, decided beforehand by the caller with AllowedCutDurations ({8}
+// for reference_to_video, {4,6,8} for image_to_video). CutIndex is not renumbered
+// (it is used from paths, such as scene splitting, where the caller has its own
+// numbering; use ExpandCutsToSupportedDurations for normalizing the whole thing).
 func SplitCutBySupportedDurations(cut video.Cut, allowedDurations []float64) []video.Cut {
 	if cut.IsGenerated() {
 		return []video.Cut{cut}
@@ -155,10 +175,11 @@ func SplitCutBySupportedDurations(cut video.Cut, allowedDurations []float64) []v
 		return []video.Cut{cut}
 	}
 
-	// 貪欲に8秒上限で分割し、末尾の端数のみサポート尺へ丸める。
-	// Note: 端数が切り上げ方向へ丸められた場合、最後のサブカットの EndSec は元の
-	// cut.EndSec を超過し、後続カットとタイムライン上でオーバーラップする可能性が
-	// ありますが、Veo の個別カット生成としては問題ないため仕様として許容しています。
+	// Split greedily at the 8-second cap and round only the trailing remainder to
+	// a supported duration.
+	// Note: when the remainder is rounded up, the last sub-cut's EndSec exceeds the
+	// original cut.EndSec and may overlap the following cut on the timeline. That
+	// is no problem for Veo's per-cut generation, so it is accepted by design.
 	var durations []float64
 	for remaining := duration; remaining > 0; {
 		d := MaxCutDurationSec
@@ -171,10 +192,11 @@ func SplitCutBySupportedDurations(cut video.Cut, allowedDurations []float64) []v
 	return buildSubCutsFromDurations(cut, durations)
 }
 
-// buildSubCutsFromDurations は1つの親カットを durations に対応するサブカット列へ展開します。
-// サブ尺リストの計算方法（貪欲な8秒上限 vs [ベース, 7秒, ...]）だけが呼び出し元ごとに異なり、
-// そこから先の組み立て — 親フィールドの引き継ぎ、先頭以外のチェーンフラグのクリア、時間の
-// 連続配置、歌詞の均等配分 — は共通です。
+// buildSubCutsFromDurations expands one parent cut into a run of sub-cuts
+// matching durations. Only how the list of sub-durations is computed (greedy
+// 8-second cap vs [base, 7s, ...]) differs between callers; the assembly from
+// there on — carrying over parent fields, clearing chain flags on all but the
+// first, laying out time contiguously, distributing lyrics evenly — is shared.
 func buildSubCutsFromDurations(cut video.Cut, durations []float64) []video.Cut {
 	subCuts := make([]video.Cut, 0, len(durations))
 	offset := 0.0
@@ -197,14 +219,17 @@ func buildSubCutsFromDurations(cut video.Cut, durations []float64) []video.Cut {
 	return subCuts
 }
 
-// splitChainCutIntoSupportedDurations は、シーン分割側が事前計画したチェーンブロック
-// （IsChainStart 付き、尺は ChainDurations の候補値）を実際の生成カット列
-// [ベース, 7秒, 7秒, ...] へ分割します。先頭サブカットがチェーンの起点で、その尺は
-// allowedBases から選びます。以降のサブカットは video_extension の7秒固定です。
+// splitChainCutIntoSupportedDurations splits a chain block pre-planned by the
+// scene splitter (with IsChainStart, its duration one of the ChainDurations
+// candidates) into the actual run of generated cuts [base, 7s, 7s, ...]. The
+// first sub-cut is the chain's starting point, and its duration is chosen from
+// allowedBases. The sub-cuts after it are video_extension's fixed 7 seconds.
 //
-// reference_to_video のカット（ベース8秒固定）に {4,6} ベース前提のブロック尺（11秒など）が
-// 計画されていた場合、ベースは allowedBases へ丸められるため実現尺が計画と数秒ずれますが、
-// 計画側も同じ CutUsesReferenceImages 判定で候補を選ぶため通常は一致します。
+// If a block duration that assumes a {4,6} base (11 seconds, etc.) was planned for
+// a reference_to_video cut (base fixed at 8 seconds), the base is rounded to
+// allowedBases and the achieved duration drifts a few seconds from the plan, but
+// the planner picks its candidates with the same CutUsesReferenceImages decision,
+// so the two normally agree.
 func splitChainCutIntoSupportedDurations(cut video.Cut, allowedBases []float64) []video.Cut {
 	duration := cut.EffectiveDurationSec()
 	if duration <= MaxCutDurationSec {
@@ -215,7 +240,7 @@ func splitChainCutIntoSupportedDurations(cut video.Cut, allowedBases []float64) 
 	extensions := int(math.Ceil((duration - MaxCutDurationSec) / VideoExtensionDurationSec))
 	base := SnapDuration(duration-float64(extensions)*VideoExtensionDurationSec, allowedBases)
 
-	// [ベース, 7秒 × extensions] のサブ尺列を組み立てる。
+	// Build the run of sub-durations [base, 7s × extensions].
 	durations := make([]float64, 0, extensions+1)
 	durations = append(durations, base)
 	for range extensions {
@@ -224,8 +249,8 @@ func splitChainCutIntoSupportedDurations(cut video.Cut, allowedBases []float64) 
 	return buildSubCutsFromDurations(cut, durations)
 }
 
-// CapCutsTotalDuration は合計尺が maxSec を超えないよう、超過するカット以降を切り詰めます。
-// 少なくとも先頭の1カットは残します。
+// CapCutsTotalDuration truncates the cuts from the one that exceeds maxSec onward,
+// so the total duration does not exceed maxSec. At least the first cut is kept.
 func CapCutsTotalDuration(cuts []video.Cut, maxSec float64) []video.Cut {
 	total := 0.0
 	for i, cut := range cuts {
@@ -237,12 +262,14 @@ func CapCutsTotalDuration(cuts []video.Cut, maxSec float64) []video.Cut {
 	return cuts
 }
 
-// ChainTailEnd は、target のカットを作り直す際に一緒に作り直す必要がある最後のカットの
-// 位置を返します。
+// ChainTailEnd returns the position of the last cut that must be regenerated
+// together with the target cut when the target is regenerated.
 //
-// 継続チェーンでは、対象カットの動画を作り直すと後続カットの PreviousVideoURI が指す
-// 動画が古いままになります。そのため次のチェーン起点の手前までをまとめて作り直します。
-// usePreviousVideo=false ではカット同士が動画で繋がらないため、対象カット 1 枚で閉じます。
+// In a continuation chain, regenerating the target cut's video leaves the
+// following cuts' PreviousVideoURI pointing at the old video. So everything up
+// to just before the next chain starting point is regenerated together. With
+// usePreviousVideo=false, cuts are not connected by video, so it stops at the
+// target cut alone.
 func ChainTailEnd(cuts []video.Cut, target int, usePreviousVideo bool) int {
 	if !usePreviousVideo {
 		return target
@@ -257,14 +284,14 @@ func ChainTailEnd(cuts []video.Cut, target int, usePreviousVideo bool) int {
 	return end
 }
 
-// isChainBase は、このカットがチェーンの起点（ベース）かを返します。
-// 事前計画されたチェーンは IsChainStart を持ちますが、旧レシピは貪欲な分割で
-// 7秒以外の尺がベースになるため、どちらの手掛かりも見ます。
+// isChainBase reports whether this cut is a chain's starting point (base).
+// Pre-planned chains carry IsChainStart, but in old recipes greedy splitting makes
+// a non-7-second duration the base, so both clues are checked.
 func isChainBase(cut video.Cut) bool {
 	return cut.IsChainStart || cut.DurationSec != VideoExtensionDurationSec
 }
 
-// SplitDialogueLines は歌詞テキストを空行を除いた行スライスへ分解します。
+// SplitDialogueLines breaks lyric text into a slice of lines, dropping empty lines.
 func SplitDialogueLines(dialogue string) []string {
 	var lines []string
 	for line := range strings.SplitSeq(dialogue, "\n") {
@@ -275,8 +302,9 @@ func SplitDialogueLines(dialogue string) []string {
 	return lines
 }
 
-// DistributeLines は lines を total 個へ按分し、pos 番目の分を改行で繋いで返します。
-// 前のバケットほど前半の行を受け取るため、連続するサブカットへ歌詞がそのままの順で流れます。
+// DistributeLines apportions lines into total buckets and returns the pos-th bucket
+// joined with newlines. Earlier buckets receive earlier lines, so the lyrics flow
+// into consecutive sub-cuts in their original order.
 func DistributeLines(lines []string, pos, total int) string {
 	if len(lines) == 0 {
 		return ""

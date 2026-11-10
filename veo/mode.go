@@ -7,43 +7,47 @@ import (
 	"github.com/shouni/go-veo-orchestrator/video"
 )
 
-// GenerationMode は、1つの動画生成リクエストが Veo のどの生成機能で解釈されるかを表します。
+// GenerationMode is which Veo generation feature a single video generation request
+// is interpreted as.
 //
-// モードは1リクエストにつき ClassifyRequest で一度だけ決まり、adapter が組み立てる Veo
-// リクエスト本文・そのリクエストに許される尺（DurationsForMode）・生成モードごとに前提の
-// 異なるプロンプトの選択が、すべてこの1つの値を共有します。判定が割れると「参照画像に
-// 合わせろ」と指示しながら参照画像を送らない、といった無意味なリクエストになります。
+// The mode is decided once per request by ClassifyRequest, and the Veo request body
+// the adapter builds, the durations that request allows (DurationsForMode) and the
+// choice among prompts whose assumptions differ per generation mode all share this
+// one value. When the decisions split, you get meaningless requests such as telling
+// the model to "match the reference image" while not sending the reference image.
 type GenerationMode string
 
 const (
-	// ModeImageToVideo はキーフレーム画像を image 入力とする image_to_video です。
-	// 画像参照が一切ないリクエスト（テキストのみ）もここへ倒します。
+	// ModeImageToVideo is image_to_video, with the keyframe image as image input.
+	// Requests with no image reference at all (text only) fall here too.
 	ModeImageToVideo GenerationMode = "image_to_video"
-	// ModeFramesToVideo は開始フレームを image 入力、終了フレームを lastFrame 入力と
-	// する first/last frame 補間です（Veo 2 / Veo 3.1 系のみ、Fast も対応）。
+	// ModeFramesToVideo is first/last frame interpolation, with the start frame as
+	// image input and the end frame as lastFrame input (Veo 2 / Veo 3.1 models
+	// only, Fast included).
 	ModeFramesToVideo GenerationMode = "frames_to_video"
-	// ModeReferenceToVideo は [キャラ立ち絵, キーフレーム] を referenceImages とする
-	// reference_to_video です（Veo 3 系の非 Fast モデルのみ、8秒固定）。
+	// ModeReferenceToVideo is reference_to_video, with [character art, keyframe]
+	// as referenceImages (non-Fast Veo 3 models only, fixed at 8 seconds).
 	ModeReferenceToVideo GenerationMode = "reference_to_video"
-	// ModeVideoExtension は前カット動画を video 入力とする video_extension
-	// （video-to-video 継続）です。このモードでは画像参照は一切送られません。
+	// ModeVideoExtension is video_extension (video-to-video continuation), with the
+	// previous cut's video as video input. No image reference is sent in this mode.
 	ModeVideoExtension GenerationMode = "video_extension"
 )
 
-// Capabilities は、実際に使われる ports.VideoRunner／モデルが Veo のオプション機能に
-// 対応しているかを表します。ClassifyRequest の入力で、adapter はモデル名から、
-// 呼び出し側は RunnerCapabilities（Runner のオプションインターフェース）から導出します。
+// Capabilities describes whether the ports.VideoRunner / model actually in use
+// supports Veo's optional features. It is an input to ClassifyRequest: an adapter
+// derives it from the model name, a caller from RunnerCapabilities (the Runner's
+// optional interfaces).
 type Capabilities struct {
-	// ReferenceImages は referenceImages（reference_to_video、8秒固定）への対応です。
+	// ReferenceImages is support for referenceImages (reference_to_video, fixed at 8 seconds).
 	ReferenceImages bool
-	// LastFrame は lastFrame（first/last frame 補間）への対応です。
+	// LastFrame is support for lastFrame (first/last frame interpolation).
 	LastFrame bool
 }
 
-// RunnerCapabilities は ports.VideoRunner のオプションインターフェース
-// （ReferenceImagesSupporter / LastFrameSupporter）から Capabilities を導出します。
-// インターフェースを実装しない Runner（テストダブル等）は各機能とも false になり、
-// image_to_video 側へ倒れます。
+// RunnerCapabilities derives Capabilities from the optional interfaces of a
+// ports.VideoRunner (ReferenceImagesSupporter / LastFrameSupporter). A Runner
+// implementing neither (a test double, say) reports false for each feature and
+// falls back to image_to_video.
 func RunnerCapabilities(runner ports.VideoRunner) Capabilities {
 	caps := Capabilities{}
 	if rs, ok := runner.(ports.ReferenceImagesSupporter); ok {
@@ -55,18 +59,18 @@ func RunnerCapabilities(runner ports.VideoRunner) Capabilities {
 	return caps
 }
 
-// ClassifyRequest は、このリクエストが Veo のどの生成機能で解釈されるかを判定します。
-// モードを決める唯一の分岐点で、優先順位は次のとおりです:
+// ClassifyRequest decides which Veo generation feature this request is interpreted
+// as. It is the only branch point that decides the mode, with this precedence:
 //
-//  1. video_extension — usePreviousVideo が有効で、PreviousVideoURI が gs:// 参照のとき。
-//     Veo は video と referenceImages / image を併用できないため、以降の画像参照は
-//     すべて無視されます。
-//  2. reference_to_video — 参照画像 URI が1つ以上あり、モデルが referenceImages に
-//     対応しているとき。
-//  3. frames_to_video — 開始フレーム（ImageReference または InputImage）と
-//     LastFrameReference が両方あり、モデルが lastFrame に対応しているとき
-//     （Veo の lastFrame は image とセットでのみ有効）。
-//  4. image_to_video — それ以外すべて。
+//  1. video_extension — when usePreviousVideo is enabled and PreviousVideoURI is a
+//     gs:// reference. Veo cannot combine video with referenceImages / image, so
+//     every image reference after this is ignored.
+//  2. reference_to_video — when there is at least one reference image URI and the
+//     model supports referenceImages.
+//  3. frames_to_video — when both a start frame (ImageReference or InputImage) and
+//     LastFrameReference are present and the model supports lastFrame (Veo's
+//     lastFrame is valid only together with image).
+//  4. image_to_video — everything else.
 func ClassifyRequest(req video.GenerationRequest, usePreviousVideo bool, caps Capabilities) GenerationMode {
 	if usePreviousVideo && strings.HasPrefix(strings.TrimSpace(req.PreviousVideoURI), "gs://") {
 		return ModeVideoExtension
@@ -80,8 +84,9 @@ func ClassifyRequest(req video.GenerationRequest, usePreviousVideo bool, caps Ca
 	return ModeImageToVideo
 }
 
-// hasAnyReferenceImage は空白のみのエントリを除いた参照画像が1つ以上あるかを返します
-// （adapter が空白 URI を除外して参照なしとして扱う規則と対）。
+// hasAnyReferenceImage reports whether there is at least one reference image,
+// ignoring blank entries (the counterpart of the adapter's rule that drops blank
+// URIs and treats them as no reference).
 func hasAnyReferenceImage(refs []string) bool {
 	for _, ref := range refs {
 		if strings.TrimSpace(ref) != "" {
@@ -91,19 +96,21 @@ func hasAnyReferenceImage(refs []string) bool {
 	return false
 }
 
-// hasStartImage は開始フレームとなる画像入力（GCS 参照またはインラインバイト列）が
-// あるかを返します。
+// hasStartImage reports whether there is an image input to serve as the start
+// frame (a GCS reference or inline bytes).
 func hasStartImage(req video.GenerationRequest) bool {
 	return strings.TrimSpace(req.ImageReference) != "" || len(req.InputImage) > 0
 }
 
-// ModelCapabilities は、Veo のモデル名からオプション機能への対応を導出します。
-// モデル名→対応機能の規則はこの関数が唯一の定義元です（以前は adapter 側が文字列
-// 前方一致で再導出しており、「ルールはライブラリが持つ」という原則が破れていました）。
+// ModelCapabilities derives support for the optional features from a Veo model
+// name. This function is the only definition of the model-name → features rule
+// (the adapter used to re-derive it by string prefix matching, breaking the
+// principle that "the library owns the rules").
 //
-//   - referenceImages（reference_to_video、8秒固定）: Veo 3 系のみ。Fast は非対応。
-//   - lastFrame（first/last frame 補間）: veo-2.0 / veo-3.1 系（Fast も対応）。
-//     Veo 3.0 系は非対応。
+//   - referenceImages (reference_to_video, fixed at 8 seconds): Veo 3 models only.
+//     Fast is not supported.
+//   - lastFrame (first/last frame interpolation): veo-2.0 / veo-3.1 models (Fast
+//     included). Veo 3.0 models are not supported.
 func ModelCapabilities(model string) Capabilities {
 	m := strings.ToLower(strings.TrimSpace(model))
 	return Capabilities{

@@ -2,19 +2,21 @@
 
 [← README](../README.md)
 
-このライブラリの入力フォーマットと、`VideoRecipe` / `Cut` の構造を説明します。
+This page describes the library's input format and the structure of `VideoRecipe` / `Cut`.
 
-## 台本生成の入出力
+## Script generation input and output
 
-`ScriptRunner` は `sourceURL` の Music Recipe JSON を `VideoRecipe` として解釈し、prompt builder へ parsed object を渡します。prompt builder は `music_recipe.lyrics` / `music_recipe.sections` から、BGM の拍子・感情・盛り上がりを含む動画台本 JSON を生成します。
+`ScriptRunner` interprets the Music Recipe JSON at `sourceURL` as a `VideoRecipe` and passes the parsed object to the prompt builder. From `music_recipe.lyrics` / `music_recipe.sections`, the prompt builder generates video-script JSON that includes the BGM's meter, emotion and build-ups.
 
-歌詞本文は `music_recipe.lyrics` に保存されますが、Veo prompt へ直接は注入されません。歌詞や section の意味は、script generation stage の prompt builder が `cuts[].audio_cue` と `cuts[].visual_anchor` に展開します。したがって、動画化したい歌詞の内容は `cuts` へ変換しておく必要があります。
+The lyric text is kept in `music_recipe.lyrics`, but it is not injected into the Veo prompt directly. The prompt builder in the script generation stage expands the meaning of the lyrics and sections into `cuts[].audio_cue` and `cuts[].visual_anchor`. Whatever lyric content should appear in the video therefore has to be converted into `cuts`.
 
-各 `cut` は `duration_sec` と `audio_cue` を持つため、Veo へのプロンプトには `(synchronized with the heavy bass drop at 0:10)` のような同期指示を自動注入できます。アプリ側の責務は、生成された `cuts` を表示・編集し、キーフレーム生成または動画生成フォームへ渡すことです。
+Each `cut` has `duration_sec` and `audio_cue`, so sync directions such as `(synchronized with the heavy bass drop at 0:10)` can be injected into the Veo prompt automatically. The application's job is to display and edit the generated `cuts` and pass them to the keyframe generation or video generation form.
 
-Veo に渡る prompt は `cuts[].visual_anchor`、`cuts[].audio_cue`、`music_recipe.mood`、タイムライン情報から構築されます。
+The prompt that reaches Veo is built from `cuts[].visual_anchor`, `cuts[].audio_cue`, `music_recipe.mood` and the timeline information.
 
-## 完全な例
+## A complete example
+
+The values are sample data from a Japanese project; the field names are what matter.
 
 ```json
 {
@@ -85,11 +87,11 @@ Veo に渡る prompt は `cuts[].visual_anchor`、`cuts[].audio_cue`、`music_re
 }
 ```
 
-この JSON は `Normalize()` により `cut_index` / `start_sec` / `end_sec` / `status` / `section_index` が補完され、レシピ直下の `location_anchor` / `aspect_ratio` が各カットへ写されます。生成後は `keyframe_reference`、`video_id`、`video_url` が追記された `video_music_meta.json` として保存されます。
+`Normalize()` fills in `cut_index` / `start_sec` / `end_sec` / `status` / `section_index` on this JSON, and copies the recipe-level `location_anchor` / `aspect_ratio` onto each cut. After generation it is saved as `video_music_meta.json` with `keyframe_reference`, `video_id` and `video_url` added.
 
-## cuts を省略した最小形
+## The minimal form, without cuts
 
-`cuts` が空の場合は、`music_recipe.sections` からカット列を自動生成します。`music_recipe` は `github.com/shouni/genai-kit/music.Recipe` をそのまま保持するため、楽曲生成側の JSON は `music_recipe` 配下へ入れます。
+When `cuts` is empty, the cut sequence is generated automatically from `music_recipe.sections`. `music_recipe` holds `github.com/shouni/genai-kit/music.Recipe` as-is, so the music generation side's JSON goes under `music_recipe`.
 
 ```json
 {
@@ -124,19 +126,19 @@ Veo に渡る prompt は `cuts[].visual_anchor`、`cuts[].audio_cue`、`music_re
 }
 ```
 
-## section_index — カットとセクションの対応
+## section_index — mapping cuts to sections
 
-各 `cut` は `section_index`（1始まり）で、由来となった `music_recipe.sections` の位置を保持します。1セクションが `scene_split` 等で複数カットに分割されても、分割後の全カットが同じ `section_index` を引き継ぎます。呼び出し側は `start_sec` とセクションの時間範囲を突き合わせて逆算せずに、カットの所属セクションを直接判定できます。明示的に設定されていないカットは、`Normalize()` が `start_sec` から自動的に補完します。
+Each `cut` keeps, in `section_index` (1-based), the position in `music_recipe.sections` it was derived from. When one section is split into several cuts by `scene_split` or similar, every resulting cut inherits the same `section_index`. Callers can determine a cut's section directly, without reverse-matching `start_sec` against the sections' time ranges. For cuts that do not set it explicitly, `Normalize()` fills it in from `start_sec`.
 
-## ⚠️ `video.Cut` の内部構造
+## ⚠️ The internal structure of `video.Cut`
 
-`Cut` の JSON はフラットな構造のままですが、Go の構造体としては `AudioSync` / `KeyframeResult` / `Result` / `ChainControl` へ分割され、匿名フィールドとして埋め込まれています。`cut.VideoID` のようなフィールドアクセスは変わりませんが、コンポジットリテラルはグループ単位で書く必要があります。
+The JSON of a `Cut` stays flat, but as a Go struct it is split into `AudioSync` / `KeyframeResult` / `Result` / `ChainControl`, embedded as anonymous fields. Field access such as `cut.VideoID` is unchanged, but composite literals must be written group by group.
 
 ```go
-// ✗ フラットには書けません
+// ✗ Cannot be written flat
 video.Cut{DurationSec: 5, KeyframeReference: "..."}
 
-// ✓ グループ単位で書きます
+// ✓ Written group by group
 video.Cut{
 	AudioSync:      video.AudioSync{DurationSec: 5},
 	KeyframeResult: video.KeyframeResult{KeyframeReference: "..."},

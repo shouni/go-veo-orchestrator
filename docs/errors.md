@@ -2,17 +2,17 @@
 
 [← README](../README.md)
 
-呼び出し側が `errors.Is` で判定し、汎用エラーとは異なる制御（フォールバックやリトライ）を行えるよう、以下の sentinel error を公開しています。1 件を除いて `ports` パッケージにあります（`video.ErrRecipeInvalid` だけは、返すのが `video.Recipe.Validate` で、最下層の `video` は `ports` を import できないためこちらにあります）。
+The following sentinel errors are exported so that callers can check them with `errors.Is` and take a different course (fallback or retry) than for a generic error. All but one live in the `ports` package (`video.ErrRecipeInvalid` lives in `video`, because `video.Recipe.Validate` returns it and `video`, the bottom layer, cannot import `ports`).
 
-| エラー | 発生条件 | 想定される呼び出し側の対応 |
+| Error | When it occurs | Expected caller response |
 | --- | --- | --- |
-| `ports.ErrConfigInvalid` | `Config.Validate` が必須 4 項目（`GeminiModel` / `ImageModel` / `KeyframeAspectRatio` / `KeyframeImageSize`）の欠落を検出した場合。`workflow.New` の時点で返ります | 構築（DI）の誤り。設定不備の通知 |
-| `ports.ErrRecipeRequired` | `VideoRecipe` が必須の処理に `nil` を渡した場合 | 呼び出し側の実装不備。基本的に発生させない |
-| `ports.ErrEditingNotSupported` | `EditAndSave` で、設定済みの画像生成エンジンがキーフレーム編集（`EditCut`）を実装していない場合 | 全体再生成（`GenerateAndSave`）へのフォールバック |
-| `ports.ErrInvalidAIResponse` | AI の応答テキストを `VideoRecipe` の JSON として解析できなかった場合 | ネットワーク/認証エラーと区別したリトライ判断 |
-| `ports.ErrVideoRunnerNotConfigured` | `VideoRunner` 未設定のまま `Workflows.Video` を呼び出した場合 | 動画生成ステップのスキップ、設定不備の通知 |
-| `ports.ErrInputTooLarge` | ソースの入力サイズが許容上限（5MB）を超えた場合 | 入力の分割やソースの見直しを促す |
-| `ports.ErrUnsupportedCutDuration` | カットの尺が、解決した Veo 生成モードで受け付けられない値だった場合 | レシピ側の尺の計画ミス。リトライせず `veo.SnapDuration` 等で尺を割り当て直す |
-| `ports.ErrNoKeyframeToEdit` | `EditAndSave` の対象カットに既存のキーフレームが無い場合 | 先に `GenerateAndSave` でキーフレームを生成させる |
-| `video.ErrRecipeInvalid` | `VideoRecipe.Validate` が構造上の問題（タイトル欠落・カット無し・範囲外の `section_index`）を検出した場合 | AI 生成なら再生成、手入力なら入力の是正 |
-| `ports.ErrVideoRunnerRequired` / `ErrWriterRequired` | Runner や Writer が注入されないまま実行された場合 | 構築（DI）の誤り。設定不備の通知 |
+| `ports.ErrConfigInvalid` | `Config.Validate` found one of the four required fields (`GeminiModel` / `ImageModel` / `KeyframeAspectRatio` / `KeyframeImageSize`) missing. Returned at `workflow.New` | A construction (DI) mistake. Report the misconfiguration |
+| `ports.ErrRecipeRequired` | `nil` was passed to an operation that requires a `VideoRecipe` | A bug in the caller. Should not normally happen |
+| `ports.ErrEditingNotSupported` | In `EditAndSave`, the configured image generator does not implement keyframe editing (`EditCut`) | Fall back to full regeneration (`GenerateAndSave`) |
+| `ports.ErrInvalidAIResponse` | The AI's response text could not be parsed as `VideoRecipe` JSON | Decide on retry separately from network/auth errors |
+| `ports.ErrVideoRunnerNotConfigured` | `Workflows.Video` was called without a `VideoRunner` configured | Skip the video generation step, report the misconfiguration |
+| `ports.ErrInputTooLarge` | The source input exceeded the size limit (5MB) | Ask for the input to be split or the source revised |
+| `ports.ErrUnsupportedCutDuration` | A cut's duration is not accepted by the resolved Veo generation mode | A duration-planning mistake on the recipe side. Do not retry; reassign durations with `veo.SnapDuration` etc. |
+| `ports.ErrNoKeyframeToEdit` | The cut targeted by `EditAndSave` has no existing keyframe | Generate the keyframe with `GenerateAndSave` first |
+| `video.ErrRecipeInvalid` | `VideoRecipe.Validate` found a structural problem (missing title, no cuts, out-of-range `section_index`) | Regenerate if AI-generated; correct the input if hand-written |
+| `ports.ErrVideoRunnerRequired` / `ErrWriterRequired` | Run without the Runner or Writer injected | A construction (DI) mistake. Report the misconfiguration |

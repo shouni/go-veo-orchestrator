@@ -2,12 +2,12 @@ package video
 
 import "errors"
 
-// ErrRecipeInvalid は、Recipe.Validate が検出した構造上の問題
-// （タイトル欠落・カット無し・範囲外の section_index）を包むセンチネルです。
-// AI 生成スクリプトの検証では「再生成すれば直るかもしれない失敗」を、
-// 通信エラーなどと区別するために使えます。
+// ErrRecipeInvalid is the sentinel wrapping the structural problems Recipe.Validate
+// finds (missing title, no cuts, out-of-range section_index). When validating an
+// AI-generated script, it separates "a failure that regenerating might fix" from
+// communication errors and the like.
 //
-// 他のセンチネルが ports にあるのに対しこれだけこちらにあるのは、返すのが
-// このパッケージの Validate であり、recipe は最下層で ports を import できない
-// ためです（ports が recipe を import します）。
+// It lives here while the other sentinels live in ports because this package's
+// Validate returns it, and the recipe package, being the bottom layer, cannot
+// import ports (ports imports it).
 var ErrRecipeInvalid = errors.New("video recipe is invalid")

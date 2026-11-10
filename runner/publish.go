@@ -10,17 +10,17 @@ import (
 	"github.com/shouni/go-veo-orchestrator/video"
 )
 
-// VideoPublisherRunner は Music Recipe とカット情報を動画向けメタデータとして出力します。
+// VideoPublisherRunner writes the Music Recipe and cut information out as video metadata.
 type VideoPublisherRunner struct {
 	writer remoteio.Writer
 }
 
-// NewVideoPublisherRunner は VideoPublisherRunner を初期化します。
+// NewVideoPublisherRunner initializes a VideoPublisherRunner.
 func NewVideoPublisherRunner(writer remoteio.Writer) *VideoPublisherRunner {
 	return &VideoPublisherRunner{writer: writer}
 }
 
-// Run は HTML/Markdown ではなく、結合・検証に使う JSON メタデータだけを保存します。
+// Run saves only the JSON metadata used for joining and validation, not HTML/Markdown.
 func (pr *VideoPublisherRunner) Run(ctx context.Context, recipe *video.Recipe, outputDir string) (*video.PublishResult, error) {
 	if recipe == nil {
 		return nil, ports.ErrRecipeRequired
@@ -49,7 +49,7 @@ func (pr *VideoPublisherRunner) Run(ctx context.Context, recipe *video.Recipe, o
 	}, nil
 }
 
-// BuildMetadata は VideoRecipe を整形済み JSON に変換します。
+// BuildMetadata converts a VideoRecipe to indented JSON.
 func (pr *VideoPublisherRunner) BuildMetadata(recipe *video.Recipe) ([]byte, error) {
 	return buildRecipeMetadata(recipe)
 }

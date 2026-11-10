@@ -41,8 +41,9 @@ func TestNewRejectsMissingRequiredConfig(t *testing.T) {
 	cases := map[string]func(*ports.Config){
 		"GeminiModel": func(c *ports.Config) { c.GeminiModel = "" },
 		"ImageModel":  func(c *ports.Config) { c.ImageModel = "  " },
-		// 画作りの既定値をキットが持たないため、比率と解像度も必須。空のまま送ると
-		// モデルが勝手に選んだ絵になり、誰も気付かないまま縦横や解像度が変わる。
+		// The kit holds no art-direction defaults, so ratio and resolution are
+		// required too. Sent empty, the picture is whatever the model picks, and the
+		// orientation or resolution changes without anyone noticing.
 		"KeyframeAspectRatio": func(c *ports.Config) { c.KeyframeAspectRatio = "" },
 		"KeyframeImageSize":   func(c *ports.Config) { c.KeyframeImageSize = " " },
 	}
@@ -58,9 +59,9 @@ func TestNewRejectsMissingRequiredConfig(t *testing.T) {
 	}
 }
 
-// Close のテストは、画像キャッシュを抱えなくなった時点で削除しました。画像キャッシュと
-// その定期クリーンアップ goroutine が無くなり、Workflows に解放すべき資源が
-// 残っていないためです（Close 自体も削除しました）。
+// The Close test was removed once the image cache was gone. The image cache and
+// its periodic cleanup goroutine no longer exist, and Workflows holds no resources
+// left to release (Close itself was removed too).
 
 func testManagerArgs() ManagerArgs {
 	chars, err := newTestCharacters([]characterkit.Character{
@@ -92,13 +93,13 @@ func newTestCharacters(list []characterkit.Character) (*characterkit.Characters,
 	return characterkit.NewCharacters(list)
 }
 
-// fakeGenerativeModel は gemini.Generator（1 メソッド）だけを実装します。
+// fakeGenerativeModel implements only gemini.Generator (one method).
 //
-// 以前は File API 管理（UploadFile / DeleteFile）とバックエンド判定も実装していました。
-// ManagerArgs.AIClient が gemini.Model を要求していたためですが、キットが File API を
-// 使わなくなり gemini.Generator で足りるようになったので、使わないメソッドは消せます。
-// BackendInspector を実装しないため、画像キットのバックエンド判定
-// （オプショナルインターフェース）は素通りします。
+// It used to implement File API management (UploadFile / DeleteFile) and backend
+// detection too, because ManagerArgs.AIClient required a gemini.Model. The kit no
+// longer uses the File API and gemini.Generator is enough, so the unused methods
+// could go. It does not implement BackendInspector, so the image kit's backend
+// detection (an optional interface) passes it by.
 type fakeGenerativeModel struct{}
 
 func (fakeGenerativeModel) Generate(context.Context, string, string, []gemini.Attachment, gemini.GenerateOptions) (*gemini.Response, error) {

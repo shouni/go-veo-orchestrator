@@ -6,43 +6,46 @@ import (
 	"github.com/shouni/go-veo-orchestrator/video"
 )
 
-// VideoRunner は Veo API を叩いて1カットの動画を生成・管理する契約です。
-// 実装（Veo adapter）はこのリポジトリに含まれず、呼び出し側が注入します。
+// VideoRunner is the contract for calling the Veo API to generate and manage the
+// video for one cut. The implementation (the Veo adapter) is not part of this
+// repository; the caller injects it.
 type VideoRunner interface {
 	Run(ctx context.Context, req video.GenerationRequest) (*video.Response, error)
 }
 
-// ReferenceImagesSupporter は、reference_to_video（referenceImages、Veo 3系の非Fastモデル
-// のみ対応で8秒固定）を使えるかを問い合わせられる VideoRunner のオプションインター
-// フェースです。カットの尺を Veo のサポート値へ正規化する処理が、モデル判定ロジックを
-// 重複実装せずに「このカットは8秒固定になるか」を判断するために使います。
+// ReferenceImagesSupporter is an optional VideoRunner interface that reports
+// whether reference_to_video (referenceImages; supported only by non-Fast Veo 3
+// models, and fixed at 8 seconds) is available. The code that normalizes cut
+// durations to values Veo supports uses it to decide "will this cut be fixed at
+// 8 seconds" without duplicating the model-detection logic.
 //
-// 実装するのは adapter なので、判定を組み立てる veo.RunnerCapabilities ではなく
-// adapter 向けの契約が集まるこのパッケージに置いています。
+// The adapter is what implements it, so it lives in this package, where the
+// contracts for adapters are gathered, rather than next to
+// veo.RunnerCapabilities, which assembles the decision.
 type ReferenceImagesSupporter interface {
 	SupportsReferenceImages() bool
 }
 
-// LastFrameSupporter は、frames_to_video（image + lastFrame の first/last frame 補間、
-// Veo 2 / Veo 3.1 系のみ対応）を使えるかを問い合わせられる VideoRunner のオプション
-// インターフェースです。
+// LastFrameSupporter is an optional VideoRunner interface that reports whether
+// frames_to_video (first/last frame interpolation with image + lastFrame;
+// supported only by Veo 2 / Veo 3.1 models) is available.
 type LastFrameSupporter interface {
 	SupportsLastFrame() bool
 }
 
-// VideoTimelineRunner は Music Recipe のカット列を順次動画化する契約です。
+// VideoTimelineRunner is the contract for turning a recipe's cuts into video, one after another.
 type VideoTimelineRunner interface {
 	Run(ctx context.Context, r *video.Recipe) ([]*video.Response, error)
 }
 
-// noopVideoTimelineRunner は、常に ErrVideoRunnerNotConfigured で失敗する
-// VideoTimelineRunner です。VideoRunner（Veo アダプター）が注入されなかった場合に
-// Workflows.Video を nil にせずこれを入れることで、呼び出し側は初回利用時の nil パニックの
-// 代わりに errors.Is で判定できるエラーを受け取ります。
+// noopVideoTimelineRunner is a VideoTimelineRunner that always fails with
+// ErrVideoRunnerNotConfigured. When no VideoRunner (Veo adapter) is injected,
+// Workflows.Video gets this instead of nil, so the caller receives an error it
+// can check with errors.Is instead of a nil panic on first use.
 type noopVideoTimelineRunner struct{}
 
-// NewNoopVideoTimelineRunner は、常に ErrVideoRunnerNotConfigured を返す
-// VideoTimelineRunner を返します。
+// NewNoopVideoTimelineRunner returns a VideoTimelineRunner that always returns
+// ErrVideoRunnerNotConfigured.
 func NewNoopVideoTimelineRunner() VideoTimelineRunner {
 	return noopVideoTimelineRunner{}
 }

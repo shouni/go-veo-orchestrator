@@ -17,17 +17,18 @@ import (
 )
 
 const (
-	// maxInputSize は読み込みを許可する最大テキストサイズ (5MB) です。
+	// maxInputSize is the largest text size allowed to be read (5MB).
 	maxInputSize int64 = 5 * 1024 * 1024
-	// maxErrorResponseLength はエラーログに含める応答抜粋の最大文字数です。
+	// maxErrorResponseLength is the maximum number of characters of the response excerpt included in error logs.
 	maxErrorResponseLength = 200
 )
 
-// jsonBlockRegex は、Markdown 形式の JSON ブロックを抽出するための正規表現です。
-// 非貪欲マッチにより、複数のコードブロックが含まれる応答でも個別に抽出できます。
+// jsonBlockRegex is the regular expression for extracting Markdown JSON blocks.
+// Its non-greedy match extracts each block separately even when the response has
+// several code blocks.
 var jsonBlockRegex = regexp.MustCompile("(?s)```(?:json)?\\s*(.*?\\S)\\s*```")
 
-// VideoScriptRunner は入力ソースから Music Recipe を読み取り、動画レシピを生成します。
+// VideoScriptRunner reads a Music Recipe from an input source and generates a video recipe.
 type VideoScriptRunner struct {
 	promptBuilder ports.ScriptPrompt
 	aiClient      gemini.Generator
@@ -36,10 +37,10 @@ type VideoScriptRunner struct {
 	characters    *characterkit.Characters
 }
 
-// NewVideoScriptRunner は依存関係を注入して初期化します。
-// characters は、AI に生成させる cuts[].character_id を既知のキャラクターIDに
-// 制約する（ResponseSchema の enum）ために使われます。nil の場合は制約なし
-// （空文字のみ許容）になります。
+// NewVideoScriptRunner initializes the runner with its dependencies injected.
+// characters is used to constrain the AI-generated cuts[].character_id to known
+// character IDs (an enum in the ResponseSchema). When nil, there is no constraint
+// (only the empty string is allowed).
 func NewVideoScriptRunner(
 	pb ports.ScriptPrompt,
 	ai gemini.Generator,
@@ -56,7 +57,7 @@ func NewVideoScriptRunner(
 	}
 }
 
-// characterIDs は、スキーマの character_id enum に使うキャラクターID一覧を返します。
+// characterIDs returns the list of character IDs used for the schema's character_id enum.
 func (r *VideoScriptRunner) characterIDs() []string {
 	if r.characters.Len() == 0 {
 		return nil
@@ -68,47 +69,51 @@ func (r *VideoScriptRunner) characterIDs() []string {
 	return ids
 }
 
-// Run は Music Recipe JSON を読み込み、Gemini を用いて動画台本 JSON を生成します。
+// Run reads Music Recipe JSON and generates video script JSON with Gemini.
 func (r *VideoScriptRunner) Run(ctx context.Context, sourceURL string, mode string) (*video.Recipe, error) {
-	slog.InfoContext(ctx, "ScriptRunner: 処理を開始", "url", sanitizeURL(sourceURL))
+	slog.InfoContext(ctx, "ScriptRunner: starting", "url", sanitizeURL(sourceURL))
 
-	// 1. ソースからテキストを取得
+	// 1. Fetch the text from the source
 	inputText, err := r.readContent(ctx, sourceURL)
 	if err != nil {
 		return nil, err
 	}
 
-	// 2. プロンプトの構築
+	// 2. Build the prompt
 	sourceRecipe, err := parseSourceRecipe(inputText)
 	if err != nil {
 		return nil, err
 	}
 	if sourceRecipe == nil {
-		return nil, fmt.Errorf("sourceURL の内容を Music Recipe JSON として解析できませんでした")
+		return nil, fmt.Errorf("could not parse the content of sourceURL as Music Recipe JSON")
 	}
 	data := ports.TemplateData{
 		SourceRecipe: sourceRecipe,
 	}
 	finalPrompt, err := r.promptBuilder.Build(mode, &data)
 	if err != nil {
-		return nil, fmt.Errorf("プロンプトの構築に失敗しました: %w", err)
+		return nil, fmt.Errorf("failed to build the prompt: %w", err)
 	}
 
-	// 3. Gemini API を呼び出し、使える台本が得られるまで作り直す
+	// 3. Call the Gemini API, regenerating until a usable script comes back
 	return r.generateRecipe(ctx, finalPrompt, sourceRecipe)
 }
 
-// maxScriptAttempts は、検証に落ちた台本を作り直す最大回数です。
+// maxScriptAttempts is the maximum number of times a script that fails
+// validation is regenerated.
 //
-// 1 回で諦めると生成のゆらぎがそのままジョブ失敗になり、無制限に粘ると台本生成の課金だけが
-// 積み上がります。数回試して直らないなら、プロンプトかスキーマ側が壊れています。
+// Giving up after one attempt turns generation noise straight into a job failure,
+// and persisting without limit just piles up script generation charges. If a few
+// tries do not fix it, the prompt or schema is what is broken.
 const maxScriptAttempts = 3
 
-// generateRecipe は台本を生成し、後段が扱える構造になるまでやり直します。
+// generateRecipe generates the script and retries until it has a structure the
+// downstream steps can handle.
 //
-// JSON Schema は型と必須項目までしか縛れないため、cuts が空になる、section_index が
-// 音楽のセクション数を超える、といった破綻は素通りします。ここで弾かないと、
-// パイプラインで最も高価な Veo のカット生成まで進んでから失敗します。
+// A JSON Schema constrains only types and required fields, so breakage such as an
+// empty cuts list or a section_index beyond the number of song sections slips
+// through. Not rejecting it here means failing only after reaching Veo cut
+// generation, the most expensive step in the pipeline.
 func (r *VideoScriptRunner) generateRecipe(ctx context.Context, finalPrompt string, sourceRecipe *video.Recipe) (*video.Recipe, error) {
 	opts := gemini.GenerateOptions{
 		ResponseMIMEType:   "application/json",
@@ -117,17 +122,17 @@ func (r *VideoScriptRunner) generateRecipe(ctx context.Context, finalPrompt stri
 
 	var lastErr error
 	for attempt := 1; attempt <= maxScriptAttempts; attempt++ {
-		slog.InfoContext(ctx, "ScriptRunner: Gemini APIを呼び出し中", "model", r.aiModel, "attempt", attempt)
+		slog.InfoContext(ctx, "ScriptRunner: calling the Gemini API", "model", r.aiModel, "attempt", attempt)
 
 		resp, err := r.aiClient.Generate(ctx, r.aiModel, finalPrompt, nil, opts)
 		if err != nil {
-			return nil, fmt.Errorf("geminiによるコンテンツ生成に失敗しました: %w", err)
+			return nil, fmt.Errorf("content generation with gemini failed: %w", err)
 		}
 		if resp == nil || strings.TrimSpace(resp.Text) == "" {
-			return nil, fmt.Errorf("AIクライアントが空の応答を返しました: %w", ports.ErrInvalidAIResponse)
+			return nil, fmt.Errorf("AI client returned an empty response: %w", ports.ErrInvalidAIResponse)
 		}
 		if resp.Usage != nil {
-			slog.InfoContext(ctx, "ScriptRunner: トークン使用量",
+			slog.InfoContext(ctx, "ScriptRunner: token usage",
 				"prompt_tokens", resp.Usage.PromptTokenCount,
 				"candidates_tokens", resp.Usage.CandidatesTokenCount,
 				"total_tokens", resp.Usage.TotalTokenCount,
@@ -136,12 +141,13 @@ func (r *VideoScriptRunner) generateRecipe(ctx context.Context, finalPrompt stri
 
 		recipe, err := r.parseResponse(ctx, resp.Text)
 		if err != nil {
-			// JSON として読めない応答は作り直しても直る見込みが薄いので、そのまま返す。
+			// A response that cannot be read as JSON is unlikely to be fixed by regenerating, so return it as-is.
 			return nil, err
 		}
 
-		// music_recipe はスキーマから意図的に除外している（AIには生成させない）ため、
-		// source 側の値をそのまま引き継ぐ。section_index の検証もこれが揃ってから行う。
+		// music_recipe is deliberately excluded from the schema (the AI does not
+		// generate it), so carry over the source's value as-is. section_index is
+		// validated only after this is in place.
 		recipe.MusicRecipe = sourceRecipe.MusicRecipe
 		recipe.Normalize()
 
@@ -149,14 +155,14 @@ func (r *VideoScriptRunner) generateRecipe(ctx context.Context, finalPrompt stri
 		if lastErr == nil {
 			return recipe, nil
 		}
-		slog.WarnContext(ctx, "ScriptRunner: 生成された台本が不正なため作り直します",
+		slog.WarnContext(ctx, "ScriptRunner: generated script is invalid, regenerating",
 			"attempt", attempt, "max_attempts", maxScriptAttempts, "err", lastErr)
 	}
 
-	return nil, fmt.Errorf("生成された台本が %d 回とも不正でした: %w", maxScriptAttempts, lastErr)
+	return nil, fmt.Errorf("generated script was invalid on all %d attempts: %w", maxScriptAttempts, lastErr)
 }
 
-// readContent は、指定されたソースURLからコンテンツを取得します。
+// readContent fetches content from the given source URL.
 func (r *VideoScriptRunner) readContent(ctx context.Context, sourceURL string) (string, error) {
 	rc, err := r.reader.Open(ctx, sourceURL)
 	if err != nil {
@@ -164,30 +170,32 @@ func (r *VideoScriptRunner) readContent(ctx context.Context, sourceURL string) (
 	}
 	defer func() {
 		if closeErr := rc.Close(); closeErr != nil {
-			slog.WarnContext(ctx, "ストリームのクローズに失敗しました", "error", closeErr)
+			slog.WarnContext(ctx, "Failed to close the stream", "error", closeErr)
 		}
 	}()
-	// 上限より 1 バイト多く読み、余りが出たかどうかで超過を判定します。ちょうど上限まで
-	// 読んでから rc.Read で 1 バイト覗く形だと、判定のためだけに元ストリームの EOF の
-	// 返し方（io.EOF そのものか、包まれた EOF か）に依存してしまいます。
+	// Read one byte more than the limit and judge overflow by whether anything
+	// is left over. Reading exactly up to the limit and then peeking one byte with
+	// rc.Read would make the check depend, for that alone, on how the underlying
+	// stream returns EOF (io.EOF itself or a wrapped EOF).
 	content, err := io.ReadAll(io.LimitReader(rc, maxInputSize+1))
 	if err != nil {
-		return "", fmt.Errorf("読み込みに失敗しました: %w", err)
+		return "", fmt.Errorf("failed to read: %w", err)
 	}
 	if int64(len(content)) > maxInputSize {
-		return "", fmt.Errorf("入力が上限 %d bytes を超えています (url: %s): %w",
+		return "", fmt.Errorf("input exceeds the limit of %d bytes (url: %s): %w",
 			maxInputSize, sanitizeURL(sourceURL), ports.ErrInputTooLarge)
 	}
 
 	return strings.ToValidUTF8(string(content), ""), nil
 }
 
-// parseResponse は AI の応答から JSON 候補を抽出し、動画レシピとして内容を持つ
-// 最初の候補を採用します。説明用の JSON ブロックが混在する応答にも対応します。
+// parseResponse extracts JSON candidates from the AI response and adopts the first
+// one with video recipe content. It also handles responses that mix in JSON blocks
+// used for explanation.
 func (r *VideoScriptRunner) parseResponse(ctx context.Context, raw string) (*video.Recipe, error) {
 	candidates := extractJSONCandidates(raw)
 	if len(candidates) == 0 {
-		slog.WarnContext(ctx, "AIの応答からJSONを抽出できませんでした。応答全体を対象にパースを試みます。",
+		slog.WarnContext(ctx, "Could not extract JSON from the AI response; trying to parse the whole response",
 			"response_snippet", truncateString(raw, 100))
 		candidates = []string{raw}
 	}
@@ -209,10 +217,10 @@ func (r *VideoScriptRunner) parseResponse(ctx context.Context, raw string) (*vid
 	}
 
 	if parseErr != nil {
-		return nil, fmt.Errorf("AI応答JSONの解析に失敗しました (抜粋: %q): %w: %w",
+		return nil, fmt.Errorf("failed to parse AI response JSON (excerpt: %q): %w: %w",
 			truncateString(raw, maxErrorResponseLength), ports.ErrInvalidAIResponse, parseErr)
 	}
-	return nil, fmt.Errorf("AI応答のJSONに動画レシピの内容が含まれていません (抜粋: %q): %w",
+	return nil, fmt.Errorf("AI response JSON contains no video recipe content (excerpt: %q): %w",
 		truncateString(raw, maxErrorResponseLength), ports.ErrInvalidAIResponse)
 }
 
@@ -244,7 +252,7 @@ func parseSourceRecipe(raw string) (*video.Recipe, error) {
 	}
 
 	if parseErr != nil {
-		return nil, fmt.Errorf("source JSON の解析に失敗しました: %w", parseErr)
+		return nil, fmt.Errorf("failed to parse source JSON: %w", parseErr)
 	}
 	return nil, nil
 }
@@ -269,19 +277,21 @@ func hasMusicRecipeContent(recipe *video.MusicRecipe) bool {
 		recipe.Seed != nil
 }
 
-// extractJSONCandidates は文字列から JSON として解釈しうる候補を優先度順に返します。
-// Markdown コードブロックを個別の候補として列挙し、最後にフェンス外の JSON を加えます。
+// extractJSONCandidates returns, in priority order, the candidates in a string
+// that could be interpreted as JSON. It lists Markdown code blocks as separate
+// candidates and adds the JSON outside the fences last.
 //
-// 候補が複数になるのは、説明用の JSON ブロックが混ざる応答があるためです。
-// 呼び出し側は「レシピの中身を持つ最初の候補」を採るので、先頭の説明ブロックで
-// 打ち切られません。
+// There are several candidates because some responses mix in JSON blocks used for
+// explanation. The caller takes "the first candidate with recipe content", so it
+// is not cut short by a leading explanatory block.
 //
-// 切り出しと補修そのものは gemini.CleanJSONResponse に任せます。かつては
-// 「最初の { から最後の } まで」を自前で切っていましたが、完結した JSON の後ろに
-// 散文が続くと最後の } を拾って範囲がずれるうえ、文字列の中の生の改行や裸の
-// バックスラッシュを直せませんでした。歌詞や台詞を載せるレシピではそれが本番で
-// 出ます。CleanJSONResponse は既に解釈できる入力を変えないので、フェンスの中身に
-// 通しても素通しになります。
+// Extraction and repair themselves are left to gemini.CleanJSONResponse. This used
+// to cut "from the first { to the last }" by hand, but when prose followed a
+// complete JSON value it picked up the wrong last } and shifted the range, and it
+// could not fix raw newlines or bare backslashes inside strings. Recipes carrying
+// lyrics and dialogue hit that in production. CleanJSONResponse leaves input that
+// already parses unchanged, so running fenced contents through it passes them
+// through untouched.
 func extractJSONCandidates(raw string) []string {
 	cleanRaw := strings.TrimSpace(raw)
 
@@ -290,8 +300,9 @@ func extractJSONCandidates(raw string) []string {
 		candidates = append(candidates, gemini.CleanJSONResponse(matches[1]))
 	}
 
-	// JSON の開始文字が無い応答では候補を返しません。呼び出し側がそれを検知して
-	// 「抽出できなかった」と記録し、応答全体でのパースへ切り替えます。
+	// Return no candidates for a response without a JSON start character. The
+	// caller detects that, records "could not extract", and switches to parsing
+	// the whole response.
 	if strings.ContainsAny(cleanRaw, "{[") {
 		candidates = append(candidates, gemini.CleanJSONResponse(cleanRaw))
 	}
@@ -299,8 +310,8 @@ func extractJSONCandidates(raw string) []string {
 	return candidates
 }
 
-// sanitizeURL はログやエラーメッセージへの出力用に、URL からクエリパラメータと
-// フラグメントを除去します。署名付き URL の認証情報が漏れることを防ぎます。
+// sanitizeURL strips the query parameters and fragment from a URL for output to
+// logs and error messages, keeping the credentials of signed URLs from leaking.
 func sanitizeURL(raw string) string {
 	u, err := url.Parse(raw)
 	if err != nil {
@@ -311,7 +322,7 @@ func sanitizeURL(raw string) string {
 	return u.String()
 }
 
-// truncateString は指定された長さで文字列を安全に切り捨てます。
+// truncateString safely truncates a string to the given length.
 func truncateString(s string, maxLen int) string {
 	runes := []rune(s)
 	if len(runes) <= maxLen {
