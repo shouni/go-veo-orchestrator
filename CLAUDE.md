@@ -125,6 +125,6 @@ A cut that fails does not discard the images already paid for: partial successes
 
 ## Conventions
 
-- **Language**: code comments, doc comments, error and log messages and CLI text are written in English. The codebase moved to English on 2026-11-10; do not mix Japanese back in. Japanese stays only where it is data: test fixtures (character names, dialogue, edit prompts, a Japanese title) and the sample values in `docs/music-recipe.md`.
+- **Language**: code comments, doc comments, error and log messages, CLI text and test subtest names (`t.Run` names and table `name` fields) are written in English. The codebase moved to English on 2026-11-10; do not mix Japanese back in. Japanese stays only where it is data: test fixtures (character names, dialogue, edit prompts, a Japanese title) and the sample values in `docs/music-recipe.md`.
 - **READMEs**: `README.md` is English and `README.ja.md` is its Japanese version. Update the two together. `docs/` is English only.
 - **Error text**: sentinel errors name their subject (`video recipe is required`, `cut duration is not supported by the resolved Veo generation mode`) so a deeply wrapped error still says what failed, and `fmt.Errorf` wrapping adds context in front of it. Follow Go style (lowercase, no trailing punctuation; staticcheck ST1005).

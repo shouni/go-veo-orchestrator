@@ -155,7 +155,7 @@ func TestGenerator_GenerateCut(t *testing.T) {
 
 	// References travel as gs:// URIs and Vertex AI resolves them directly (GCSResolver).
 	// This only checks that the source reference URL is passed through unchanged.
-	t.Run("参照は解決せずそのまま渡す", func(t *testing.T) {
+	t.Run("passes the reference through unresolved", func(t *testing.T) {
 		genMock.generateCount = 0
 
 		if _, err := execAll(ctx, t, generator, []video.Cut{{CharacterID: "zundamon"}}); err != nil {
