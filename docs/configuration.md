@@ -43,7 +43,7 @@ Prompts are not part of this library; they are injected through `PromptDeps`.
 
 ## Internal keyframe generation options
 
-`keyframe` and `runner` are in `internal/`, so consumers never touch them directly. `workflow.New` assembles them from `Config` as follows.
+`keyframe` is in `internal/`, and `runner` is public but rarely built by hand: `workflow.New` assembles both from `Config` as follows. Build a `runner` yourself only when you need its per-cut hooks (see [architecture.md](architecture.md)).
 
 | Config | How it is used internally |
 | --- | --- |
