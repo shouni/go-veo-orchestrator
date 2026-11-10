@@ -6,9 +6,9 @@ import (
 	"github.com/shouni/genai-kit/music"
 )
 
-// TestNewVideoRecipeFromMusicKeepsEveryField は、音楽レシピの取り込みが深いコピーで
-// 行われ、フィールドを取りこぼさないことを検証します。以前は消費者側の手書きコピーが
-// Seed / AudioModel / ComposeMode を silently drop していました。
+// TestNewVideoRecipeFromMusicKeepsEveryField verifies that importing a music
+// recipe is a deep copy that drops no field. Consumers' hand-written copies used to
+// silently drop Seed / AudioModel / ComposeMode.
 func TestNewVideoRecipeFromMusicKeepsEveryField(t *testing.T) {
 	seed := int64(42)
 	src := music.Recipe{
@@ -50,7 +50,7 @@ func TestNewVideoRecipeFromMusicKeepsEveryField(t *testing.T) {
 		t.Fatalf("cuts = %d, want section-derived cut", len(vr.Cuts))
 	}
 
-	// 深いコピーであること: 元を書き換えても取り込んだ側は変わらない。
+	// It must be a deep copy: rewriting the original leaves the imported recipe unchanged.
 	src.Instruments[0] = "changed"
 	*src.Seed = 999
 	if vr.MusicRecipe.Instruments[0] != "synth" {

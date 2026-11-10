@@ -6,7 +6,7 @@ import (
 	"github.com/shouni/go-veo-orchestrator/runner"
 )
 
-// buildAllRunners は、ワークフローの実行に必要なすべてのランナーを構築して返します。
+// buildAllRunners builds and returns every runner needed to run the workflows.
 func (m *manager) buildAllRunners() (*ports.Workflows, error) {
 	sr := m.buildScriptRunner()
 	keyframeR := m.buildKeyframeRunner()
@@ -21,12 +21,12 @@ func (m *manager) buildAllRunners() (*ports.Workflows, error) {
 	}, nil
 }
 
-// buildScriptRunner は、台本生成を担当する Runner を作成します。
+// buildScriptRunner creates the Runner responsible for script generation.
 func (m *manager) buildScriptRunner() *runner.VideoScriptRunner {
 	return runner.NewVideoScriptRunner(m.promptDeps.ScriptPrompt, m.aiClient, m.reader, m.cfg.GeminiModel, m.promptDeps.Characters)
 }
 
-// buildKeyframeRunner は、カットのキーフレーム画像生成を担当する Runner を作成します。
+// buildKeyframeRunner creates the Runner responsible for generating cut keyframe images.
 func (m *manager) buildKeyframeRunner() *runner.CutKeyframeRunner {
 	keyframeGen := keyframe.NewGenerator(
 		m.promptDeps.Characters,
@@ -42,15 +42,16 @@ func (m *manager) buildKeyframeRunner() *runner.CutKeyframeRunner {
 		runner.WithMaxConcurrency(m.cfg.MaxConcurrency))
 }
 
-// buildPublishRunner は、動画メタデータのパブリッシュを担当する Runner を作成します。
+// buildPublishRunner creates the Runner responsible for publishing video metadata.
 func (m *manager) buildPublishRunner() *runner.VideoPublisherRunner {
 	return runner.NewVideoPublisherRunner(m.writer)
 }
 
-// buildVideoTimelineRunner は、保存済みキーフレームを起点に Veo 生成を回す Runner を
-// 作成します。キーフレームの生成・保存は CutKeyframeRunner の責務で、ここは関与しません。
-// キャラクター定義が利用できる場合は、カットの立ち絵を referenceImages として渡す
-// リクエストビルダーを使います。
+// buildVideoTimelineRunner creates the Runner that drives Veo generation starting
+// from the saved keyframes. Generating and saving keyframes is CutKeyframeRunner's
+// job, and this one takes no part in it. When character definitions are available,
+// it uses a request builder that passes each cut's character art as
+// referenceImages.
 func (m *manager) buildVideoTimelineRunner() ports.VideoTimelineRunner {
 	if m.videoRunner == nil {
 		return ports.NewNoopVideoTimelineRunner()

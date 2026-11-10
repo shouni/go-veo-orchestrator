@@ -20,7 +20,7 @@ func buildRecipeMetadata(recipe *video.Recipe) ([]byte, error) {
 
 	data, err := json.MarshalIndent(recipe, "", "  ")
 	if err != nil {
-		return nil, fmt.Errorf("動画メタデータのJSON変換に失敗しました: %w", err)
+		return nil, fmt.Errorf("failed to marshal video metadata to JSON: %w", err)
 	}
 	return data, nil
 }
@@ -37,16 +37,16 @@ func writeRecipeMetadata(ctx context.Context, writer remoteio.Writer, outputDir 
 
 	metadataPath, err := resolveOutputPath(outputDir, defaultVideoMetaJSON)
 	if err != nil {
-		return "", fmt.Errorf("メタデータ出力パスの解決に失敗しました: %w", err)
+		return "", fmt.Errorf("failed to resolve the metadata output path: %w", err)
 	}
 
-	// メタデータもキーフレームと同じジョブディレクトリに置く成果物なので、
-	// キャッシュ方針も同じものを使います（名前は keyframe 側が由来）。
+	// Metadata is an output placed in the same job directory as the keyframes,
+	// so it uses the same caching policy (the name comes from the keyframe side).
 	if err := writer.Write(ctx, metadataPath, bytes.NewReader(metadata),
 		remoteio.WithContentType(metadataContentType),
 		remoteio.WithCacheControl(DefaultKeyframeCacheControl),
 	); err != nil {
-		return "", fmt.Errorf("動画メタデータの保存に失敗しました: %w", err)
+		return "", fmt.Errorf("failed to save video metadata: %w", err)
 	}
 
 	return metadataPath, nil

@@ -67,13 +67,13 @@ func TestVideoTimelineRunner_RunChainsPreviousVideoURI(t *testing.T) {
 				DurationSec:    8,
 				AudioCue:       "intro pad",
 				AudioReference: "gs://audio/seg_1.mp3",
-				// キーフレーム生成時のシードはカットに記録され、動画生成へ引き継がれる。
+				// The seed from keyframe generation is recorded on the cut and carried over to video generation.
 				KeyframeSeed: 101,
 			},
 			{
 				CutIndex:     2,
 				VisualAnchor: "fast orbit camera",
-				// gs:// チェーン文脈があるため video_extension（7秒固定）になる。
+				// It becomes video_extension (fixed at 7 seconds) because there is a gs:// chain context.
 				DurationSec: 7,
 				AudioCue:    "heavy chorus",
 			},
@@ -134,7 +134,7 @@ func TestVideoTimelineRunner_RunResetsChainAtChainStart(t *testing.T) {
 			{
 				CutIndex:     2,
 				VisualAnchor: "continues from cut 1",
-				// gs:// チェーン文脈があるため video_extension（7秒固定）になる。
+				// It becomes video_extension (fixed at 7 seconds) because there is a gs:// chain context.
 				DurationSec: 7,
 			},
 			{
@@ -179,7 +179,7 @@ func TestVideoTimelineRunner_RunUsesSavedKeyframeReferences(t *testing.T) {
 			{
 				CutIndex:     2,
 				VisualAnchor: "second saved keyframe",
-				// gs:// チェーン文脈があるため video_extension（7秒固定）になる。
+				// It becomes video_extension (fixed at 7 seconds) because there is a gs:// chain context.
 				DurationSec:       7,
 				KeyframeReference: "gs://images/cut_2.png",
 			},
@@ -218,7 +218,7 @@ func TestVideoTimelineRunner_RunSkipsGeneratedCutAndChainsItsVideoID(t *testing.
 			{
 				CutIndex:     2,
 				VisualAnchor: "continue from existing context",
-				// gs:// のチェーン文脈があるため video_extension（7秒固定）になる。
+				// It becomes video_extension (fixed at 7 seconds) because there is a gs:// chain context.
 				DurationSec: 7,
 			},
 		},
@@ -238,10 +238,11 @@ func TestVideoTimelineRunner_RunSkipsGeneratedCutAndChainsItsVideoID(t *testing.
 	}
 }
 
-// TestVideoTimelineRunner_RunRejectsUnsupportedExtensionDuration は、gs:// のチェーン文脈を
-// 持つカット（video_extension、7秒固定）に 8 秒が計画されていた場合に、送信前に
-// ErrUnsupportedCutDuration で拒否されることを検証します。これは本番のチェーン経路の
-// 検証で、以前は video_extension 側の validateCutDuration を通すテストがありませんでした。
+// TestVideoTimelineRunner_RunRejectsUnsupportedExtensionDuration verifies that when
+// 8 seconds is planned for a cut with a gs:// chain context (video_extension, fixed
+// at 7 seconds), it is rejected with ErrUnsupportedCutDuration before sending. This
+// verifies the production chain path; previously no test exercised
+// validateCutDuration on the video_extension side.
 func TestVideoTimelineRunner_RunRejectsUnsupportedExtensionDuration(t *testing.T) {
 	ctx := context.Background()
 	recipe := &video.Recipe{
@@ -256,7 +257,7 @@ func TestVideoTimelineRunner_RunRejectsUnsupportedExtensionDuration(t *testing.T
 			},
 			{
 				CutIndex:          2,
-				DurationSec:       8, // video_extension は7秒固定なので拒否される
+				DurationSec:       8, // rejected, because video_extension is fixed at 7 seconds
 				KeyframeReference: "gs://images/cut_2.png",
 			},
 		},
@@ -269,24 +270,26 @@ func TestVideoTimelineRunner_RunRejectsUnsupportedExtensionDuration(t *testing.T
 		t.Fatalf("error = %v, want ErrUnsupportedCutDuration", err)
 	}
 	if len(videoRunner.requests) != 0 {
-		t.Fatalf("Veo リクエストは送られないべきですが %d 件送られました", len(videoRunner.requests))
+		t.Fatalf("no Veo request should be sent, but %d were sent", len(videoRunner.requests))
 	}
 	if recipe.Cuts[1].Status != video.CutStatusFailed {
 		t.Errorf("cut status = %q, want failed", recipe.Cuts[1].Status)
 	}
 }
 
-// lastFrameVideoRunner は lastFrame（frames_to_video 補間）に対応したモデルを表す
-// テストダブルです。ports.LastFrameSupporter の実装有無だけが mockVideoRunner との違いです。
+// lastFrameVideoRunner is a test double representing a model that supports lastFrame
+// (frames_to_video interpolation). Implementing ports.LastFrameSupporter is its
+// only difference from mockVideoRunner.
 type lastFrameVideoRunner struct {
 	mockVideoRunner
 }
 
 func (*lastFrameVideoRunner) SupportsLastFrame() bool { return true }
 
-// TestVideoTimelineRunner_RunPassesNextKeyframeAsLastFrame は、lastFrame 対応モデルの場合に
-// 次カットのキーフレームが終了フレームとして渡り、セクション境界の手前では渡らないことを
-// 検証します（意図的な場面転換の直前で次セクションの構図へ寄せないため）。
+// TestVideoTimelineRunner_RunPassesNextKeyframeAsLastFrame verifies that with a
+// lastFrame-capable model, the next cut's keyframe is passed as the end frame, and
+// not before a section boundary (so the picture is not pulled toward the next
+// section's composition right before an intended scene change).
 func TestVideoTimelineRunner_RunPassesNextKeyframeAsLastFrame(t *testing.T) {
 	ctx := context.Background()
 	recipe := &video.Recipe{
@@ -305,7 +308,7 @@ func TestVideoTimelineRunner_RunPassesNextKeyframeAsLastFrame(t *testing.T) {
 				CharacterID:       "zundamon",
 				DurationSec:       8,
 				KeyframeReference: "gs://images/cut_2.png",
-				// チェーン文脈を持ち込まない（lastFrame は image 入力とセットのときだけ有効）。
+				// Bring in no chain context (lastFrame is valid only together with image input).
 				IsChainStart: true,
 			},
 			{
@@ -335,9 +338,10 @@ func TestVideoTimelineRunner_RunPassesNextKeyframeAsLastFrame(t *testing.T) {
 	}
 }
 
-// TestVideoTimelineRunner_RunRejectsUnsupportedDuration は、Veo が受け付けない尺のカットを
-// API へ投げる前に落とすことを検証します。Veo 側で拒否されるまで待つと、長時間実行
-// オペレーションの往復と、それまでのカットの課金を無駄にします。
+// TestVideoTimelineRunner_RunRejectsUnsupportedDuration verifies that a cut with a
+// duration Veo does not accept is dropped before it is sent to the API. Waiting for
+// Veo to reject it would waste the round trip of a long-running operation and the
+// charges for the cuts before it.
 func TestVideoTimelineRunner_RunRejectsUnsupportedDuration(t *testing.T) {
 	ctx := context.Background()
 	recipe := &video.Recipe{
@@ -396,7 +400,7 @@ func TestVideoTimelineRunner_DoesNotGenerateKeyframes(t *testing.T) {
 	if len(req.InputImage) != 0 {
 		t.Errorf("InputImage = %d bytes, want none (keyframes travel as gs:// references)", len(req.InputImage))
 	}
-	// レシピは書き換えられない。参照の生成は CutKeyframeRunner の仕事。
+	// The recipe is not rewritten. Producing references is CutKeyframeRunner's job.
 	if recipe.Cuts[0].KeyframeReference != "" {
 		t.Errorf("KeyframeReference = %q, want the timeline runner to leave it alone",
 			recipe.Cuts[0].KeyframeReference)
@@ -430,7 +434,7 @@ func TestVideoTimelineRunner_RunResetsChainAtPlannedChainStart(t *testing.T) {
 		t.Fatalf("video requests = %d, want %d", len(videoRunner.requests), len(cuts))
 	}
 
-	// 曲頭とセクション境界が起点。起点では引き継ぎ元が空、継続カットでは直前の VideoID。
+	// The song start and section boundaries are starting points. At a starting point the hand-over source is empty; at a continuation cut it is the previous VideoID.
 	resets := 0
 	for i, cut := range cuts {
 		got := videoRunner.requests[i].PreviousVideoURI
@@ -445,7 +449,7 @@ func TestVideoTimelineRunner_RunResetsChainAtPlannedChainStart(t *testing.T) {
 			t.Errorf("cut %d continues the chain but carried no PreviousVideoURI (want cut %d's video)", i+1, want)
 		}
 	}
-	// 起点が 1 つも立たないまま通ってしまわないよう、下限を押さえる（曲頭とセクション境界）。
+	// Pin the lower bound (song start and section boundaries) so this cannot pass with no starting point set at all.
 	if resets < 2 {
 		t.Errorf("planned chain starts = %d, want at least 2 (song head and the section boundary)", resets)
 	}

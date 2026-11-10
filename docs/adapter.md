@@ -1,34 +1,34 @@
-# 🔌 Adapter Boundary — VideoRunner の実装
+# 🔌 Adapter Boundary — implementing VideoRunner
 
 [← README](../README.md)
 
-このリポジトリは Veo API クライアントではなく、Veo に渡すための **ドメインモデル、キーフレーム生成、リクエスト構築、Video-to-Video 連鎖、メタデータ保存** を担当する orchestration ライブラリです。
+This repository is not a Veo API client. It is an orchestration library responsible for what is handed to Veo: **the domain model, keyframe generation, request building, the Video-to-Video chain and metadata persistence**.
 
-Veo API への実通信は `ports.VideoRunner` の実装として、利用側アプリケーションまたは別パッケージから差し込みます。このリポジトリ内には本番用 Veo adapter は含めず、実行環境ごとの差分を adapter 側に閉じ込めます。
+Actual communication with the Veo API is plugged in as an implementation of `ports.VideoRunner`, from the consuming application or a separate package. No production Veo adapter lives in this repository; differences between runtime environments stay confined to the adapter.
 
-## adapter が担う責務
+## What the adapter is responsible for
 
-* Google Cloud / Vertex AI / Gemini API などの認証
-* 入力の解決（参照 URI を優先し、空のときだけバイト列をアップロード — 下表参照）
-* Veo API への動画生成リクエスト送信
-* 長時間 operation のポーリング、タイムアウト、リトライ
-* 生成動画の保存先管理
-* 次カットへ引き継ぐための `video.Response.VideoID` 返却
-* 参照可能な `video.Response.CloudURL` 返却
+* Authentication with Google Cloud / Vertex AI / Gemini API, etc.
+* Resolving inputs (prefer the reference URI, upload bytes only when it is empty — see the table below)
+* Sending the video generation request to the Veo API
+* Polling the long-running operation, timeouts and retries
+* Managing where generated videos are stored
+* Returning `video.Response.VideoID` so the next cut can chain from it
+* Returning a reachable `video.Response.CloudURL`
 
-## 実装例
+## Example implementation
 
 ```go
 type VeoRunner struct {
-	// client, bucket, model, location など、実行環境に必要な依存を保持します。
+	// Holds what the runtime environment needs: client, bucket, model, location, etc.
 }
 
 func (r *VeoRunner) Run(ctx context.Context, req video.GenerationRequest) (*video.Response, error) {
-	// 1. req.ReferenceImages があればそれを、無ければ req.ImageReference を画像入力に使う
-	// 2. 参照が空のときだけ req.InputImage / req.InputAudio をアップロードして URI 化
-	// 3. req.Prompt, req.PreviousVideoURI, req.Seed, req.DurationSec を Veo API に渡す
-	// 4. operation を poll して完了を待つ
-	// 5. CloudURL と VideoID を返す
+	// 1. Use req.ReferenceImages as the image input if present, otherwise req.ImageReference
+	// 2. Only when the references are empty, upload req.InputImage / req.InputAudio to get a URI
+	// 3. Pass req.Prompt, req.PreviousVideoURI, req.Seed and req.DurationSec to the Veo API
+	// 4. Poll the operation until it completes
+	// 5. Return CloudURL and VideoID
 	return &video.Response{
 		CloudURL:    "gs://example-bucket/videos/cut_001.mp4",
 		VideoID:     "veo-video-id",
@@ -39,43 +39,43 @@ func (r *VeoRunner) Run(ctx context.Context, req video.GenerationRequest) (*vide
 }
 ```
 
-## video.GenerationRequest の契約
+## The video.GenerationRequest contract
 
-| フィールド | adapter 側の扱い |
+| Field | How the adapter treats it |
 | --- | --- |
-| `Prompt` | Veo に渡す最終プロンプト。カット内容、カメラワーク、音楽同期指示を含みます。 |
-| `ReferenceImages` | `referenceImages`（asset タイプ・最大 3 枚、`[キャラクター立ち絵, キーフレーム]`）。**入っている場合は `ImageReference` / `InputImage` より優先します。** |
-| `ImageReference` | 既に参照可能なキーフレーム画像 URI。存在する場合は `InputImage` より優先します。 |
-| `InputImage` | `ImageReference` が空の場合に adapter 側でアップロードして使う画像バイト列です。 |
-| `AudioReference` | 既に参照可能な音声セグメント URI。 |
-| `InputAudio` | `AudioReference` が空の場合に adapter 側でアップロードして使う音声バイト列です。 |
-| `PreviousVideoURI` | 前カットの文脈を引き継ぐ動画の `gs://` URI（下の注記参照）。空の場合はチェーンなしで生成します。 |
-| `LastFrameReference` | 終了フレームとして使う画像 URI（Veo の first/last frame 補間）。Veo API では開始フレーム画像との併用が必須のため、image 入力（image_to_video）のときだけ `lastFrame` として送ります。対応モデルは Veo 2 / Veo 3.1 系のみです。 |
-| `Seed` | キャラクター Seed を優先し、未指定時は `music_recipe.Seed` を使います。 |
-| `CutIndex` | レスポンスやエラー表示で使うカット番号です。 |
-| `DurationSec` | カットの目標秒数です。 |
+| `Prompt` | The final prompt for Veo. Includes the cut's content, camera work and music-sync directions. |
+| `ReferenceImages` | `referenceImages` (asset type, up to 3, `[character art, keyframe]`). **When set, it takes priority over `ImageReference` / `InputImage`.** |
+| `ImageReference` | An already-reachable keyframe image URI. When present, it takes priority over `InputImage`. |
+| `InputImage` | Image bytes the adapter uploads and uses when `ImageReference` is empty. |
+| `AudioReference` | An already-reachable audio segment URI. |
+| `InputAudio` | Audio bytes the adapter uploads and uses when `AudioReference` is empty. |
+| `PreviousVideoURI` | The `gs://` URI of the video whose context this cut continues (see the note below). When empty, the cut is generated without a chain. |
+| `LastFrameReference` | Image URI used as the end frame (Veo first/last frame interpolation). The Veo API requires it to be paired with a start frame image, so it is sent as `lastFrame` only for image input (image_to_video). Supported only by Veo 2 / Veo 3.1 models. |
+| `Seed` | The character Seed takes priority; when unset, `music_recipe.Seed` is used. |
+| `CutIndex` | The cut number, used in responses and error messages. |
+| `DurationSec` | The cut's target duration in seconds. |
 
-`video.Response.VideoID` が空の場合、そのカットの生成結果は保存できますが、次カットへの `PreviousVideoURI` 連鎖は更新されません。連続カットの一貫性を重視する adapter では、可能な限り Veo 側の動画 ID を返してください。
+When `video.Response.VideoID` is empty, the cut's result can still be saved, but the `PreviousVideoURI` chain into the next cut is not updated. An adapter that cares about continuity across cuts should return Veo's video ID whenever it can.
 
-> **`PreviousVideoURI` は `gs://` URI の契約です。** `gs://` で始まらない値は video_extension として分類されないため、operation 名や署名付き URL を入れた adapter はチェーン全体を黙って image_to_video へ格下げします。
+> **`PreviousVideoURI` is a `gs://` URI contract.** A value that does not start with `gs://` is never classified as video_extension, so an adapter that puts an operation name or a signed URL there silently downgrades the whole chain to image_to_video.
 
-## キーフレーム生成側の差し替え
+## Replacing the keyframe generator
 
-キーフレーム生成の実体は `ports.CutImageGenerator`（`GenerateCut(ctx, cut, index, total)` の 1 メソッド）です。`EditAndSave` の編集経路は別で、注入された生成器が `EditCut(ctx, cut, editPrompt)` も持っていれば実行時に検出して使い、持っていなければ `ports.ErrEditingNotSupported` を返します。
+Keyframe generation itself is `ports.CutImageGenerator` (one method, `GenerateCut(ctx, cut, index, total)`). The `EditAndSave` editing path is separate: if the injected generator also has `EditCut(ctx, cut, editPrompt)`, it is detected at run time and used; otherwise `ports.ErrEditingNotSupported` is returned.
 
-## VideoRunner を渡さない場合
+## Without a VideoRunner
 
-`workflow.New` が返す `Workflows.Video` は `nil` ではなく、呼び出すと常に `ports.ErrVideoRunnerNotConfigured` を返すダミー実装（`ports.NewNoopVideoTimelineRunner()`）になります。Script / CutKeyframe / Publish だけを使う構成ではそのまま利用できます。
+`Workflows.Video` returned by `workflow.New` is not `nil`: it is a dummy implementation (`ports.NewNoopVideoTimelineRunner()`) that always returns `ports.ErrVideoRunnerNotConfigured` when called. A setup that uses only Script / CutKeyframe / Publish works as-is.
 
-未設定を検知したい場合は `errors.Is(err, ports.ErrVideoRunnerNotConfigured)` で判定してください（`Workflows.Video == nil` によるチェックは機能しません）。
+To detect the missing runner, check `errors.Is(err, ports.ErrVideoRunnerNotConfigured)` (a `Workflows.Video == nil` check does not work).
 
-## モデルの対応機能を伝える
+## Declaring what the model supports
 
-どの Veo 機能が使えるかは、`VideoRunner` に以下のオプションインターフェースを実装すると `veo.RunnerCapabilities` が自動で拾います。未実装の Runner は両方 false となり、image_to_video 側へ倒れます。
+Which Veo features are available is picked up automatically by `veo.RunnerCapabilities` when the `VideoRunner` implements the following optional interfaces. A Runner implementing neither reports both as false and falls back to image_to_video.
 
 ```go
 type ReferenceImagesSupporter interface{ SupportsReferenceImages() bool }
 type LastFrameSupporter      interface{ SupportsLastFrame() bool }
 ```
 
-分類の詳細は [Veo 生成モードとカット尺](veo-modes.md) を参照してください。
+For the details of classification, see [Veo generation modes and cut durations](veo-modes.md).

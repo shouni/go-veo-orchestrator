@@ -20,11 +20,11 @@ import (
 )
 
 // fakeWriter records every Write call so tests can assert on the saved paths/content.
-// fakeWriter は remoteio.Writer のテストダブルです。
+// fakeWriter is a test double for remoteio.Writer.
 //
-// mu は必須です。GenerateAndSave はカットごとに goroutine を起こし、その中で保存まで
-// 行うため、Writer は複数の goroutine から同時に呼ばれます（注入する実装にも同じ
-// 要件が掛かります。CutKeyframeRunner のドキュメント参照）。
+// mu is required. GenerateAndSave starts a goroutine per cut and saves inside it,
+// so the Writer is called from several goroutines at once (the injected
+// implementation carries the same requirement; see the CutKeyframeRunner docs).
 type fakeWriter struct {
 	mu     sync.Mutex
 	writes map[string][]byte
@@ -45,7 +45,7 @@ func (w *fakeWriter) Write(_ context.Context, path string, contentReader io.Read
 	return nil
 }
 
-// writeCount は記録済みの書き込み数を返します（並行実行中でも安全に読めます）。
+// writeCount returns the number of recorded writes (safe to read during concurrent execution).
 func (w *fakeWriter) writeCount() int {
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -291,9 +291,9 @@ func keyframeCut(index int, keyframeReference string) video.Cut {
 	}
 }
 
-// 再開のルールを固定する: キーフレームを既に持つカットは焼き直さない。これが無いと、
-// 保存済みレシピを再実行する呼び出し（動画生成・再開・1 カットだけの作り直し）が
-// 毎回すべての画像の料金を払い直すことになる。
+// Pins the resume rule: a cut that already has a keyframe is not re-baked. Without
+// it, calls that rerun a saved recipe (video generation, resume, remaking just one
+// cut) would pay for every image again each time.
 func TestCutKeyframeRunner_GenerateAndSaveSkipsExistingKeyframes(t *testing.T) {
 	ctx := context.Background()
 
@@ -316,11 +316,11 @@ func TestCutKeyframeRunner_GenerateAndSaveSkipsExistingKeyframes(t *testing.T) {
 		if got := generator.seenCutIndexes(); len(got) != 1 || got[0] != 2 {
 			t.Fatalf("generated cuts = %v, want only cut 2", got)
 		}
-		// 既存のキーフレームは書き換えない。
+		// Existing keyframes are not rewritten.
 		if updated.Cuts[0].KeyframeReference != "gs://bucket/jobs/job-1/images/keyframe_1.png" {
 			t.Errorf("cut 1 keyframe = %q, want the existing reference untouched", updated.Cuts[0].KeyframeReference)
 		}
-		// 保存名はレシピ内の位置で決まる。詰めて keyframe_1.png にしてはいけない。
+		// The saved name is decided by the position in the recipe. It must not be compacted to keyframe_1.png.
 		if want := "keyframe_2"; !containsPathFragment(writer.writes, want) {
 			t.Errorf("saved paths %v, want one containing %q (position-based numbering)", writerPaths(writer), want)
 		}
@@ -346,8 +346,8 @@ func TestCutKeyframeRunner_GenerateAndSaveSkipsExistingKeyframes(t *testing.T) {
 		if got := generator.seenCutIndexes(); len(got) != 0 {
 			t.Errorf("generator was called %d times, want 0", len(generator.seen))
 		}
-		// メタデータは生成をスキップしても必ず書く。呼び出し側はこのファイルを目印に
-		// ジョブを見つけるため、書かないとジョブが存在しないように見える。
+		// The metadata is always written, even when generation is skipped. Callers find
+		// jobs by this file, so without it the job would look as if it did not exist.
 		if !containsPathFragment(writer.writes, "video_music_meta.json") {
 			t.Errorf("saved paths %v, want the metadata to be written even with nothing generated", writerPaths(writer))
 		}
@@ -406,7 +406,7 @@ func TestCutKeyframeRunner_SavesEachKeyframeAsItIsGenerated(t *testing.T) {
 		Cuts:         []video.Cut{keyframeCut(1, ""), keyframeCut(2, "")},
 	}
 
-	// 既定の並列度は1なので、カット2の生成時点でカット1は必ず完了している。
+	// The default concurrency is 1, so cut 1 has always completed by the time cut 2 is generated.
 	var firstSavedBeforeSecond bool
 	generator := &capturingCutImageGenerator{
 		image: func(cut video.Cut) *video.KeyframeImage {
@@ -433,7 +433,7 @@ func TestCutKeyframeRunner_SavesEachKeyframeAsItIsGenerated(t *testing.T) {
 	}
 }
 
-// ctxHonoringWriter は、実ストレージと同じく、終わった ctx では書き込まない Writer です。
+// ctxHonoringWriter is a Writer that, like real storage, does not write on a finished ctx.
 type ctxHonoringWriter struct{ *fakeWriter }
 
 func (w ctxHonoringWriter) Write(ctx context.Context, path string, r io.Reader, opts ...remoteio.WriteOption) error {
@@ -443,9 +443,10 @@ func (w ctxHonoringWriter) Write(ctx context.Context, path string, r io.Reader, 
 	return w.fakeWriter.Write(ctx, path, r, opts...)
 }
 
-// TestCutKeyframeRunner_SavesMetadataAfterCancel は、生成の途中で呼び出し元の ctx が
-// 切れても、保存済みのキーフレームを指すメタデータが残ることを確かめます。残らないと、
-// 課金済みの画像への参照がどこにも無くなり、続きから再開できません。
+// TestCutKeyframeRunner_SavesMetadataAfterCancel checks that metadata pointing at
+// the saved keyframes remains even when the caller's ctx ends midway through
+// generation. Without it, there would be no reference anywhere to the billed
+// images, and the run could not resume where it stopped.
 func TestCutKeyframeRunner_SavesMetadataAfterCancel(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -456,7 +457,7 @@ func TestCutKeyframeRunner_SavesMetadataAfterCancel(t *testing.T) {
 		Cuts:         []video.Cut{keyframeCut(1, ""), keyframeCut(2, ""), keyframeCut(3, "")},
 	}
 
-	// カット 2 の生成中にジョブが打ち切られる。
+	// The job is cut off while cut 2 is being generated.
 	generator := &capturingCutImageGenerator{
 		image: func(cut video.Cut) *video.KeyframeImage {
 			if cut.CutIndex == 2 {
@@ -494,9 +495,9 @@ func TestCutKeyframeRunner_MaxConcurrency(t *testing.T) {
 
 	for _, limit := range []int{1, 3} {
 		t.Run(fmt.Sprintf("limit=%d", limit), func(t *testing.T) {
-			// バブル内では生成の time.Sleep が仮想時間を進めるだけになり、枠が
-			// 埋まるまで次のカットが走り出さないことが保証されます。実時間に
-			// 依存しないので、上限ちょうどまで重なることを期待できます。
+			// Inside the bubble, generation's time.Sleep only advances virtual time,
+			// which guarantees the next cut does not start until a slot frees up. Not
+			// depending on real time, the test can expect overlap exactly up to the limit.
 			synctest.Test(t, func(t *testing.T) {
 				var mu sync.Mutex
 				inFlight, peak := 0, 0
@@ -533,7 +534,7 @@ func TestCutKeyframeRunner_MaxConcurrency(t *testing.T) {
 				mu.Lock()
 				defer mu.Unlock()
 				if peak != limit {
-					t.Errorf("peak concurrency = %d, want exactly %d (少なければ重なっておらず、多ければ上限を超えている)", peak, limit)
+					t.Errorf("peak concurrency = %d, want exactly %d (fewer means no overlap, more means the limit was exceeded)", peak, limit)
 				}
 			})
 		})
@@ -545,11 +546,11 @@ func TestCutKeyframeRunner_MaxConcurrency(t *testing.T) {
 // results are written straight into recipe.Cuts, so a position mix-up would silently attach
 // cut 3's image to cut 1 — a failure that only shows up as the wrong picture in a finished video.
 func TestCutKeyframeRunner_ParallelGenerationKeepsCutAlignment(t *testing.T) {
-	// 遅延は仮想時間で消化されます。完了順のずれは保たれたまま、実時間は消費しません。
+	// The delays are consumed in virtual time. The skewed completion order is preserved without spending real time.
 	synctest.Test(t, func(t *testing.T) {
 		ctx := context.Background()
 
-		// 逆順に遅延させ、完了順を入力順とわざとずらす。
+		// Delay in reverse order so the completion order deliberately differs from the input order.
 		gen := &capturingCutImageGenerator{
 			image: func(cut video.Cut) *video.KeyframeImage {
 				time.Sleep(time.Duration(5-cut.CutIndex) * 10 * time.Millisecond)
@@ -576,7 +577,7 @@ func TestCutKeyframeRunner_ParallelGenerationKeepsCutAlignment(t *testing.T) {
 				t.Errorf("cut %d: KeyframeSeed = %d, want %d (result landed on the wrong cut)",
 					cut.CutIndex, cut.KeyframeSeed, want)
 			}
-			// 保存名はレシピ内の位置で決まる。詰めたり入れ替えたりしてはいけない。
+			// The saved name is decided by the position in the recipe. It must not be compacted or reordered.
 			if want := fmt.Sprintf("keyframe_%d", i+1); !strings.Contains(cut.KeyframeReference, want) {
 				t.Errorf("cut %d: reference %q, want it to contain %q", cut.CutIndex, cut.KeyframeReference, want)
 			}

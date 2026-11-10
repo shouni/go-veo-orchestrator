@@ -1,16 +1,18 @@
 package keyframe
 
-// Option は Generator の設定を適用する関数型です。
+// Option is a function type that applies a Generator setting.
 //
-// 画作りの既定値はありません。アスペクト比・解像度・ネガティブプロンプトはすべて
-// 呼び出し側（ports.Config 経由）が決めます — 理由は ports.Config の Art Direction を
-// 参照してください。並列度・発射間隔・上限時間のオプションもここにはありません
-// （runner.CutKeyframeRunner と workflow の callGuard が持ちます）。
+// There are no art-direction defaults. Aspect ratio, resolution and negative prompt
+// are all decided by the caller (through ports.Config) — see the Art Direction
+// section of ports.Config for why. There are no options for concurrency, call
+// interval or time limit here either (runner.CutKeyframeRunner and workflow's
+// callGuard own those).
 type Option func(*Generator)
 
-// WithAspectRatio は、生成するキーフレーム画像のアスペクト比を設定します
-// （例: "16:9", "9:16"）。空文字の場合は何も変更しません。未設定ならモデルへ空が渡りますが、
-// ports.Config.KeyframeAspectRatio が必須なので workflow 経由で組み立てる限り空にはなりません。
+// WithAspectRatio sets the aspect ratio of the generated keyframe images (e.g.
+// "16:9", "9:16"). An empty string changes nothing. When unset, an empty value
+// reaches the model, but ports.Config.KeyframeAspectRatio is required, so it is
+// never empty as long as the generator is built through workflow.
 func WithAspectRatio(value string) Option {
 	return func(g *Generator) {
 		if value != "" {
@@ -19,8 +21,8 @@ func WithAspectRatio(value string) Option {
 	}
 }
 
-// WithImageSize は、生成するキーフレーム画像の解像度を設定します（例: "1K", "2K"）。
-// 空文字の場合は何も変更しません。
+// WithImageSize sets the resolution of the generated keyframe images (e.g. "1K",
+// "2K"). An empty string changes nothing.
 func WithImageSize(value string) Option {
 	return func(g *Generator) {
 		if value != "" {
@@ -29,8 +31,8 @@ func WithImageSize(value string) Option {
 	}
 }
 
-// WithNegativePrompt は、キーフレーム生成のネガティブプロンプトを設定します。
-// 既定文言はありません（理由は ports.Config.KeyframeNegativePrompt を参照）。
+// WithNegativePrompt sets the negative prompt for keyframe generation. There is no
+// default wording (see ports.Config.KeyframeNegativePrompt for why).
 func WithNegativePrompt(value string) Option {
 	return func(g *Generator) {
 		g.negativePrompt = value

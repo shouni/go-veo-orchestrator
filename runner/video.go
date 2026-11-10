@@ -10,27 +10,30 @@ import (
 	"github.com/shouni/go-veo-orchestrator/video"
 )
 
-// CutObserver は、1カットの動画生成が完了するたびに呼ばれるフックです。
+// CutObserver is a hook called each time one cut's video generation completes.
 //
-// resumable な実行のために用意されています: 呼び出し側はここでカットごとの
-// 途中経過（メタデータの保存、実行時間予算の確認など）を行い、エラーを返すと
-// Run はそこで停止してそれまでの部分結果を返します。時間制限のあるジョブ基盤で
-// 「期限が近いので一旦保存して次の実行で再開する」という運用が、Run を自前の
-// ループで置き換えずにできます。
+// It exists for resumable execution: the caller records per-cut progress here
+// (saving metadata, checking an execution-time budget, etc.), and if it returns
+// an error, Run stops there and returns the partial result so far. On a job
+// platform with a time limit, "the deadline is near, so save for now and resume
+// on the next run" works without replacing Run with a loop of one's own.
 type CutObserver func(ctx context.Context, cut *video.Cut, res *video.Response) error
 
-// CutGate は、1カットの生成に入る直前に呼ばれるフックです。
+// CutGate is a hook called right before one cut's generation starts.
 //
-// false を返すとそのカットは生成せずに飛ばします。飛ばしたカットには動画が無いので、
-// チェーンの引き継ぎもそこで切れます（その先のカットは穴を跨いで前の動画へは繋げません）。
-// 生成する場合は、渡されたレシピのカットをここで書き換えられます。チェーンの起点で参照画像を
-// 直前チェーンの最終フレームへ差し替える、といった生成前の調整はここが置き場所です。
+// Returning false skips the cut without generating it. A skipped cut has no
+// video, so the chain hand-over breaks there too (the cuts after it do not
+// connect across the gap to the earlier video). When the cut is generated, the
+// passed recipe's cut can be rewritten here. Pre-generation adjustments, such as
+// replacing the reference image at a chain start with the previous chain's last
+// frame, belong here.
 //
-// 生成済みのカットには呼ばれません。すでに動画があるものに生成可否の余地は無く、
-// 飛ばしてしまえばその動画がチェーンから落ちるためです。
+// It is not called for cuts already generated. Something that already has a video
+// leaves no room for a generate-or-not decision, and skipping it would drop that
+// video from the chain.
 type CutGate func(ctx context.Context, recipe *video.Recipe, cutIndex int) (generate bool, err error)
 
-// VideoTimelineRunner はキーフレーム生成結果を Veo へ順次流し込み、Video-to-Video の文脈を引き継ぎます。
+// VideoTimelineRunner feeds keyframe results to Veo one after another, carrying the Video-to-Video context over.
 type VideoTimelineRunner struct {
 	videoRunner    ports.VideoRunner
 	requestBuilder VideoRequestBuilder
@@ -38,7 +41,7 @@ type VideoTimelineRunner struct {
 	gate           CutGate
 }
 
-// NewVideoTimelineRunner は動画生成オーケストレーターを初期化します。
+// NewVideoTimelineRunner initializes the video generation orchestrator.
 func NewVideoTimelineRunner(
 	videoRunner ports.VideoRunner,
 ) *VideoTimelineRunner {
@@ -48,8 +51,8 @@ func NewVideoTimelineRunner(
 	}
 }
 
-// WithRequestBuilder は動画生成リクエストの組み立てを差し替えます。
-// nil を渡した場合は変更せず、メソッドチェーンできるよう自身を返します。
+// WithRequestBuilder replaces how video generation requests are assembled.
+// Passing nil changes nothing; it returns the receiver to allow method chaining.
 func (r *VideoTimelineRunner) WithRequestBuilder(builder VideoRequestBuilder) *VideoTimelineRunner {
 	if builder != nil {
 		r.requestBuilder = builder
@@ -57,8 +60,8 @@ func (r *VideoTimelineRunner) WithRequestBuilder(builder VideoRequestBuilder) *V
 	return r
 }
 
-// WithCutObserver は、カット完了ごとのフックを設定します。
-// nil を渡した場合は変更せず、メソッドチェーンできるよう自身を返します。
+// WithCutObserver sets the hook called after each cut completes.
+// Passing nil changes nothing; it returns the receiver to allow method chaining.
 func (r *VideoTimelineRunner) WithCutObserver(observer CutObserver) *VideoTimelineRunner {
 	if observer != nil {
 		r.observer = observer
@@ -66,8 +69,8 @@ func (r *VideoTimelineRunner) WithCutObserver(observer CutObserver) *VideoTimeli
 	return r
 }
 
-// WithCutGate は、カット生成前のフックを設定します。
-// nil を渡した場合は変更せず、メソッドチェーンできるよう自身を返します。
+// WithCutGate sets the hook called before each cut is generated.
+// Passing nil changes nothing; it returns the receiver to allow method chaining.
 func (r *VideoTimelineRunner) WithCutGate(gate CutGate) *VideoTimelineRunner {
 	if gate != nil {
 		r.gate = gate
@@ -75,11 +78,13 @@ func (r *VideoTimelineRunner) WithCutGate(gate CutGate) *VideoTimelineRunner {
 	return r
 }
 
-// Run はカットのキーフレームを生成し、前カットの VideoID を引き継ぎながら順次動画化します。
+// Run turns the cuts into video one after another from their keyframes, carrying
+// the previous cut's VideoID over.
 //
-// エラー時も、それまでに完了したカットのレスポンスを部分結果として返します。
-// 1カットの生成には分単位の時間と実費が掛かるため、途中で失敗しても完了分の
-// 情報は呼び出し側が保存・再開に使えます（レシピの Cut には生成結果が反映済みです）。
+// Even on error, it returns the responses of the cuts completed so far as a partial
+// result. Generating one cut takes minutes and real money, so even after a failure
+// midway the caller can use the completed part to save and resume (the generation
+// results are already reflected in the recipe's Cuts).
 func (r *VideoTimelineRunner) Run(ctx context.Context, recipe *video.Recipe) ([]*video.Response, error) {
 	if err := r.validateRun(recipe); err != nil {
 		return nil, err
@@ -88,26 +93,28 @@ func (r *VideoTimelineRunner) Run(ctx context.Context, recipe *video.Recipe) ([]
 
 	warnMissingKeyframes(ctx, recipe)
 
-	// 使用する VideoRunner が対応している Veo のオプション機能は全カットで共通なので
-	// ループの外で一度だけ導出する。
+	// The optional Veo features supported by the VideoRunner in use are the same
+	// for every cut, so derive them once outside the loop.
 	caps := veo.RunnerCapabilities(r.videoRunner)
 
 	responses := make([]*video.Response, 0, len(recipe.Cuts))
 	lastVideoID := ""
 
 	for i := range recipe.Cuts {
-		// 生成済みかどうかは生成前に控えます。runCut がこのカットを生成すると
-		// IsGenerated() が true に変わるため、後から見ても区別が付きません。
+		// Note whether the cut was already generated before generating it. Once
+		// runCut generates this cut, IsGenerated() turns true, so looking afterwards
+		// cannot tell the difference.
 		alreadyGenerated := recipe.Cuts[i].IsGenerated()
 
 		if !alreadyGenerated && r.gate != nil {
 			generate, err := r.gate(ctx, recipe, i)
 			if err != nil {
-				return responses, fmt.Errorf("cut %d の生成可否の判定で停止しました: %w", recipe.Cuts[i].CutIndex, err)
+				return responses, fmt.Errorf("cut %d: stopped at the generation gate: %w", recipe.Cuts[i].CutIndex, err)
 			}
 			if !generate {
-				// 飛ばしたカットの位置には動画が無いので、次に生成するカットは
-				// この穴を跨いで前の動画へ繋げない。引き継ぎ元を空へ戻す。
+				// There is no video at the skipped cut's position, so the next cut to be
+				// generated does not connect across this gap to the earlier video. Reset
+				// the hand-over source to empty.
 				lastVideoID = ""
 				continue
 			}
@@ -120,14 +127,15 @@ func (r *VideoTimelineRunner) Run(ctx context.Context, recipe *video.Recipe) ([]
 		responses = append(responses, res)
 		lastVideoID = nextVideoID(lastVideoID, res)
 
-		// 生成済みカットでは後処理を呼びません。observer は「生成が終わった」ことに
-		// 紐づく処理（課金の記録、後段の加工）に使われるので、再開のたびに過去の
-		// カットぶんが繰り返し走ると二重計上になります。
+		// Post-processing is not called for cuts already generated. The observer is
+		// used for work tied to "generation finished" (recording charges, downstream
+		// processing), so rerunning it for past cuts on every resume would count them
+		// twice.
 		if alreadyGenerated || r.observer == nil {
 			continue
 		}
 		if err := r.observer(ctx, &recipe.Cuts[i], res); err != nil {
-			return responses, fmt.Errorf("cut %d の後処理で停止しました: %w", recipe.Cuts[i].CutIndex, err)
+			return responses, fmt.Errorf("cut %d: stopped in post-processing: %w", recipe.Cuts[i].CutIndex, err)
 		}
 	}
 
@@ -144,18 +152,19 @@ func (r *VideoTimelineRunner) validateRun(recipe *video.Recipe) error {
 	return nil
 }
 
-// warnMissingKeyframes は、キーフレーム参照を持たないカットを警告します。
+// warnMissingKeyframes warns about cuts that have no keyframe reference.
 //
-// このランナーはキーフレームを生成しません（生成と保存は CutKeyframeRunner の責務で、
-// 呼び出し側が先に実行します）。参照が無いカットはプロンプトのみの生成になるので、
-// 黙って進まず記録だけ残します。
+// This runner does not generate keyframes (generating and saving them is
+// CutKeyframeRunner's job, run first by the caller). A cut without a reference is
+// generated from the prompt alone, so rather than proceeding silently, a record is
+// left.
 func warnMissingKeyframes(ctx context.Context, recipe *video.Recipe) {
 	for i := range recipe.Cuts {
 		cut := &recipe.Cuts[i]
 		if cut.IsGenerated() || cut.KeyframeReference != "" {
 			continue
 		}
-		slog.WarnContext(ctx, "キーフレーム参照が無いカットをプロンプトのみで生成します",
+		slog.WarnContext(ctx, "Generating a cut without a keyframe reference from the prompt alone",
 			"cut_index", cut.CutIndex)
 	}
 }
@@ -172,17 +181,19 @@ func (r *VideoTimelineRunner) runCut(
 		return responseFromCut(*cut), nil
 	}
 
-	// IsChainStart のカットは video-to-video チェーンの新規起点なので、直前カットの
-	// VideoID を PreviousVideoURI として引き継がず、チェーンをここでリセットする
-	// （セクション境界や継続尺の上限到達によるリセット。video.ChainControl 参照）。
+	// A cut with IsChainStart is a fresh start of a video-to-video chain, so it
+	// does not carry the previous cut's VideoID over as PreviousVideoURI; the chain
+	// is reset here (a reset at a section boundary or on reaching the continuation
+	// duration limit; see video.ChainControl).
 	previousVideoURI := lastVideoID
 	if cut.IsChainStart {
 		previousVideoURI = ""
 	}
-	// 引き継ぐ動画が無い状態で生成するカットは、それ自体が新しいチェーンの起点です。
-	// プランナが計画した起点（IsChainStart 済み）に加えて、直前のカットが飛ばされた
-	// 穴の向こう側もここに来ます。印を付けずに進むと、チェーンの境界を数える側からは
-	// 直前チェーンの最終カットが見えず、結合の対象から落ちます。
+	// A cut generated with no video to carry over is itself the start of a new
+	// chain. Besides the starting points the planner set (already IsChainStart),
+	// the far side of a gap left by a skipped cut lands here too. Proceeding
+	// without marking it would hide the previous chain's last cut from code that
+	// counts chain boundaries, and it would drop out of the join.
 	if previousVideoURI == "" {
 		cut.IsChainStart = true
 	}
@@ -202,31 +213,33 @@ func (r *VideoTimelineRunner) runCut(
 	res, err := r.videoRunner.Run(ctx, req)
 	if err != nil {
 		cut.Status = video.CutStatusFailed
-		return nil, fmt.Errorf("cut %d の動画生成に失敗しました: %w", cut.CutIndex, err)
+		return nil, fmt.Errorf("cut %d: video generation failed: %w", cut.CutIndex, err)
 	}
 	if res == nil {
-		// nil レスポンスも失敗として扱う。pending のまま残すと、resume 側が
-		// 「まだ実行していないカット」と誤認する。
+		// Treat a nil response as a failure too. Left pending, the resume side would
+		// mistake it for "a cut not yet run".
 		cut.Status = video.CutStatusFailed
-		return nil, fmt.Errorf("cut %d の動画生成レスポンスが nil です", cut.CutIndex)
+		return nil, fmt.Errorf("cut %d: video generation response is nil", cut.CutIndex)
 	}
 
 	applyVideoResponse(cut.CutIndex, &cut.Result, res)
 	return res, nil
 }
 
-// validateCutDuration は、これから Veo へ送るリクエストの尺が、そのリクエストが解決する
-// 生成モードで受け付けられる値かを検証します（許容尺は veo.DurationsForMode）。
+// validateCutDuration checks that the duration of the request about to be sent to
+// Veo is accepted by the generation mode the request resolves to (the allowed
+// durations are veo.DurationsForMode).
 //
-// 検証せずに送っても Veo 側で拒否されますが、それが分かるのは長時間実行オペレーションを
-// 投げて待った後です。ここで手前に落とすことで、レシピ側の尺の計画ミスをカット生成の
-// 待ち時間と課金の前に、どのカットが何秒でどのモードだったかまで示して報告できます。
+// Sending it unchecked would also be rejected by Veo, but only after submitting
+// and waiting on a long-running operation. Failing it here reports a
+// duration-planning mistake on the recipe side — down to which cut, how many
+// seconds and which mode — before the wait and the charges of cut generation.
 func validateCutDuration(req video.GenerationRequest, caps veo.Capabilities) error {
 	mode := veo.ClassifyRequest(req, req.PreviousVideoURI != "", caps)
 	if veo.IsSupportedDuration(req.DurationSec, mode) {
 		return nil
 	}
-	return fmt.Errorf("cut %d: %.2f秒は %s では生成できません（対応する尺: %v）: %w",
+	return fmt.Errorf("cut %d: %.2f seconds cannot be generated in %s (supported durations: %v): %w",
 		req.CutIndex, req.DurationSec, mode, veo.DurationsForMode(mode), ports.ErrUnsupportedCutDuration)
 }
 
@@ -239,8 +252,9 @@ func responseFromCut(cut video.Cut) *video.Response {
 	}
 }
 
-// applyVideoResponse は、動画生成結果 (res) をカットの Result に反映します。
-// cutIndex 以外は Result フィールドしか読み書きしないことをシグネチャで示しています。
+// applyVideoResponse reflects the video generation result (res) into the cut's
+// Result. The signature shows that apart from cutIndex, it reads and writes only
+// the Result fields.
 func applyVideoResponse(cutIndex int, result *video.Result, res *video.Response) {
 	if res.CutIndex == 0 {
 		res.CutIndex = cutIndex

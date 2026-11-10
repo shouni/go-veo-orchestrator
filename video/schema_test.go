@@ -2,7 +2,7 @@ package video
 
 import "testing"
 
-// properties は JSON Schema のオブジェクトから properties を取り出します。
+// properties extracts properties from a JSON Schema object.
 func properties(t *testing.T, schema map[string]any) map[string]any {
 	t.Helper()
 
@@ -13,7 +13,7 @@ func properties(t *testing.T, schema map[string]any) map[string]any {
 	return props
 }
 
-// cutProperties は cuts[] 要素の properties を取り出します。
+// cutProperties extracts the properties of a cuts[] element.
 func cutProperties(t *testing.T, schema map[string]any) map[string]any {
 	t.Helper()
 
@@ -100,8 +100,8 @@ func TestVideoRecipeSchemaRequiresProjectTitleAndCuts(t *testing.T) {
 	}
 }
 
-// TestVideoRecipeSchemaIsPlainJSONSchema は、スキーマが素の JSON Schema であることを確認します。
-// genai.Schema へ戻すと、スキーマ定義のためだけに SDK 依存が復活します。
+// TestVideoRecipeSchemaIsPlainJSONSchema checks that the schema is a plain JSON Schema.
+// Going back to genai.Schema would bring back an SDK dependency just for defining the schema.
 func TestVideoRecipeSchemaIsPlainJSONSchema(t *testing.T) {
 	schema := RecipeSchema(nil)
 

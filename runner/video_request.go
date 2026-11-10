@@ -10,71 +10,78 @@ import (
 	"github.com/shouni/go-veo-orchestrator/video"
 )
 
-// BuildInput は、1カット分の動画生成リクエストを組み立てるための入力一式です。
-// 以前の位置引数（recipe, cut, keyframe, previousVideoID）では lastFrame やモデルの
-// 対応機能を渡す先が無く、呼び出し側が Build() の戻り値を後から書き換える前提に
-// なっていたため、構造体で受け取る形にしています。
+// BuildInput is the full set of inputs for assembling one cut's video generation
+// request. The earlier positional arguments (recipe, cut, keyframe,
+// previousVideoID) had nowhere to pass lastFrame or the model's capabilities, and
+// assumed the caller would rewrite Build()'s return value afterwards, so the
+// inputs now come in a struct.
 type BuildInput struct {
-	// Recipe はカットが属するレシピです（プロンプトの Music mood / Seed に使います）。
+	// Recipe is the recipe the cut belongs to (used for the prompt's Music mood and for the Seed).
 	Recipe *video.Recipe
-	// Cut は生成対象のカットです。
+	// Cut is the cut to generate.
 	Cut video.Cut
-	// PreviousVideoURI は video-to-video 継続の文脈として引き継ぐ前カット動画の
-	// gs:// URI です。空文字はチェーンの起点（継続しない）を意味します。
+	// PreviousVideoURI is the gs:// URI of the previous cut's video, carried over
+	// as the context of a video-to-video continuation. An empty string means a
+	// chain start (no continuation).
 	PreviousVideoURI string
-	// LastFrameReference は frames_to_video 補間の終了フレームです
-	// （通常は Cuts.NextLastFrameReference の戻り値）。
+	// LastFrameReference is the end frame for frames_to_video interpolation
+	// (normally the return value of Cuts.NextLastFrameReference).
 	LastFrameReference string
-	// Capabilities は実際に使う VideoRunner／モデルが対応している Veo のオプション機能です
-	// （veo.RunnerCapabilities で導出）。ゼロ値は「オプション機能なし」として扱い、
-	// image_to_video 側へ倒れます。
+	// Capabilities are the optional Veo features supported by the VideoRunner /
+	// model actually in use (derived with veo.RunnerCapabilities). The zero value
+	// is treated as "no optional features" and falls back to image_to_video.
 	Capabilities veo.Capabilities
 }
 
-// VideoRequestBuilder は動画生成リクエストをカット情報から組み立てます。
+// VideoRequestBuilder assembles video generation requests from cut information.
 type VideoRequestBuilder interface {
 	Build(in BuildInput) video.GenerationRequest
 }
 
-// DefaultVideoRequestBuilder は標準の動画生成リクエストビルダーです。
-// characters が設定されている場合、カットのキャラクター立ち絵とキーフレームを
-// ReferenceImages（Veo の referenceImages、asset タイプ・最大3枚）として組み立てます。
+// DefaultVideoRequestBuilder is the standard video generation request builder.
+// When characters is set, it assembles the cut's character art and keyframe as
+// ReferenceImages (Veo's referenceImages, asset type, up to 3).
 type DefaultVideoRequestBuilder struct {
 	characters *characterkit.Characters
 }
 
-// NewVideoRequestBuilder は DefaultVideoRequestBuilder を初期化します。
+// NewVideoRequestBuilder initializes a DefaultVideoRequestBuilder.
 func NewVideoRequestBuilder() *DefaultVideoRequestBuilder {
 	return &DefaultVideoRequestBuilder{}
 }
 
-// NewVideoRequestBuilderWithCharacters は、キャラクター立ち絵を referenceImages として
-// 組み立てるビルダーを初期化します。characters が nil の場合は標準ビルダーと同じ挙動です。
+// NewVideoRequestBuilderWithCharacters initializes a builder that assembles the
+// character art as referenceImages. When characters is nil, it behaves the same as
+// the standard builder.
 func NewVideoRequestBuilderWithCharacters(characters *characterkit.Characters) *DefaultVideoRequestBuilder {
 	return &DefaultVideoRequestBuilder{characters: characters}
 }
 
-// Build はレシピ、カット、キーフレーム生成結果から Veo 用リクエストを構築します。
+// Build constructs the Veo request from the recipe, the cut and the keyframe
+// result.
 //
-// 組み立てたリクエストは veo.ClassifyRequest で分類し、そのモードで Veo が実際には
-// 使わない入力を落としてから返します（例: video_extension では画像参照を送らない、
-// lastFrame 非対応モデルでは LastFrameReference を残さない）。「組み立てたリクエスト」と
-// 「adapter が Veo へ送るリクエスト」を一致させることで、ログや再現時に実際には送られて
-// いない入力を追いかけずに済みます。
+// The assembled request is classified with veo.ClassifyRequest, and inputs Veo
+// would not actually use in that mode are dropped before it is returned (e.g. no
+// image references under video_extension, no LastFrameReference for models without
+// lastFrame support). Making "the assembled request" match "the request the
+// adapter sends to Veo" spares logs and reproductions from chasing inputs that
+// were never actually sent.
 func (b *DefaultVideoRequestBuilder) Build(in BuildInput) video.GenerationRequest {
 	cut := in.Cut
 
-	// キーフレームは保存済みで、参照（KeyframeReference）とシード（KeyframeSeed）が
-	// カットに記録されている。同じ乱数系列を動画側へ引き継ぐためにそのシードを使い、
-	// 記録が無い場合だけキャラクター／レシピのシードへ落とす。
+	// The keyframe is saved, and its reference (KeyframeReference) and seed
+	// (KeyframeSeed) are recorded on the cut. Use that seed to carry the same
+	// random sequence over to the video, falling back to the character's / recipe's
+	// seed only when none is recorded.
 	seed := cut.KeyframeSeed
 	if seed == 0 {
 		seed = fallbackSeed(in.Recipe, cut, b.characters)
 	}
 
-	// PreviousVideoURI は gs:// の動画参照だけが意味を持つ。オペレーション名などが
-	// 紛れ込むと、分類は image_to_video に倒れるのにフィールドだけが残り、adapter が
-	// 独自判定で video_extension を組んでしまう余地が生まれるため、ここで除去する。
+	// Only a gs:// video reference means anything in PreviousVideoURI. If an
+	// operation name or the like slips in, classification falls to image_to_video
+	// while the field remains, leaving room for the adapter to build a
+	// video_extension by its own judgment, so it is removed here.
 	previousVideoURI := strings.TrimSpace(in.PreviousVideoURI)
 	if !strings.HasPrefix(previousVideoURI, "gs://") {
 		previousVideoURI = ""
@@ -91,8 +98,9 @@ func (b *DefaultVideoRequestBuilder) Build(in BuildInput) video.GenerationReques
 		DurationSec:        cut.DurationSec,
 	}
 
-	// PreviousVideoURI が空 = 「このカットはチェーンの起点なので継続しない」という
-	// 呼び出し側の意思表示。空でないときだけ video_extension の候補になる。
+	// An empty PreviousVideoURI is the caller saying "this cut is a chain start,
+	// so do not continue". Only when it is non-empty is the cut a candidate for
+	// video_extension.
 	usePreviousVideo := previousVideoURI != ""
 	pruneUnusedInputs(&req, veo.ClassifyRequest(req, usePreviousVideo, in.Capabilities))
 	req.Prompt = b.buildPrompt(in.Recipe, cut)
@@ -100,10 +108,11 @@ func (b *DefaultVideoRequestBuilder) Build(in BuildInput) video.GenerationReques
 	return req
 }
 
-// pruneUnusedInputs は、解決した生成モードで Veo が参照しない入力をリクエストから
-// 落とします。Veo は video と referenceImages / image を併用できず、lastFrame は image と
-// セットのときだけ有効なため、残しておいても無視されるだけで、ログ上は「送ったのに
-// 効かなかった入力」に見えてしまいます。
+// pruneUnusedInputs drops from the request the inputs Veo does not reference in the
+// resolved generation mode. Veo cannot combine video with referenceImages / image,
+// and lastFrame is valid only together with image, so leaving them in would just
+// get them ignored, and in the logs they would look like "inputs that were sent but
+// had no effect".
 func pruneUnusedInputs(req *video.GenerationRequest, mode veo.GenerationMode) {
 	switch mode {
 	case veo.ModeVideoExtension:
@@ -124,11 +133,12 @@ func pruneUnusedInputs(req *video.GenerationRequest, mode veo.GenerationMode) {
 	}
 }
 
-// fallbackSeed は、キーフレーム生成結果からシードが得られなかった場合のシードを返します。
-// カットのキャラクターに紐づくシード（キーフレーム画像生成が使うのと同じ値）を優先し、
-// 無ければレシピ全体のシードを使います。シード無し（0 = Veo リクエストから省略）の
-// 独立生成はチェーン起点ごとに見た目が確率的にブレるため、少なくともキャラクター単位で
-// 固定したシードを渡してキャラの一貫性を高めます。
+// fallbackSeed returns the seed to use when none could be obtained from the
+// keyframe result. The seed tied to the cut's character (the same value keyframe
+// image generation uses) takes priority, then the recipe-wide seed. Independent
+// generation without a seed (0 = omitted from the Veo request) wobbles in look at
+// each chain start by chance, so passing a seed fixed at least per character
+// strengthens character consistency.
 func fallbackSeed(recipe *video.Recipe, cut video.Cut, characters *characterkit.Characters) int64 {
 	if characters != nil {
 		if char := characters.GetCharacter(cut.CharacterID); char != nil && char.Seed != nil {
@@ -157,7 +167,7 @@ func (b *DefaultVideoRequestBuilder) buildPrompt(recipe *video.Recipe, cut video
 		parts = append(parts, fmt.Sprintf("Timeline: %.2fs to %.2fs.", cut.StartSec, cut.EndSec))
 	}
 
-	// VisualAnchor は空のことがあるので、繋ぐ前に空要素を落とす。
+	// VisualAnchor can be empty, so drop empty elements before joining.
 	parts = slices.DeleteFunc(parts, func(part string) bool {
 		return strings.TrimSpace(part) == ""
 	})

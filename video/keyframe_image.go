@@ -1,20 +1,21 @@
 package video
 
-// KeyframeImage は、生成されたキーフレーム画像 1 枚とそのメタデータです。
+// KeyframeImage is one generated keyframe image and its metadata.
 //
-// imagegen.Response をそのまま公開 API に晒すと、このライブラリの利用側（Workflows の
-// 消費者やテストのフェイク）が画像キットまで輸入させられます。実際に ap-mv が画像キットへ
-// 直接依存していた理由はこのリークだけだったため、ライブラリ自身の型として持ちます。
+// Exposing imagegen.Response on the public API as-is would force the image kit on
+// this library's consumers (Workflows consumers and test fakes). That leak was in
+// fact the only reason ap-mv depended on the image kit directly, so the library
+// keeps a type of its own.
 type KeyframeImage struct {
-	// Data は画像のバイト列です。
+	// Data is the image bytes.
 	Data []byte
-	// MimeType は画像の MIME type です（保存時の拡張子と Content-Type の決定に使います）。
+	// MimeType is the image's MIME type (used to decide the saved extension and Content-Type).
 	MimeType string
-	// UsedSeed は生成に使われたシードです。画像キットが既定でシードを自動採番するため、
-	// 通常は実際に送信された値が入ります。
+	// UsedSeed is the seed used for generation. The image kit picks a seed
+	// automatically by default, so this normally holds the value actually sent.
 	UsedSeed int64
-	// Model は生成に使ったモデル名です。
+	// Model is the name of the model used for generation.
 	Model string
-	// Prompt は実際に送信した最終プロンプトです。
+	// Prompt is the final prompt actually sent.
 	Prompt string
 }

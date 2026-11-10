@@ -69,8 +69,8 @@ func TestSingleflightImageGeneratorCollapsesIdenticalCalls(t *testing.T) {
 			})
 		}
 
-		// 全員が in-flight に入るのを待ってから解放する。Wait はバブル内の他の
-		// ゴルーチンがすべて継続的にブロックした時点で返ります。
+		// Release only after everyone has entered in-flight. Wait returns once every
+		// other goroutine in the bubble is durably blocked.
 		synctest.Wait()
 		close(inner.block)
 		wg.Wait()
@@ -145,7 +145,7 @@ func TestSingleflightImageGeneratorDetachesSharedExecution(t *testing.T) {
 			leaderDone <- err
 		}()
 
-		synctest.Wait() // 先行の呼び出しが in-flight に入るのを待つ
+		synctest.Wait() // wait for the leading call to go in-flight
 
 		followerDone := make(chan error, 1)
 		go func() {
@@ -153,8 +153,8 @@ func TestSingleflightImageGeneratorDetachesSharedExecution(t *testing.T) {
 			followerDone <- err
 		}()
 
-		synctest.Wait() // 後続が相乗りするのを待つ
-		cancelLeader()  // 先行だけを打ち切る
+		synctest.Wait() // wait for the follower to piggyback
+		cancelLeader()  // cancel only the leader
 
 		if err := <-leaderDone; !errors.Is(err, context.Canceled) {
 			t.Errorf("cancelled caller err = %v, want context.Canceled", err)
@@ -212,8 +212,8 @@ func TestGuardCoversTextGenerationToo(t *testing.T) {
 			t.Fatalf("image generation error = %v", err)
 		}
 
-		// 別種の操作でも同じリミッターを共有するので、2回目は間隔ぶん待たされる。
-		// 仮想時計なので経過時間はちょうど interval に一致する。
+		// Different kinds of operation share the same limiter, so the second one waits
+		// out the interval. With the virtual clock, the elapsed time equals interval exactly.
 		if elapsed := time.Since(start); elapsed != interval {
 			t.Errorf("text then image took %v, want exactly %v (one shared limiter)", elapsed, interval)
 		}

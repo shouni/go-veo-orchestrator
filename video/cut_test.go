@@ -209,7 +209,7 @@ func TestCutsNextLastFrameReference(t *testing.T) {
 		})
 	}
 
-	// 範囲外のインデックスは panic せず空文字を返す。
+	// An out-of-range index returns an empty string instead of panicking.
 	cuts := Cuts{{KeyframeResult: kf("gs://a.png")}}
 	if got := cuts.NextLastFrameReference(-1); got != "" {
 		t.Fatalf("NextLastFrameReference(-1) = %q, want empty", got)

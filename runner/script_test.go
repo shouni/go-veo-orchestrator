@@ -400,7 +400,7 @@ func (g *sequenceContentGenerator) Generate(_ context.Context, _ string, _ strin
 // regenerated instead of being handed to the pipeline. Cut generation calls Veo, which is the
 // most expensive step, so a broken script has to be caught here.
 func TestVideoScriptRunnerRetriesInvalidRecipe(t *testing.T) {
-	// music_recipe にセクションが 1 つしかないのに section_index が 2 のカット。
+	// A cut with section_index 2 although music_recipe has only one section.
 	broken := `{"project_title":"Broken","cuts":[{"cut_index":1,"section_index":2,"visual_anchor":"a"}]}`
 	valid := `{"project_title":"Good","cuts":[{"cut_index":1,"section_index":1,"visual_anchor":"a"}]}`
 	ai := &sequenceContentGenerator{responses: []string{broken, valid}}

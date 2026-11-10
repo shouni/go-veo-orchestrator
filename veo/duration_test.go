@@ -58,7 +58,7 @@ func TestIsSupportedDuration(t *testing.T) {
 		{6, ModeReferenceToVideo, false},
 		{7, ModeVideoExtension, true},
 		{8, ModeVideoExtension, false},
-		// 誤差拡散などで生じる微小なズレは同値として扱う。
+		// Tiny deviations from error diffusion and the like count as equal.
 		{8.0000000001, ModeImageToVideo, true},
 		{0, ModeImageToVideo, false},
 	}
@@ -79,7 +79,7 @@ func TestSnapDuration(t *testing.T) {
 	}{
 		{3, 4},
 		{4.4, 4},
-		{5, 6}, // 同距離 → 長い方
+		{5, 6}, // equidistant → the longer one
 		{6.9, 6},
 		{7.5, 8},
 		{20, 8},
@@ -89,7 +89,7 @@ func TestSnapDuration(t *testing.T) {
 			t.Errorf("SnapDuration(%v) = %v, want %v", tt.duration, got, tt.want)
 		}
 	}
-	// 候補が空なら丸めようがないので、入力をそのまま返す。
+	// With no candidates there is nothing to round to, so the input is returned unchanged.
 	if got := SnapDuration(5, nil); got != 5 {
 		t.Errorf("SnapDuration(5, nil) = %v, want 5", got)
 	}

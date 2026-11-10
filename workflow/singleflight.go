@@ -11,20 +11,24 @@ import (
 	"github.com/shouni/genai-kit/imagegen"
 )
 
-// 本ファイルは、台本のテキスト生成とキーフレームの画像生成に呼び出しガードを被せる
-// デコレータと、リクエスト内容からキーを作る部分を持ちます。発射間隔・上限時間・
-// 同時実行の重複排除そのものは callguard が持っており、go-comic-kit や
-// genai-kit/lyria と同じ実装を共有します。
+// This file holds the decorators that put call guards over the script's text
+// generation and the keyframes' image generation, and the code that builds keys
+// from request contents. The call interval, time limit and deduplication of
+// concurrent calls themselves belong to callguard, which shares its
+// implementation with go-comic-kit and genai-kit/lyria.
 //
-// ガード（callguard.Guard）はワークフロー全体で 1 つを共有し、テキスト生成にも画像生成にも
-// 同じものを掛けます。クォータはプロジェクト単位で操作の種類ごとではないため、片方だけ
-// 絞っても意味がないからです。これが、発射間隔と上限時間を画像キットのオプション
-// （WithRateLimit / WithRequestTimeout）ではなくここに置いている理由でもあります。
+// One guard (callguard.Guard) is shared across the whole workflow and applied to
+// both text and image generation. Quota is per project, not per kind of
+// operation, so throttling only one of them is pointless. That is also why the
+// call interval and time limit live here rather than in image kit options
+// (WithRateLimit / WithRequestTimeout).
 
-// singleflightImageGenerator は、同一内容の画像生成リクエストの同時実行を1回にまとめる
-// デコレータです。Cloud Tasks の at-least-once 配信やリトライによる重複呼び出しから、
-// 高価な画像生成 API 呼び出しを守ります。プロセス内の in-flight のみが対象で、
-// 恒久的な重複排除は recipe の keyframe_reference によるジョブ側の冪等性で行います。
+// singleflightImageGenerator is a decorator that collapses concurrent image
+// generation requests with identical contents into one call. It protects the
+// expensive image generation API from duplicate calls caused by Cloud Tasks'
+// at-least-once delivery and retries. It covers in-flight calls within the process
+// only; durable deduplication comes from job-side idempotency through the recipe's
+// keyframe_reference.
 type singleflightImageGenerator struct {
 	inner imagegen.Generator
 	guard *callguard.Guard
@@ -33,7 +37,7 @@ type singleflightImageGenerator struct {
 
 var _ imagegen.Generator = (*singleflightImageGenerator)(nil)
 
-// Generate はリクエスト内容のハッシュをキーに同時実行をまとめます。
+// Generate collapses concurrent calls, keyed by a hash of the request contents.
 func (g *singleflightImageGenerator) Generate(ctx context.Context, req imagegen.Request) (*imagegen.Response, error) {
 	key := imageRequestKey(&req)
 	resp, err := callguard.Do(ctx, &g.group, g.guard, key, func(execCtx context.Context) (*imagegen.Response, error) {
@@ -45,8 +49,8 @@ func (g *singleflightImageGenerator) Generate(ctx context.Context, req imagegen.
 	return cloneImageResponse(resp), nil
 }
 
-// singleflightGenerator は、同一内容のテキスト生成リクエストの同時実行を
-// 1回にまとめる gemini.Generator のデコレータです。
+// singleflightGenerator is a gemini.Generator decorator that collapses concurrent
+// text generation requests with identical contents into one call.
 type singleflightGenerator struct {
 	inner gemini.Generator
 	guard *callguard.Guard
@@ -55,7 +59,7 @@ type singleflightGenerator struct {
 
 var _ gemini.Generator = (*singleflightGenerator)(nil)
 
-// Generate はリクエスト内容のハッシュをキーに同時実行をまとめます。
+// Generate collapses concurrent calls, keyed by a hash of the request contents.
 func (g *singleflightGenerator) Generate(ctx context.Context, modelName string, prompt string, attachments []gemini.Attachment, opts gemini.GenerateOptions) (*gemini.Response, error) {
 	key := textRequestKey(modelName, prompt, attachments, &opts)
 	resp, err := callguard.Do(ctx, &g.group, g.guard, key, func(execCtx context.Context) (*gemini.Response, error) {
@@ -64,16 +68,19 @@ func (g *singleflightGenerator) Generate(ctx context.Context, modelName string, 
 	if err != nil {
 		return nil, err
 	}
-	// NOTE: 浅いコピーで返します。呼び出し側（runner）は Text しか参照しない前提です。
-	// gemini.Response の参照型フィールドを書き換える利用が増えた場合は深いコピーに変更すること。
+	// NOTE: returns a shallow copy, on the assumption that the caller (runner)
+	// reads only Text. If uses that rewrite gemini.Response's reference-typed
+	// fields appear, switch to a deep copy.
 	cloned := *resp
 	return &cloned, nil
 }
 
-// imageRequestKey は画像生成リクエストの内容から singleflight 用キーを作ります。
+// imageRequestKey builds the singleflight key from the contents of an image
+// generation request.
 //
-// go-comic-kit の同名関数は File API の URI もキーに含めますが、こちらは参照が
-// gs:// URI の文字列 1 本だけです（imagegen は取得もアップロードもしません）。
+// go-comic-kit's function of the same name also puts File API URIs in the key, but
+// here the reference is a single gs:// URI string (imagegen neither fetches nor
+// uploads).
 func imageRequestKey(req *imagegen.Request) string {
 	parts := []string{
 		req.Model,
@@ -88,16 +95,19 @@ func imageRequestKey(req *imagegen.Request) string {
 	return callguard.Key("image", parts...)
 }
 
-// textRequestKey はテキスト生成リクエストの内容から singleflight 用キーを作ります。
+// textRequestKey builds the singleflight key from the contents of a text
+// generation request.
 //
-// 添付は URI かバイト列のどちらかなので、URI はそのまま、バイト列は中身のハッシュを
-// キーに含めます。長さだけで代用すると、同じサイズの別画像が同じキーになります。
+// An attachment is either a URI or bytes, so the key includes the URI as-is, or a
+// hash of the bytes' contents. Substituting just the length would give two
+// different images of the same size the same key.
 //
-// GenerateOptions のうちキーに入れているのは ResponseMIMEType と Seed だけです。
-// ResponseJSONSchema（script.go の RecipeSchema(characterIDs())）を省けるのは、
-// キャラクター名簿が起動時に一度読まれる埋め込みアセットで、プロセス内で変わらないからです。
-// 名簿をジョブごとに差し替えるようになったらキーに足してください。足さないと、同じ
-// プロンプトで別の character_id enum を持つ同時呼び出しが片方の結果を共有します。
+// Of GenerateOptions, only ResponseMIMEType and Seed go into the key.
+// ResponseJSONSchema (RecipeSchema(characterIDs()) in script.go) can be left out
+// because the character roster is an embedded asset read once at startup and does
+// not change within the process. If the roster ever becomes per-job, add it to the
+// key. Otherwise, concurrent calls with the same prompt but different character_id
+// enums would share one of their results.
 func textRequestKey(modelName string, prompt string, attachments []gemini.Attachment, opts *gemini.GenerateOptions) string {
 	keyParts := []string{modelName, opts.ResponseMIMEType, callguard.SeedKey(opts.Seed), prompt}
 	for _, attachment := range attachments {
@@ -110,7 +120,7 @@ func textRequestKey(modelName string, prompt string, attachments []gemini.Attach
 	return callguard.Key("text", keyParts...)
 }
 
-// cloneImageResponse は singleflight で共有される応答を呼び出し元が安全に扱えるよう複製します。
+// cloneImageResponse copies a response shared through singleflight so each caller can handle it safely.
 func cloneImageResponse(src *imagegen.Response) *imagegen.Response {
 	if src == nil {
 		return nil

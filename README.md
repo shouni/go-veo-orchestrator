@@ -8,70 +8,72 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Go Reference](https://pkg.go.dev/badge/github.com/shouni/go-veo-orchestrator.svg)](https://pkg.go.dev/github.com/shouni/go-veo-orchestrator)
 
-## 🚀 概要 (About) - 楽曲構成から、文脈の続く動画カット列へ
+English | [日本語](README.ja.md)
 
-**Go Veo Orchestrator** は、**Music Recipe（音楽レシピ / 楽曲構成書）** から動画カット列を構造化し、Google の動画生成 AI **Veo (Vertex AI / Gemini API)** へ渡すためのバックエンドオーケストレーターです。
+## 🚀 About - from a song's structure to a sequence of video cuts that keeps its context
 
-[genai-kit](https://github.com/shouni/genai-kit) の `imagegen` でカットごとのキーフレームを生成し、`VideoRunner` adapter を通じて Veo に **Prompt / Keyframe / Audio / PreviousVideoURI / Seed** を渡します。
+**Go Veo Orchestrator** is a backend orchestrator that structures a **Music Recipe** (a song's composition sheet) into a sequence of video cuts and hands them to Google's video generation AI, **Veo (Vertex AI / Gemini API)**.
 
-`video_id` を次カットの `PreviousVideoURI` として引き継ぐことで、Video-to-Video の文脈を保った連続カット生成を行います。
+It generates a keyframe for each cut with `imagegen` from [genai-kit](https://github.com/shouni/genai-kit), and passes **Prompt / Keyframe / Audio / PreviousVideoURI / Seed** to Veo through a `VideoRunner` adapter.
+
+By carrying each cut's `video_id` into the next cut as its `PreviousVideoURI`, it generates consecutive cuts that keep their Video-to-Video context.
 
 ---
 
-## ✨ 提供機能 (Features)
+## ✨ Features
 
 * **🧬 Consistency Control**
-  **キャラクター固有 Seed**、**キーフレーム画像**、**動きのプロンプト**、**前カットの VideoID** を 1 つの `video.GenerationRequest` にまとめ、カット間の見た目と文脈を維持します。
+  Bundles a **per-character Seed**, a **keyframe image**, a **motion prompt** and the **previous cut's VideoID** into one `video.GenerationRequest`, keeping both the look and the context consistent across cuts.
 
-* **⏳ Audio-Driven Timeline Logic（音楽主導のタイムライン管理）**
-  `music_recipe.sections` または `cuts` から `duration_sec`、`start_sec`、`end_sec` を補完し、`audio_cue` を Veo 用プロンプトへ注入します。
+* **⏳ Audio-Driven Timeline Logic**
+  Fills in `duration_sec`, `start_sec` and `end_sec` from `music_recipe.sections` or `cuts`, and injects each `audio_cue` into the Veo prompt.
 
 * **🔁 Resumable Video Chain**
-  各 `cut` は `status`、`video_id`、`video_url` を保持します。生成済みカットは再生成せず、保持済み `video_id` を次カットの `PreviousVideoURI` として使用します。
-  キーフレームも同じ考え方で、`keyframe_reference` を持つカットは焼き直しません（`CutKeyframe.GenerateAndSave`）。**1 枚生成するたびに保存する**ため、途中で落ちても失うのは最大 1 枚で、続きから再開できます。焼き直したいカットは `keyframe_reference` を空にしてから渡します（`Cut.ResetGeneration(false)`）。
+  Each `cut` carries `status`, `video_id` and `video_url`. Cuts already generated are not regenerated, and their stored `video_id` is used as the next cut's `PreviousVideoURI`.
+  Keyframes follow the same idea: a cut that has a `keyframe_reference` is not re-baked (`CutKeyframe.GenerateAndSave`). **Each image is saved the moment it is generated**, so a crash loses at most one image and the run resumes where it stopped. To re-bake a cut, clear its `keyframe_reference` before passing it in (`Cut.ResetGeneration(false)`).
 
 * **🧩 Adapter-Oriented Architecture**
-  Veo への実通信は `ports.VideoRunner` に閉じ込め、オーケストレーション、キーフレーム生成、メタデータ保存を分離しています。**Veo API の具体実装はこのリポジトリに含まれません**（[実装ガイド](docs/adapter.md)）。
+  All actual communication with Veo is confined to `ports.VideoRunner`, keeping orchestration, keyframe generation and metadata persistence separate. **This repository contains no concrete Veo API implementation** ([implementation guide](docs/adapter.md)).
 
 ---
 
-## 🎬 4つの動画生成ワークフロー (Workflows)
+## 🎬 The four video generation workflows
 
-| ワークフロー | 担当インターフェース | 内容 |
+| Workflow | Interface | What it does |
 | --- | --- | --- |
-| **1. Scripting** | `ScriptRunner` | Music Recipe JSON を読み込み、歌詞・section・楽曲展開から、カット割り・カメラワーク・推定秒数を含む **Video Recipe** を生成。 |
-| **2. Cut Keyframe Gen** | `CutKeyframeRunner` | 各カットのキーフレーム画像を、キャラクター Seed と参照画像を使って生成・保存（`GenerateAndSave`）。既存キーフレームの局所編集にも対応（`EditAndSave`）。 |
-| **3. Video Gen** | `VideoTimelineRunner` + `VideoRunner` | `VideoRequestBuilder` が `video.GenerationRequest` を組み立て、Veo adapter に順次投入。 |
-| **4. Metadata Publish** | `VideoPublishRunner` | `video_id` / `video_url` / `status` 更新済みの `video_music_meta.json` を保存。 |
+| **1. Scripting** | `ScriptRunner` | Reads Music Recipe JSON and, from its lyrics, sections and song development, generates a **Video Recipe** with the cut breakdown, camera work and estimated durations. |
+| **2. Cut Keyframe Gen** | `CutKeyframeRunner` | Generates and saves each cut's keyframe image using the character Seed and reference image (`GenerateAndSave`). Also supports localized edits to an existing keyframe (`EditAndSave`). |
+| **3. Video Gen** | `VideoTimelineRunner` + `VideoRunner` | `VideoRequestBuilder` assembles each `video.GenerationRequest` and submits them to the Veo adapter in order. |
+| **4. Metadata Publish** | `VideoPublishRunner` | Saves `video_music_meta.json` with `video_id` / `video_url` / `status` updated. |
 
 ---
 
-## 🚦 使い方 (Usage)
+## 🚦 Usage
 
-`workflow.New` に依存を渡して `*ports.Workflows` を組み立て、各 Runner を呼びます。
+Pass the dependencies to `workflow.New` to build a `*ports.Workflows`, then call each Runner.
 
 ```go
 workflows, err := workflow.New(workflow.ManagerArgs{
-	// 5 項目とも必須です。キットはモデル名も画作りの既定値も持ちません。
+	// Required: the kit holds neither model names nor art-direction defaults.
 	Config: ports.Config{
 		GeminiModel:            "gemini-3.6-flash",
 		ImageModel:             "gemini-3.1-flash-image",
 		KeyframeAspectRatio:    "16:9",
 		KeyframeImageSize:      "2K",
-		KeyframeNegativePrompt: "speech bubble, text, watermark", // 任意
+		KeyframeNegativePrompt: "speech bubble, text, watermark", // optional
 	},
-	Reader:      reader, // 台本ソースの取得に使います（画像には使いません）
-	Writer:      writer, // 並列保存するため、同時アクセス安全な実装が必要です
+	Reader:      reader, // fetches the script source (not used for images)
+	Writer:      writer, // must be safe for concurrent use, because saving runs in parallel
 	AIClient:    geminiClient,
-	VideoRunner: &VeoRunner{}, // 自前の Veo アダプタ
+	VideoRunner: &VeoRunner{}, // your own Veo adapter
 	PromptDeps:  promptDeps,
 })
 if err != nil {
 	return err
 }
 
-// キーフレームを生成・保存してから動画を生成します。Video はキーフレームを
-// 作りません（保存済みの keyframe_reference を読むだけです）。
+// Generate and save the keyframes before generating video. Video does not
+// create keyframes (it only reads the saved keyframe_reference).
 if _, err := workflows.CutKeyframe.GenerateAndSave(ctx, recipe, "gs://bucket/jobs/<jobID>/"); err != nil {
 	return err
 }
@@ -81,8 +83,8 @@ if err != nil {
 	return err
 }
 
-// メタデータの保存は Publish が担当します。動画生成と保存を分けているのは、
-// 呼び出し側が生成と保存の間に処理（チェーンの結合など）を挟めるようにするためです。
+// Saving the metadata is Publish's job. Generating video and saving are kept
+// apart so the caller can insert a step in between (joining the chains, etc.).
 if _, err := workflows.Publish.Run(ctx, recipe, "gs://bucket/jobs/<jobID>/"); err != nil {
 	return err
 }
@@ -90,26 +92,26 @@ if _, err := workflows.Publish.Run(ctx, recipe, "gs://bucket/jobs/<jobID>/"); er
 
 ---
 
-## 📚 ドキュメント
+## 📚 Documentation
 
-| ドキュメント | 内容 |
+| Document | Contents |
 | --- | --- |
-| [Music Recipe JSON](docs/music-recipe.md) | 入力フォーマット、`cuts` の自動生成、`section_index`、`video.Cut` の構造 |
-| [設定と差し替え (Config / DI)](docs/configuration.md) | `ports.Config` / `ManagerArgs` / `PromptDeps`、キーフレーム生成オプション |
-| [Adapter Boundary](docs/adapter.md) | `ports.VideoRunner` の実装ガイドと `video.GenerationRequest` の契約 |
-| [Veo 生成モードとカット尺](docs/veo-modes.md) | `veo.ClassifyRequest` による分類、モード別の対応尺、尺プランナー |
-| [レシピ・カットの操作](docs/recipe-api.md) | 再開・再生成のヘルパー、部分結果、単一カットのキーフレーム編集 |
-| [Sentinel Errors](docs/errors.md) | `errors.Is` で分岐するためのエラー一覧 |
-| [アーキテクチャ](docs/architecture.md) | パッケージ構成、生成と保存の責務分担、シーケンス図 |
+| [Music Recipe JSON](docs/music-recipe.md) | Input format, automatic generation of `cuts`, `section_index`, the structure of `video.Cut` |
+| [Configuration and DI](docs/configuration.md) | `ports.Config` / `ManagerArgs` / `PromptDeps`, keyframe generation options |
+| [Adapter Boundary](docs/adapter.md) | Implementation guide for `ports.VideoRunner` and the `video.GenerationRequest` contract |
+| [Veo generation modes and cut durations](docs/veo-modes.md) | Classification by `veo.ClassifyRequest`, durations per mode, the duration planner |
+| [Working with recipes and cuts](docs/recipe-api.md) | Resume/regenerate helpers, partial results, single-cut keyframe editing |
+| [Sentinel Errors](docs/errors.md) | The errors to branch on with `errors.Is` |
+| [Architecture](docs/architecture.md) | Package layout, the split between generating and saving, sequence diagrams |
 
 ---
 
-## 🤝 依存関係 (Dependencies)
+## 🤝 Dependencies
 
-* [shouni/genai-kit](https://github.com/shouni/genai-kit) - Vertex AI クライアント（`gemini`）、キーフレーム生成（`imagegen`）、呼び出しガード（`callguard`）、楽曲レシピの型（`music`）。参照画像は `gs://` URI のまま Vertex AI へ渡します
-* [shouni/go-character-kit](https://github.com/shouni/go-character-kit) - キャラクター資産（characters.json）管理
-* [shouni/go-remote-io](https://github.com/shouni/go-remote-io) - GCS / ローカル対応の読み書き抽象化
+* [shouni/genai-kit](https://github.com/shouni/genai-kit) - Vertex AI client (`gemini`), keyframe generation (`imagegen`), call guards (`callguard`), the song recipe type (`music`). Reference images are passed to Vertex AI as `gs://` URIs, unchanged
+* [shouni/go-character-kit](https://github.com/shouni/go-character-kit) - character asset (characters.json) management
+* [shouni/go-remote-io](https://github.com/shouni/go-remote-io) - read/write abstraction over GCS and local storage
 
-## 📜 ライセンス (License)
+## 📜 License
 
-このプロジェクトは [MIT License](https://opensource.org/licenses/MIT) の下で公開されています。
+This project is released under the [MIT License](https://opensource.org/licenses/MIT).

@@ -13,9 +13,9 @@ import (
 
 // --- Mocks ---
 
-// mockImageGenerator は imagegen.Generator を模したテストダブルです。
-// このパッケージの生成は逐次ですが、runner 側のテストからも並列に叩かれるため
-// mu で保護します。
+// mockImageGenerator is a test double mimicking imagegen.Generator. Generation in
+// this package is sequential, but the runner tests also call it in parallel, so it
+// is protected by mu.
 type mockImageGenerator struct {
 	mu            sync.Mutex
 	generateCount int
@@ -48,8 +48,9 @@ func (m *mockImagePrompt) BuildEdit(_ video.Cut, _ *characterkit.Character, edit
 	return editPrompt, "edit-system"
 }
 
-// execAll はカット列をまとめて生成するテスト用ヘルパーです。本番の並列実行と保存は
-// runner.CutKeyframeRunner が持つため、ここでは逐次で足ります。
+// execAll is a test helper that generates a run of cuts in one go. In production,
+// parallel execution and saving belong to runner.CutKeyframeRunner, so sequential
+// is enough here.
 func execAll(ctx context.Context, t *testing.T, g *Generator, cuts []video.Cut) ([]*video.KeyframeImage, error) {
 	t.Helper()
 	images := make([]*video.KeyframeImage, len(cuts))
@@ -70,9 +71,9 @@ func execAll(ctx context.Context, t *testing.T, g *Generator, cuts []video.Cut) 
 func TestGenerator_GenerateCut(t *testing.T) {
 	ctx := context.Background()
 
-	// 1. 依存関係のセットアップ
+	// 1. Set up the dependencies
 
-	// 異なる Seed 値を持つキャラクターを用意
+	// Prepare characters with different Seed values
 	zundamonSeed := int64(10001)
 	metanSeed := int64(20002)
 	cm := mustNewCharacters(t, []characterkit.Character{
@@ -89,14 +90,14 @@ func TestGenerator_GenerateCut(t *testing.T) {
 			VisualCues:   []string{"purple hair"},
 			Seed:         &metanSeed,
 			ReferenceURL: "gs://bucket/metan.png",
-			IsDefault:    true, // 指定なしの場合のデフォルト
+			IsDefault:    true, // the default when none is specified
 		},
 	})
 
 	genMock := &mockImageGenerator{}
 	pbMock := &mockImagePrompt{}
 
-	// 2. Generator の作成 (高速化設定)
+	// 2. Create the Generator (settings tuned for speed)
 	generator := NewGenerator(
 		cm,
 		genMock,
@@ -108,10 +109,10 @@ func TestGenerator_GenerateCut(t *testing.T) {
 		cuts := []video.Cut{
 			{CharacterID: "zundamon", Dialogue: "こんにちはなのだ！"},
 			{CharacterID: "metan", Dialogue: "ごきげんよう。"},
-			{CharacterID: "unknown", Dialogue: "誰かしら？"}, // Defaultのmetanが使われるはず
+			{CharacterID: "unknown", Dialogue: "誰かしら？"}, // the default, metan, should be used
 		}
 
-		// リクエストされた Seed を記録するためのスライス
+		// Slice for recording the requested Seeds
 		capturedSeeds := make([]int64, len(cuts))
 		genMock.generateFunc = func(_ context.Context, req imagegen.Request) (*imagegen.Response, error) {
 			return &imagegen.Response{UsedSeed: *req.Seed}, nil
@@ -130,7 +131,7 @@ func TestGenerator_GenerateCut(t *testing.T) {
 			capturedSeeds[i] = r.UsedSeed
 		}
 
-		// インデックスごとの Seed 検証
+		// Verify the Seed per index
 		if capturedSeeds[0] != 10001 {
 			t.Errorf("Keyframe 0 (zundamon) expected seed 10001, got %d", capturedSeeds[0])
 		}
@@ -152,8 +153,8 @@ func TestGenerator_GenerateCut(t *testing.T) {
 		}
 	})
 
-	// 参照は gs:// URI のまま渡り、Vertex AI が直接解決します（GCSResolver）。
-	// ここでは「参照元 URL をそのまま渡していること」だけを見ます。
+	// References travel as gs:// URIs and Vertex AI resolves them directly (GCSResolver).
+	// This only checks that the source reference URL is passed through unchanged.
 	t.Run("参照は解決せずそのまま渡す", func(t *testing.T) {
 		genMock.generateCount = 0
 

@@ -1,66 +1,66 @@
-# 🔧 レシピ・カットの操作
+# 🔧 Working with recipes and cuts
 
 [← README](../README.md)
 
-`VideoRecipe` / `Cut` は、再開・再生成のために状態を読み書きするヘルパーを持ちます。一括生成を途中から再開する処理は、これらを使って「どのカットがまだか」を判断します。
+`VideoRecipe` / `Cut` have helpers that read and write state for resuming and regenerating. Code that resumes a batch generation midway uses them to decide which cuts are still to do.
 
-## ヘルパー一覧
+## Helpers
 
-| API | 用途 |
+| API | Purpose |
 | --- | --- |
-| `Cut.IsGenerated()` / `Cut.Status`（`video.CutStatus`） | そのカットが生成済みかの判定と状態 |
-| `Cut.ResetGeneration(keepKeyframe)` | 生成結果を捨てて再生成対象に戻す。`keepKeyframe=false` は `keyframe_reference` も消すため、次の `GenerateAndSave` で画像から焼き直されます |
-| `Cut.EffectiveDurationSec()` | そのカットの実効尺 |
-| `VideoRecipe.Normalize()` | カットの連番・開始秒・`SectionIndex` と、レシピから各カットへの `LocationAnchor` / `AspectRatio` の伝播を整えます |
-| `VideoRecipe.Validate()` | レシピの整合性検証 |
-| `Config.UsesModels(gemini, image)` / `Cuts.UniqueCharacterIDs()` | 使用モデルの一致判定・登場キャラクターの集合 |
-| `Cuts.NextLastFrameReference(i)` | frames_to_video で次カットの `lastFrame` に使う参照の解決 |
-| `video.RecipeSchema(characterIDs)` | 台本生成の構造化出力スキーマ（`character_id` を enum で制約した JSON Schema） |
-| `Cuts.FillAudioReference(url)` / `Cuts.FillCharacterID(id)` | 未設定カットへの音源・キャラクターの一括補完 |
-| `Cuts.IndexOf(cutIndex)` | cut_index からレシピ内の位置を引く |
-| `video.NewRecipeFromMusic(music.Recipe)` | Music Recipe から動画レシピを組み立て（深いコピー + Normalize） |
-| `veo.ExpandCutsToSupportedDurations(...)` | カット尺を Veo のサポート値へ正規化する尺プランナー（分割・チェーン形成・セクション境界リセット） |
-| `veo.CapCutsTotalDuration(cuts, maxSec)` / `veo.ChainTailEnd(cuts, i, usePrev)` | 合計尺の切り詰め・チェーン再生成範囲の解決 |
-| `veo.SplitCutBySupportedDurations(cut, allowedDurations)` / `veo.AllowedCutDurations(cut, characters, referenceImagesSupported)` | 1 カットの分割と、参照画像の有無で変わる許容尺の取得 |
-| `veo.CutUsesReferenceImages(cut, characters, referenceImagesSupported)` | そのカットが reference_to_video 経路（＝8 秒固定）になるかの判定 |
-| `veo.SplitDialogueLines(dialogue)` / `veo.DistributeLines(lines, pos, total)` | 台詞の行分割と、分割後カットへの割り当て |
-| `veo.ModelCapabilities(model)` | モデル名から referenceImages / lastFrame 対応を導出 |
+| `Cut.IsGenerated()` / `Cut.Status` (`video.CutStatus`) | Whether the cut has been generated, and its state |
+| `Cut.ResetGeneration(keepKeyframe)` | Discards the generated result and makes the cut a regeneration target again. `keepKeyframe=false` also clears `keyframe_reference`, so the next `GenerateAndSave` re-bakes it starting from the image |
+| `Cut.EffectiveDurationSec()` | The cut's effective duration |
+| `VideoRecipe.Normalize()` | Fixes up cut numbering, start seconds and `SectionIndex`, and propagates `LocationAnchor` / `AspectRatio` from the recipe to each cut |
+| `VideoRecipe.Validate()` | Validates the recipe's consistency |
+| `Config.UsesModels(gemini, image)` / `Cuts.UniqueCharacterIDs()` | Whether the models in use match / the set of characters appearing |
+| `Cuts.NextLastFrameReference(i)` | Resolves the reference used as the next cut's `lastFrame` in frames_to_video |
+| `video.RecipeSchema(characterIDs)` | The structured-output schema for script generation (a JSON Schema constraining `character_id` with an enum) |
+| `Cuts.FillAudioReference(url)` / `Cuts.FillCharacterID(id)` | Fills in the audio source / character on every cut that has none |
+| `Cuts.IndexOf(cutIndex)` | Looks up the position in the recipe from a cut_index |
+| `video.NewRecipeFromMusic(music.Recipe)` | Builds a video recipe from a Music Recipe (deep copy + Normalize) |
+| `veo.ExpandCutsToSupportedDurations(...)` | The duration planner that normalizes cut durations to values Veo supports (splitting, chain formation, resets at section boundaries) |
+| `veo.CapCutsTotalDuration(cuts, maxSec)` / `veo.ChainTailEnd(cuts, i, usePrev)` | Truncating the total duration / resolving the range of a chain to regenerate |
+| `veo.SplitCutBySupportedDurations(cut, allowedDurations)` / `veo.AllowedCutDurations(cut, characters, referenceImagesSupported)` | Splitting one cut, and getting the allowed durations, which depend on whether reference images are present |
+| `veo.CutUsesReferenceImages(cut, characters, referenceImagesSupported)` | Whether the cut takes the reference_to_video path (= fixed at 8 seconds) |
+| `veo.SplitDialogueLines(dialogue)` / `veo.DistributeLines(lines, pos, total)` | Splitting dialogue into lines, and assigning them to the cuts after a split |
+| `veo.ModelCapabilities(model)` | Derives referenceImages / lastFrame support from a model name |
 
-## 部分結果とライフサイクル
+## Partial results and lifecycle
 
-`workflow.New` が返す `*ports.Workflows` に `Close()` はありません。参照画像を `gs://` URI のまま渡すようになり、停止すべき画像キャッシュの goroutine が無くなったためです。公開・保存の出力は `video.PublishResult` です。
+The `*ports.Workflows` returned by `workflow.New` has no `Close()`. Reference images are now passed as `gs://` URIs as-is, so there is no image-cache goroutine left to stop. The output of publishing and saving is `video.PublishResult`.
 
-`VideoTimelineRunner.Run` は**エラー時も完了済みカットの部分結果を返します**。`WithCutObserver` でカット完了ごとのフック（メタデータ保存や実行時間予算の確認）を差し込め、フックがエラーを返すとそこで停止して部分結果を返します。時間制限のあるジョブ基盤で「一旦保存して次の実行で再開」する運用が、自前のカットループなしで組めます。
+`VideoTimelineRunner.Run` **returns the partial result of the completed cuts even on error**. `WithCutObserver` lets you insert a hook after each cut completes (saving metadata, checking an execution-time budget); if the hook returns an error, the run stops there and returns the partial result. On a job platform with a time limit, "save for now and resume on the next run" can be built without a cut loop of your own.
 
-同様に `CutKeyframeRunner.GenerateAndSave` も、生成が途中で失敗した場合に**成功した分の画像とメタデータを保存してから**エラーを返します。
+Likewise, when generation fails midway, `CutKeyframeRunner.GenerateAndSave` **saves the images and metadata that succeeded before** returning the error.
 
-## 🩹 単一カットのキーフレーム編集 (EditAndSave)
+## 🩹 Editing a single cut's keyframe (EditAndSave)
 
-`CutKeyframeRunner.GenerateAndSave` はプロンプトから画像を作り直す「フル生成」ですが、`EditAndSave` は既存のキーフレーム画像を編集元として、テキスト指示で局所的な修正だけを反映します。構図・ポーズ・背景は保たれるため、同じキャラクターの他カットとの一貫性を保ったまま「小物の数を減らす」「色味を揃える」といった軽微な修正に向いています。
+`CutKeyframeRunner.GenerateAndSave` is a "full generation" that recreates the image from the prompt, whereas `EditAndSave` takes the existing keyframe image as its source and applies only a localized fix described in text. Composition, pose and background are preserved, so it suits minor fixes such as "reduce the number of props" or "match the color tone" while staying consistent with the same character's other cuts.
 
-レシピ全体と、その中の対象カットの位置（0 始まり）を渡します。対象カットの `KeyframeReference` は、編集元となる既存のキーフレーム画像を指している必要があります。
+Pass the whole recipe and the position (0-based) of the target cut within it. The target cut's `KeyframeReference` must point at the existing keyframe image to edit.
 
 ```go
-// recipe は完全なレシピのままで構いません。編集するカットは位置で指定します。
-const cutPosition = 1 // recipe.Cuts[1] を編集する
+// recipe can stay the complete recipe. The cut to edit is given by position.
+const cutPosition = 1 // edit recipe.Cuts[1]
 
 updated, err := workflows.CutKeyframe.EditAndSave(ctx, recipe, cutPosition,
-	"腕には絆創膏を1〜2枚のみにしてください", "gs://bucket/jobs/j1/regens/cut-2/")
+	"Keep only one or two bandages on the arm", "gs://bucket/jobs/j1/regens/cut-2/")
 if err != nil {
 	return err
 }
-// updated.Cuts[cutPosition].KeyframeReference が編集後の画像パスに更新されています。
+// updated.Cuts[cutPosition].KeyframeReference now points at the edited image.
 ```
 
-対象カットだけの使い捨てレシピを組む必要はありません（v1.11 より前はそれが必須で、カットごとにループする呼び出し側がレシピを組み直していました）。保存されるメタデータも常に完全なレシピになります。
+There is no need to build a throwaway recipe holding only the target cut (before v1.11 that was required, and callers looping over cuts rebuilt the recipe each time). The saved metadata is also always the complete recipe.
 
-内部的には [genai-kit](https://github.com/shouni/genai-kit) の `imagegen.Generator.Generate` に既存キーフレーム画像を入力として渡し、`editPrompt` をプロンプトとして呼び出します。`GenerateAndSave`（通常のキーフレーム生成）と同じ会話型マルチモーダル画像モデル（`Config.ImageModel`、Gemini の「Nano Banana」系）をそのまま再利用するため、編集専用のモデルや API は不要です。
+Internally it calls `imagegen.Generator.Generate` from [genai-kit](https://github.com/shouni/genai-kit) with the existing keyframe image as input and `editPrompt` as the prompt. It reuses the same conversational multimodal image model as `GenerateAndSave` (normal keyframe generation) — `Config.ImageModel`, Gemini's "Nano Banana" family — so no editing-specific model or API is needed.
 
-> Vertex AI Imagen のマスクベース編集/カスタマイズ API（`imagen-3.0-capability-001` 系）は2026年6月30日に廃止され、後継の「capability」モデルも用意されていません。そのため `EditAndSave` はマスク指定には対応せず、自由記述の編集指示のみをサポートします。
+> Vertex AI Imagen's mask-based editing/customization API (the `imagen-3.0-capability-001` family) was retired on June 30, 2026, and no successor "capability" model exists. `EditAndSave` therefore does not support masks; it supports free-form edit instructions only.
 
-エラーになる条件:
+It fails when:
 
-* `cutPosition` が `recipe.Cuts` の範囲外の場合
-* 対象カットの `KeyframeReference` が空の場合（＝編集元画像がない）は `ports.ErrNoKeyframeToEdit`
+* `cutPosition` is outside the range of `recipe.Cuts`
+* the target cut's `KeyframeReference` is empty (= there is no source image): `ports.ErrNoKeyframeToEdit`
 
-キャラクターの Seed は `GenerateAndSave` と同様、`char.Seed` がそのまま編集リクエストに使われます。
+As with `GenerateAndSave`, the character's Seed (`char.Seed`) is used as-is for the edit request.

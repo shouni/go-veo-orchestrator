@@ -69,8 +69,8 @@ func TestConfigValidateRequiresArtDirection(t *testing.T) {
 	}
 }
 
-// KeyframeNegativePrompt は必須ではありません。「排除指定なし」は意味のある選択で、
-// 空を弾くとネガティブプロンプト無しの生成ができなくなるためです。
+// KeyframeNegativePrompt is not required. "Exclude nothing" is a meaningful choice,
+// and rejecting an empty value would make generation without a negative prompt impossible.
 func TestConfigValidateAllowsEmptyNegativePrompt(t *testing.T) {
 	cfg := Config{
 		GeminiModel:         "gemini-text",
